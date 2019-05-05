@@ -159,14 +159,10 @@ class Gyro_Accelerometer extends SMBHold {
         this.writeByte(REGISTERS.I2C_SLV4_CTRL, 0x80); // Enable I2C slave 4
         Timer.delay(20);
 
-        //this.writeByte(REGISTERS.I2C_SLV4_CTRL, 0x0F); // sampling rate is 100 / (1 + 15) Hz
-
         this.writeByte(REGISTERS.I2C_SLV0_ADDR, REGISTERS.AK8963_I2C_ADDR | 0x80); // Set the I2C slave 0 address of AK8963 and set for read.
 
         this.writeByte(REGISTERS.I2C_SLV0_REG, REGISTERS.AK8963_HXL); //I2C slave 0 register address from where to begin data transfer
         this.writeByte(REGISTERS.I2C_SLV0_CTRL, 0x87); // Enable I2C and set 7 byte,
-        // which makes the AK8963A unlatch the data registers for the next measurement by reading ST2 register (0x09).
-        //this.writeByte(REGISTERS.I2C_MST_DELAY_CTRL, 0x81); // Delayed sampling is applied to Slave 0.
     }
 
     checkIdentificationMagnetometer() {
@@ -194,17 +190,6 @@ class Gyro_Accelerometer extends SMBHold {
         }
     }
 
-    /*
-    reboot() {
-        this.writeByte(REGISTERS.PWR_MGMT_1, 0x80);
-        Timer.delay(150);
-        this.writeByte(REGISTERS.PWR_MGMT_1, 0x01);
-        this.writeByte(USER_CTRL, 0x34);
-        this.writeByte(REGISTERS.INT_BYPASS, 0x03);
-        Timer.delay(150);
-    }
-    */
-
     sampleXL() {
         this.readBlock(REGISTERS.ACCEL_XOUT, 6, this.xlRaw);
         return {
@@ -224,7 +209,24 @@ class Gyro_Accelerometer extends SMBHold {
     }
 
     sampleMgn() {
-
+        // x/y/z gyro register data, ST2 register stored here, must read ST2 at end of
+        // data acquisition
+        // Wait for magnetometer data ready bit to be set
+        const destination = [];
+        if(this.readByte(REGISTERS.AK8963_ADDRESS, REGISTERS.AK8963_ST1) & 0x01) {
+            // Read the six raw data and ST2 registers sequentially into data array
+            const rawData = this.readBlock(REGISTERS.AK8963_ADDRESS, REGISTERS.AK8963_XOUT_L, 7);
+            const c = rawData[6];
+            // Check if magnetic sensor overflow set, if not then report data
+            if(!(c & 0x08)) {
+                // Turn the MSB and LSB into a signed 16-bit value
+                destination[0] = (rawData[1] << 8) | rawData[0];
+                // Data stored as little Endian
+                destination[1] = (rawData[3] << 8) | rawData[2];
+                destination[2] = (rawData[5] << 8) | rawData[4];
+            }
+        }
+        return destination;
     }
 
     sample() {
@@ -243,78 +245,5 @@ class Gyro_Accelerometer extends SMBHold {
 }
 
 Object.freeze(Gyro_Accelerometer.prototype);
-
-
-/*
-class Magnetometer extends SMBHoldBus {
-    constructor(dictionary) {
-        super(Object.assign({ address: 0x0E, throw: false}, dictionary));
-        this.checkIdentification();
-        this.calibration = { maxX: Number.NEGATIVE_INFINITY, maxY: Number.NEGATIVE_INFINITY, maxZ: Number.NEGATIVE_INFINITY, minX: Number.POSITIVE_INFINITY, minY: Number.POSITIVE_INFINITY, minZ: Number.POSITIVE_INFINITY };
-        this.rawValues = new ArrayBuffer(6);
-        this.view = new DataView(this.rawValues);
-        this.enable();
-    }
-
-    checkIdentification() {
-        let mID = this.readByte(REGISTERS.WHO_AM_I);
-        if (mID != EXPECTED_WHO_AM_I) throw ("bad WHO_AM_I ID for MAG-3110");
-    }
-
-    configure(dictionary) {
-
-    }
-
-    calibrate(x, y, z){
-        let cal = this.calibration;
-        if (x < cal.minX) cal.minX = x;
-        if (x > cal.maxX) cal.maxX = x;
-        if (y < cal.minY) cal.minY = y;
-        if (y > cal.maxY) cal.maxY = y;
-        if (z > cal.maxZ) cal.maxZ = z;
-        if (z < cal.minZ) cal.minZ = z;
-        cal.xSpread = cal.maxX - cal.minX;
-        cal.ySpread = cal.maxY - cal.minY;
-        cal.zSpread = cal.maxZ - cal.minZ;
-        cal.xMid = cal.minX + (cal.xSpread / 2);
-        cal.yMid = cal.minY + (cal.ySpread / 2);
-        cal.zMid = cal.minZ + (cal.zSpread / 2);
-        if (cal.xSpread >= 20 && cal.ySpread >= 20 && cal.zSpread >= 20) return true;
-        return false;
-    }
-
-    enable() {
-        this.writeByte()
-        this.writeByte(REGISTERS.CTRL_REG1, 0);
-        this.writeByte(REGISTERS.CTRL_REG2, 0b10110000);
-        Timer.delay(100);
-        this.writeByte(REGISTERS.CTRL_REG1, 0b00000001);
-    }
-
-    disable() {
-        this.writeByte(REGISTERS.CTRL_REG1, 0);
-    }
-
-    sample() {
-        let test = this.readBlock(REGISTERS.OUT_X, 6, this.rawValues);
-        if (test === undefined) return undefined;
-        const x = this.view.getInt16(0);
-        const y = this.view.getInt16(2);
-        const z = this.view.getInt16(4);
-
-        const calibrated = this.calibrate(x, y, z);
-
-        if (!calibrated) return undefined;
-
-        return {
-            x: (x - this.calibration.xMid) * (2000 / this.calibration.xSpread),
-            y: (y - this.calibration.yMid) * (2000 / this.calibration.ySpread),
-            z: (z - this.calibration.zMid) * (2000 / this.calibration.zSpread)
-        }
-    }
-}
-
-Object.freeze(Magnetometer.prototype);
-*/
 
 export default Gyro_Accelerometer
