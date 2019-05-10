@@ -125,6 +125,7 @@ class Gyro_Accelerometer extends SMBHold {
         Timer.delay(150);
         
         /*
+        // TODO: enable magnetometer. below does not work
         this.writeByte(REGISTERS.USER_CTRL, 0x34); // Enable Master I2C, disable primary I2C I/F, and reset FIFO.
         this.writeByte(REGISTERS.SMPLRT_DIV, 9); // SMPLRT_DIV = 9, 100Hz sampling;
         this.writeByte(REGISTERS.CONFIG, (1 << 6) | (1 << 0)); // FIFO_mode = 1 (accept overflow), Use LPF, Bandwidth_gyro = 184 Hz, Bandwidth_temperature = 188 Hz,
@@ -132,11 +133,9 @@ class Gyro_Accelerometer extends SMBHold {
         this.writeByte(REGISTERS.ACCEL_CONFIG, (2 << 3)); // AFS_SEL = 2 (8G)
 
         // this.writeByte(REGISTERS.I2C_MST_CTRL, (0xC8 | 13)); // Multi-master, Wait for external sensor, I2C stop then start cond., clk 400KHz
-        */
 
         this.rebootMagnetometer();
 
-        /*
         this.writeByte(REGISTERS.FIFO_EN, 0xF9); // FIFO enabled for temperature(2), gyro(2 * 3), accelerometer(2 * 3), slave 0(7, delayed sample). Total 21 bytes.
         this.writeByte(REGISTERS.USER_CTRL, 0x70); // Enable FIFO with Master I2C enabled, and primary I2C I/F disabled.
 
@@ -194,17 +193,6 @@ class Gyro_Accelerometer extends SMBHold {
         }
     }
 
-    /*
-    reboot() {
-        this.writeByte(REGISTERS.PWR_MGMT_1, 0x80);
-        Timer.delay(150);
-        this.writeByte(REGISTERS.PWR_MGMT_1, 0x01);
-        this.writeByte(USER_CTRL, 0x34);
-        this.writeByte(REGISTERS.INT_BYPASS, 0x03);
-        Timer.delay(150);
-    }
-    */
-
     sampleXL() {
         this.readBlock(REGISTERS.ACCEL_XOUT, 6, this.xlRaw);
         return {
@@ -243,78 +231,5 @@ class Gyro_Accelerometer extends SMBHold {
 }
 
 Object.freeze(Gyro_Accelerometer.prototype);
-
-
-/*
-class Magnetometer extends SMBHoldBus {
-    constructor(dictionary) {
-        super(Object.assign({ address: 0x0E, throw: false}, dictionary));
-        this.checkIdentification();
-        this.calibration = { maxX: Number.NEGATIVE_INFINITY, maxY: Number.NEGATIVE_INFINITY, maxZ: Number.NEGATIVE_INFINITY, minX: Number.POSITIVE_INFINITY, minY: Number.POSITIVE_INFINITY, minZ: Number.POSITIVE_INFINITY };
-        this.rawValues = new ArrayBuffer(6);
-        this.view = new DataView(this.rawValues);
-        this.enable();
-    }
-
-    checkIdentification() {
-        let mID = this.readByte(REGISTERS.WHO_AM_I);
-        if (mID != EXPECTED_WHO_AM_I) throw ("bad WHO_AM_I ID for MAG-3110");
-    }
-
-    configure(dictionary) {
-
-    }
-
-    calibrate(x, y, z){
-        let cal = this.calibration;
-        if (x < cal.minX) cal.minX = x;
-        if (x > cal.maxX) cal.maxX = x;
-        if (y < cal.minY) cal.minY = y;
-        if (y > cal.maxY) cal.maxY = y;
-        if (z > cal.maxZ) cal.maxZ = z;
-        if (z < cal.minZ) cal.minZ = z;
-        cal.xSpread = cal.maxX - cal.minX;
-        cal.ySpread = cal.maxY - cal.minY;
-        cal.zSpread = cal.maxZ - cal.minZ;
-        cal.xMid = cal.minX + (cal.xSpread / 2);
-        cal.yMid = cal.minY + (cal.ySpread / 2);
-        cal.zMid = cal.minZ + (cal.zSpread / 2);
-        if (cal.xSpread >= 20 && cal.ySpread >= 20 && cal.zSpread >= 20) return true;
-        return false;
-    }
-
-    enable() {
-        this.writeByte()
-        this.writeByte(REGISTERS.CTRL_REG1, 0);
-        this.writeByte(REGISTERS.CTRL_REG2, 0b10110000);
-        Timer.delay(100);
-        this.writeByte(REGISTERS.CTRL_REG1, 0b00000001);
-    }
-
-    disable() {
-        this.writeByte(REGISTERS.CTRL_REG1, 0);
-    }
-
-    sample() {
-        let test = this.readBlock(REGISTERS.OUT_X, 6, this.rawValues);
-        if (test === undefined) return undefined;
-        const x = this.view.getInt16(0);
-        const y = this.view.getInt16(2);
-        const z = this.view.getInt16(4);
-
-        const calibrated = this.calibrate(x, y, z);
-
-        if (!calibrated) return undefined;
-
-        return {
-            x: (x - this.calibration.xMid) * (2000 / this.calibration.xSpread),
-            y: (y - this.calibration.yMid) * (2000 / this.calibration.ySpread),
-            z: (z - this.calibration.zMid) * (2000 / this.calibration.zSpread)
-        }
-    }
-}
-
-Object.freeze(Magnetometer.prototype);
-*/
 
 export default Gyro_Accelerometer
