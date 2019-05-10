@@ -54,11 +54,6 @@
 				"0xFF, 0,",
 			],
 		},
-		"neopixel": {
-			"length": 10,
-			"order": "#GRB",
-			"pin": 15,
-		},
 		"audioOut": {
 			"bitsPerSample": 16,
 			"numChannels": 1,
@@ -72,8 +67,6 @@
 	},
 	"modules": {
 		"*": [
-			"$(MODULES)/drivers/neopixel/*",
-			"$(MODULES)/drivers/neopixel/esp32/*",
 			"$(MODULES)/pins/digital/monitor/*",
 			"$(MODULES)/pins/digital/monitor/esp32/*",
 			"$(MODULES)/drivers/mpu9250/*"
@@ -84,7 +77,6 @@
 		"pins/smbus": "$(MODULES)/pins/smbus/smbus"
 	},
 	"preload": [
-		"neopixel",
 		"monitor",
 		"pins/i2s",
 		"setup/target",

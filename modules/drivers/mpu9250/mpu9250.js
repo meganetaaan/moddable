@@ -158,14 +158,10 @@ class Gyro_Accelerometer extends SMBHold {
         this.writeByte(REGISTERS.I2C_SLV4_CTRL, 0x80); // Enable I2C slave 4
         Timer.delay(20);
 
-        //this.writeByte(REGISTERS.I2C_SLV4_CTRL, 0x0F); // sampling rate is 100 / (1 + 15) Hz
-
         this.writeByte(REGISTERS.I2C_SLV0_ADDR, REGISTERS.AK8963_I2C_ADDR | 0x80); // Set the I2C slave 0 address of AK8963 and set for read.
 
         this.writeByte(REGISTERS.I2C_SLV0_REG, REGISTERS.AK8963_HXL); //I2C slave 0 register address from where to begin data transfer
         this.writeByte(REGISTERS.I2C_SLV0_CTRL, 0x87); // Enable I2C and set 7 byte,
-        // which makes the AK8963A unlatch the data registers for the next measurement by reading ST2 register (0x09).
-        //this.writeByte(REGISTERS.I2C_MST_DELAY_CTRL, 0x81); // Delayed sampling is applied to Slave 0.
     }
 
     checkIdentificationMagnetometer() {
@@ -212,7 +208,24 @@ class Gyro_Accelerometer extends SMBHold {
     }
 
     sampleMgn() {
-
+        // x/y/z gyro register data, ST2 register stored here, must read ST2 at end of
+        // data acquisition
+        // Wait for magnetometer data ready bit to be set
+        const destination = [];
+        if(this.readByte(REGISTERS.AK8963_ADDRESS, REGISTERS.AK8963_ST1) & 0x01) {
+            // Read the six raw data and ST2 registers sequentially into data array
+            const rawData = this.readBlock(REGISTERS.AK8963_ADDRESS, REGISTERS.AK8963_XOUT_L, 7);
+            const c = rawData[6];
+            // Check if magnetic sensor overflow set, if not then report data
+            if(!(c & 0x08)) {
+                // Turn the MSB and LSB into a signed 16-bit value
+                destination[0] = (rawData[1] << 8) | rawData[0];
+                // Data stored as little Endian
+                destination[1] = (rawData[3] << 8) | rawData[2];
+                destination[2] = (rawData[5] << 8) | rawData[4];
+            }
+        }
+        return destination;
     }
 
     sample() {
