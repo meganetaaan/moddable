@@ -1,6 +1,7 @@
 {
 	"include": [
-		"$(MODULES)/pins/digital/manifest.json",
+		"$(MODULES)/pins/digital/monitor/manifest.json",
+		"$(MODULES)/pins/smbus/manifest.json"
 	],
 	"build": {
 		"UPLOAD_SPEED": "1500000",
@@ -10,24 +11,28 @@
 		"*": [
 			"$(MODULES)/drivers/neopixel/*",
 			"$(MODULES)/drivers/neopixel/esp32/*",
-			
-			"$(MODULES)/pins/digital/monitor/*",
-			"$(MODULES)/pins/digital/monitor/esp32/*",
+
+			"$(MODULES)/drivers/mpu6886/*",
+			"../m5stack_fire/m5button"
 		],
 		"setup/target": "./setup-target"
 	},
 	"preload": [
-		"monitor",
-		"setup/target",
-		"neopixel"
+		"m5button",
+		"mpu6886",
+		"neopixel",
+		"setup/target"
 	],
 	"defines": {
+		"i2c":{
+			"sda_pin": 25,
+			"scl_pin": 21
+		},
 		"neopixel": {
-			"length": 1,
+			"length": 25,
 			"pin": 27,
-			"order": "#RGB",
+			"order": "#GRB",
 			"rmt_channel": "RMT_CHANNEL_0"
-		}
-	}	
+		},
+	}
 }
-

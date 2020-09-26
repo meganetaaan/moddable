@@ -11,52 +11,55 @@
  *   Mountain View, CA 94042, USA.
  *
  */
-import NeoPixel from "neopixel";
-import Timer from "timer";
-import MPU6886 from "mpu6886";
 
-const state = {};
+if (!globalThis.lights || !globalThis.accelerometer || !globalThis.button)
+	throw new Error("this M5 example requires lights, accelerometer, and a button");
 
-state.accelerometerGyro = new MPU6886({
-	sda: 25,
-	scl: 21
-});
+let random = false;
 
-const np = new NeoPixel({
-	length: 25,
-	pin: 27,
-	order: "RGB"
-});
 
-global.accelerometer = {
-	onreading: nop
-}
+let brightness = 126;
+lights.brightness = brightness;
 
-accelerometer.start = function (frequency) {
-	accelerometer.stop();
-	state.accelerometerTimerID = Timer.repeat(id => {
-		state.accelerometerGyro.configure({
-			operation: "accelerometer"
-		});
-		const sample = state.accelerometerGyro.sample();
-		if (sample) {
-			sample.y *= -1;
-			sample.z *= -1;
-			accelerometer.onreading(sample);
-		}
-	}, frequency);
-}
+let buttonPressed = false;
 
-accelerometer.stop = function () {
-	if (undefined !== state.accelerometerTimerID)
-		Timer.clear(state.accelerometerTimerID);
-	delete state.accelerometerTimerID;
+accelerometer.onreading = function(values) {
+	if (random) {
+		// random colours
+		for (let i = 0, length = lights.length; i < length; i++)
+			lights.setPixel(i, lights.makeRGB(255 * Math.random(), 255 * Math.random(), 255 * Math.random()));
+	}
+	else {
+		// Change colour of lights depending on orientation
+		const x = Math.min(Math.max(values.x, -1), 1) / 2;
+		const y = Math.min(Math.max(values.y, -1), 1) / 2;
+		const z = Math.min(Math.max(values.z, -1), 1) / 2;
+		lights.fill(lights.makeRGB((128 + x * 255) | 0, (128 + y * 255) | 0, (128 + z * 255) | 0));
+	}
+
+	if (buttonPressed) {
+		// adjust brightness
+		brightness += 5;
+		if (brightness >= 255)
+			brightness = 1;
+		lights.brightness = brightness;
+	}
+
+	lights.update();
 }
 
 accelerometer.start(50);
 
-// Change colour of 5x5 matrix depending on orientation
-accelerometer.onreading = function (values) {
-	np.fill(np.makeRGB(127 + values.x * 128, 127 + values.y * 128, 127 + values.z * 128));
-	np.update();
+// double click of button toggles random lights
+let last = 0;
+button.a.onChanged = function() {
+	buttonPressed = !button.a.read();
+	if (!buttonPressed)
+		return;
+
+	const now = Date.now();
+	if ((now - last) < 500)
+		random = !random;
+
+	last = now;
 }
