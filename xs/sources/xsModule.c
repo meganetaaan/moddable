@@ -43,7 +43,6 @@
 
 static void fxCompleteModule(txMachine* the, txSlot* realm, txSlot* module, txSlot* exception);
 static void fxFulfillImport(txMachine* the, txSlot* realm, txSlot* module);
-static void fxFulfillModule(txMachine* the);
 static txSlot* fxGetModule(txMachine* the, txSlot* realm, txID moduleID);
 static txInteger fxGetModuleStatus(txMachine* the, txSlot* realm, txSlot* module);
 static txSlot* fxLinkModule(txMachine* the, txSlot* realm, txID moduleID, txSlot* name);
@@ -51,7 +50,6 @@ static void fxOrderModule(txMachine* the, txSlot* realm, txSlot* module);
 static txSlot* fxQueueModule(txMachine* the, txSlot* realm, txID moduleID);
 static void fxRecurseExports(txMachine* the, txSlot* realm, txID moduleID, txSlot* circularities, txSlot* exports);
 static void fxRejectImport(txMachine* the, txSlot* realm, txSlot* module);
-static void fxRejectModule(txMachine* the);
 static void fxResolveExports(txMachine* the, txSlot* realm, txSlot* module);
 static void fxResolveFrom(txMachine* the, txSlot* realm, txID moduleID, txSlot* name);
 static void fxResolveLocals(txMachine* the, txSlot* realm, txSlot* module);
@@ -299,7 +297,6 @@ void fxExecuteModulesSync(txMachine* the, txSlot* realm, txFlag flag)
 	txSlot* module;
 	txSlot* property;
 	txSlot* slot;
-	txSlot* result;
 	while ((module = *waitingAddress)) {
 		property = mxModuleInitialize(module);
 		if (property->kind == XS_REFERENCE_KIND) {
@@ -340,7 +337,6 @@ void fxExecuteModulesSync(txMachine* the, txSlot* realm, txFlag flag)
 					mxPushSlot(mxModuleExecute(module));
 					mxCall();
 					mxRunCount(0);
-					result = the->stack;
 					mxPop();
 					fxCompleteModule(the, realm, module->value.reference, C_NULL);
 					mxModuleMeta(module)->next = C_NULL;
@@ -1483,8 +1479,8 @@ void fx_Compartment(txMachine* the)
 	realm = mxModuleInstanceInternal(module)->value.module.realm;
 	filter = mxAvailableModules(realm)->value.reference;
 	mxTry(the) {
-		if (the->sharedMachine == C_NULL)
-			mxTypeError("no compartments");
+// 		if (the->sharedMachine == C_NULL)
+// 			mxTypeError("no compartments");
 		if (mxIsUndefined(mxTarget))
 			mxTypeError("call Compartment");
 			

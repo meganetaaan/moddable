@@ -1020,7 +1020,6 @@ void fx_String_prototype_replace(txMachine* the)
 
 void fx_String_prototype_replaceAll(txMachine* the)
 {
-	txString string;
 	txSlot* match;
 	txSlot* function = C_NULL;
 	txSlot* replace;
@@ -1033,7 +1032,7 @@ void fx_String_prototype_replaceAll(txMachine* the)
 
 	if (fx_String_prototype_withRegexp(the, mxID(_Symbol_replace), 1, 2))
 		return;
-	string = fxToString(the, mxThis);
+	fxToString(the, mxThis);
 	if (mxArgc <= 0)
 		mxPushUndefined();
 	else
@@ -1593,14 +1592,14 @@ void fx_String_prototype_iterator(txMachine* the)
 	txString string = fxCoerceToString(the, mxThis);
 	txSlot* property;
 	mxPush(mxStringIteratorPrototype);
-	property = fxLastProperty(the, fxNewIteratorInstance(the, mxThis));
-	property = fxNextIntegerProperty(the, property, fxUnicodeLength(string), mxID(_length), XS_GET_ONLY);
+	property = fxLastProperty(the, fxNewIteratorInstance(the, mxThis, mxID(_String)));
+	property = fxNextIntegerProperty(the, property, fxUnicodeLength(string), XS_NO_ID, XS_INTERNAL_FLAG | XS_GET_ONLY);
 	mxPullSlot(mxResult);
 }
 
 void fx_String_prototype_iterator_next(txMachine* the)
 {
-	txSlot* iterator = fxCheckIteratorInstance(the, mxThis);
+	txSlot* iterator = fxCheckIteratorInstance(the, mxThis, mxID(_String));
 	txSlot* result = iterator->next;
 	txSlot* iterable = result->next;
 	txSlot* index = iterable->next;

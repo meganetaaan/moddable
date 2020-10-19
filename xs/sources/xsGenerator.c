@@ -44,15 +44,10 @@ static void fxNewGeneratorResult(txMachine* the, txBoolean done);
 static txSlot* fxCheckGeneratorInstance(txMachine* the, txSlot* slot);
 static void fx_Generator_prototype_aux(txMachine* the, txFlag status);
 
-static void fxAsyncGeneratorRejectAwait(txMachine* the);
-static void fxAsyncGeneratorRejectYield(txMachine* the);
-static void fxAsyncGeneratorResolveAwait(txMachine* the);
-static void fxAsyncGeneratorResolveYield(txMachine* the);
 static void fxAsyncGeneratorStep(txMachine* the, txSlot* generator, txFlag status);
 static txSlot* fxCheckAsyncGeneratorInstance(txMachine* the, txSlot* slot);
 static void fx_AsyncGenerator_prototype_aux(txMachine* the, txFlag status);
 
-static void fxAsyncFromSyncIteratorDone(txMachine* the);
 static txSlot* fxCheckAsyncFromSyncIteratorInstance(txMachine* the, txSlot* slot);
 static void fx_AsyncFromSyncIterator_prototype_aux(txMachine* the, txFlag status);
 
@@ -570,7 +565,6 @@ void fx_AsyncGenerator_prototype_aux(txMachine* the, txFlag status)
 	txSlot* stack = the->stack;
 	txSlot* resolveFunction;
 	txSlot* rejectFunction;
-	txSlot* promise;
 	txSlot* slot;
 	txSlot* generator;
 	txSlot* queue;
@@ -580,10 +574,10 @@ void fx_AsyncGenerator_prototype_aux(txMachine* the, txFlag status)
 	mxTemporary(resolveFunction);
 	mxTemporary(rejectFunction);
 	mxPush(mxPromiseConstructor);
-	promise = fxNewPromiseCapability(the, resolveFunction, rejectFunction);
+	fxNewPromiseCapability(the, resolveFunction, rejectFunction);
 	mxPullSlot(mxResult);
 #ifdef mxPromisePrint
-	fprintf(stderr, "fx_AsyncGenerator_prototype_aux %d\n", promise->next->ID);
+	fprintf(stderr, "fx_AsyncGenerator_prototype_aux %d\n", mxResult->value.reference->next->ID);
 #endif
 	{
 		mxTry(the) {
@@ -751,7 +745,6 @@ void fx_AsyncFromSyncIterator_prototype_aux(txMachine* the, txFlag status)
 	txSlot* stack = the->stack;
 	txSlot* resolveFunction;
     txSlot* rejectFunction;
-	txSlot* promise;
 	txSlot* slot;
 	txSlot* instance;
 	txSlot* iterator;
@@ -760,10 +753,10 @@ void fx_AsyncFromSyncIterator_prototype_aux(txMachine* the, txFlag status)
 	mxTemporary(resolveFunction);
 	mxTemporary(rejectFunction);
 	mxPush(mxPromiseConstructor);
-	promise = fxNewPromiseCapability(the, resolveFunction, rejectFunction);
+	fxNewPromiseCapability(the, resolveFunction, rejectFunction);
 	mxPullSlot(mxResult);
 #ifdef mxPromisePrint
-	fprintf(stderr, "fx_AsyncFromSyncIterator_prototype_aux %d %d\n", promise->next->ID, status);
+	fprintf(stderr, "fx_AsyncFromSyncIterator_prototype_aux %d %d\n", mxResult->value.reference->next->ID, status);
 #endif
     {
 		mxTry(the) {

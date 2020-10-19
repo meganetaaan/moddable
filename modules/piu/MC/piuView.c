@@ -539,6 +539,7 @@ void PiuViewEnd(PiuView* self)
 	Poco poco = (*self)->poco;
 #ifdef piuGPU
 	PocoDrawingEnd(poco, poco->pixels, poco->pixelsLength, PiuViewReceiver, self);
+	pocoInstrumentationAdjust(FramesDrawn, +1);
 #else
 	xsMachine* the = (*self)->the;
 	PiuRegion* dirty = (*self)->dirty;
@@ -1328,7 +1329,8 @@ void PiuView_onDisplayReady(xsMachine* the)
 	PiuView* self = PIU(View, xsThis);
 	PiuApplication* application = (*self)->application;
 	(*self)->ready = 1;
-	PiuViewUpdate(self, application);
+	PiuView_onIdle(the);
+// 	PiuViewUpdate(self, application);
 #endif		
 }
 
@@ -1336,8 +1338,12 @@ void PiuView_onIdle(xsMachine* the)
 {
 	PiuView* self = PIU(View, xsThis);
 	PiuApplication* application = (*self)->application;
-	if (!application) return;
 	xsVars(2);
+	if (!application) return;
+// #ifdef piuGPU
+// 	if (!(*self)->ready)
+// 		return;
+// #endif		
 	(*self)->updating = 1;
 	(*self)->idleTicks = PiuViewTicks(self);
 	PiuApplicationDeferContents(the, application);
