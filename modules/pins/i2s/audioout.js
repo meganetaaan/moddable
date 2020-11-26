@@ -40,6 +40,7 @@ class AudioOut extends Mixer {
 	start() @ "xs_audioout_start"
 	stop() @ "xs_audioout_stop"
 	get mix() {}		// unavailable
+	getElementCount(stream) @ "xs_audioout_element_count"
 }
 
 export default AudioOut;

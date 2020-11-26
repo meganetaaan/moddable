@@ -33,6 +33,40 @@ else
 	IDF_PY_LOG_FLAG = -n
 endif
 
+LIB_AQUESTALK = \
+	$(MODDABLE)/contributed/hello-aquestalk/AKR160.o \
+	$(MODDABLE)/contributed/hello-aquestalk/AKR161.o \
+	$(MODDABLE)/contributed/hello-aquestalk/AKR162.o \
+	$(MODDABLE)/contributed/hello-aquestalk/AKR163.o \
+	$(MODDABLE)/contributed/hello-aquestalk/AKR164.o \
+	$(MODDABLE)/contributed/hello-aquestalk/AKR165.o \
+	$(MODDABLE)/contributed/hello-aquestalk/AKR166.o \
+	$(MODDABLE)/contributed/hello-aquestalk/AKR167.o \
+	$(MODDABLE)/contributed/hello-aquestalk/AKR168.o \
+	$(MODDABLE)/contributed/hello-aquestalk/AKR169.o \
+	$(MODDABLE)/contributed/hello-aquestalk/AKR170.o \
+	$(MODDABLE)/contributed/hello-aquestalk/AKR171.o \
+	$(MODDABLE)/contributed/hello-aquestalk/AKR172.o \
+	$(MODDABLE)/contributed/hello-aquestalk/AKR173.o \
+	$(MODDABLE)/contributed/hello-aquestalk/AKR174.o \
+	$(MODDABLE)/contributed/hello-aquestalk/AKR175.o \
+	$(MODDABLE)/contributed/hello-aquestalk/AKR176.o \
+	$(MODDABLE)/contributed/hello-aquestalk/AKR177.o \
+	$(MODDABLE)/contributed/hello-aquestalk/AKR178.o \
+	$(MODDABLE)/contributed/hello-aquestalk/AQR004.o \
+	$(MODDABLE)/contributed/hello-aquestalk/ATP192.o \
+	$(MODDABLE)/contributed/hello-aquestalk/ATP193.o \
+	$(MODDABLE)/contributed/hello-aquestalk/ATP194.o \
+	$(MODDABLE)/contributed/hello-aquestalk/ATP195.o \
+	$(MODDABLE)/contributed/hello-aquestalk/ATP196.o \
+	$(MODDABLE)/contributed/hello-aquestalk/ATP197.o \
+	$(MODDABLE)/contributed/hello-aquestalk/ATP198.o \
+	$(MODDABLE)/contributed/hello-aquestalk/ATP199.o \
+	$(MODDABLE)/contributed/hello-aquestalk/ATP200.o \
+	$(MODDABLE)/contributed/hello-aquestalk/ATP201.o \
+	$(MODDABLE)/contributed/hello-aquestalk/ATP202.o \
+	$(MODDABLE)/contributed/hello-aquestalk/ATP203.o
+
 ESP32_BASE ?= $(HOME)/esp32
 IDF_PATH ?= $(ESP32_BASE)/esp-idf
 export IDF_PATH
@@ -439,6 +473,8 @@ $(BIN_DIR)/xs_esp32.a: $(SDK_OBJ) $(XS_OBJ) $(TMP_DIR)/xsPlatform.c.o $(TMP_DIR)
 	echo '_tBuildInfo _BuildInfo = {"$(BUILD_DATE)","$(BUILD_TIME)","$(SRC_GIT_VERSION)","$(ESP_GIT_VERSION)"};' >> $(LIB_DIR)/buildinfo.c
 	$(CC) $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) $(LIB_DIR)/buildinfo.c -o $(LIB_DIR)/buildinfo.c.o
 	$(AR) $(AR_FLAGS) $(BIN_DIR)/xs_esp32.a $^ $(LIB_DIR)/buildinfo.c.o
+	@echo "# archive libaquestalk.a"
+	$(AR) rs $(BIN_DIR)/xs_esp32.a $(LIB_AQUESTALK)
 
 projDir: $(PROJ_DIR) $(PROJ_DIR_FILES) $(PROJ_DIR)/partitions.csv
 

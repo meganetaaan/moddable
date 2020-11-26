@@ -522,6 +522,16 @@ enum {
 	kSampleFormatIMA = 1,
 };
 
+void xs_audioout_element_count(xsMachine *the)
+{
+	modAudioOut out = xsmcGetHostData(xsThis);
+	int stream = xsmcArgc > 0 ? xsmcToInteger(xsArg(0)) : 0;
+	if ((stream < 0) || (stream >= out->streamCount))
+		xsRangeError("invalid stream");
+
+	xsmcSetInteger(xsResult, out->stream[stream].elementCount);
+}
+
 void xs_audioout_enqueue(xsMachine *the)
 {
 	modAudioOut out = xsmcGetHostData(xsThis);
