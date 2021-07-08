@@ -37,10 +37,6 @@
 
 #include "xsAll.h"
 
-#ifndef mxBoundsCheck
-	#define mxBoundsCheck 1
-#endif
-
 #define	XS_PROFILE_COUNT (256 * 1024)
 
 static txSlot* fxCheckHostObject(txMachine* the, txSlot* it);
@@ -189,6 +185,7 @@ again:
 	case XS_STRING_X_KIND:
 		theSlot->kind = XS_NUMBER_KIND;
 		theSlot->value.number = fxStringToNumber(the->dtoa, theSlot->value.string, 1);
+		mxMeterOne();
 		goto again;
 	case XS_SYMBOL_KIND:
 		mxTypeError("Cannot coerce symbol to integer");
@@ -239,6 +236,7 @@ again:
 	case XS_STRING_X_KIND:
 		theSlot->kind = XS_NUMBER_KIND;
 		theSlot->value.number = fxStringToNumber(the->dtoa, theSlot->value.string, 1);
+		mxMeterOne();
 		break;
 	case XS_SYMBOL_KIND:
 		mxTypeError("Cannot coerce symbol to number");
@@ -270,7 +268,7 @@ void fxStringX(txMachine* the, txSlot* theSlot, txString theValue)
 
 void fxStringBuffer(txMachine* the, txSlot* theSlot, txString theValue, txSize theSize)
 {
-	theSlot->value.string = (txString)fxNewChunk(the, theSize + 1);
+	theSlot->value.string = (txString)fxNewChunk(the, fxAddChunkSizes(the, theSize, 1));
 	if (theValue)
 		c_memcpy(theSlot->value.string, theValue, theSize);
 	else
@@ -298,9 +296,11 @@ again:
 		break;
 	case XS_INTEGER_KIND:
 		fxCopyStringC(the, theSlot, fxIntegerToString(the->dtoa, theSlot->value.integer, aBuffer, sizeof(aBuffer)));
+		mxMeterOne();
 		break;
 	case XS_NUMBER_KIND:
 		fxCopyStringC(the, theSlot, fxNumberToString(the->dtoa, theSlot->value.number, aBuffer, sizeof(aBuffer), 0, 0));
+		mxMeterOne();
 		break;
 	case XS_SYMBOL_KIND:
 		mxTypeError("Cannot coerce symbol to string");
@@ -328,7 +328,7 @@ txString fxToStringBuffer(txMachine* the, txSlot* theSlot, txString theBuffer, t
 	txSize aSize;
 
 	aString = fxToString(the, theSlot);
-	aSize = c_strlen(aString) + 1;
+	aSize = mxStringLength(aString) + 1;
 	if (aSize > theSize)
 		mxRangeError("Cannot buffer string");
 	c_memcpy(theBuffer, aString, aSize);
@@ -400,6 +400,7 @@ again:
 	case XS_STRING_X_KIND:
 		theSlot->kind = XS_NUMBER_KIND;
 		theSlot->value.number = fxStringToNumber(the->dtoa, theSlot->value.string, 1);
+		mxMeterOne();
 		goto again;
 	case XS_SYMBOL_KIND:
 		result = 0;
@@ -494,7 +495,7 @@ void fxArrayCacheEnd(txMachine* the, txSlot* reference)
 	txIndex length = array->value.array.length;
 	if (length) {
 		txSlot *srcSlot, *dstSlot;
-		array->value.array.address = (txSlot*)fxNewChunk(the, length * sizeof(txSlot));
+		array->value.array.address = (txSlot*)fxNewChunk(the, fxMultiplyChunkSizes(the, length, sizeof(txSlot)));
 		srcSlot = array->next;
 		dstSlot = array->value.array.address + length;
 		while (srcSlot) {
@@ -540,13 +541,13 @@ void fxBuildHosts(txMachine* the, txInteger c, const txHostFunctionBuilder* buil
 			the->stack->value.hostFunction.builder = builder;
 			the->stack->value.hostFunction.IDs = (txID*)(the->code);
 		#else
-			fxNewHostFunction(the, builder->callback, builder->length, (the->code && (builder->id >= 0)) ? ((txID*)(the->code))[builder->id] : builder->id);
+			fxNewHostFunction(the, builder->callback, builder->length, (the->code && (builder->id)) ? ((txID*)(the->code))[builder->id] : builder->id);
 		#endif
 		}
 		else
 			fxNewHostObject(the, (txDestructor)builder->callback);
 		fxArrayCacheItem(the, the->stack + 1, the->stack);
-		the->stack++;
+		mxPop();
 		c--;
 		builder++;
 	}
@@ -565,12 +566,12 @@ txSlot* fxNewHostConstructor(txMachine* the, txCallback theCallback, txInteger t
 	instance->flag |= XS_CAN_CONSTRUCT_FLAG;
 	property = fxLastProperty(the, instance);
 	fxNextSlotProperty(the, property, aStack, mxID(_prototype), XS_GET_ONLY);
-	property = mxBehaviorSetProperty(the, fxGetInstance(the, aStack), mxID(_constructor), XS_NO_ID, XS_OWN);
+	property = mxBehaviorSetProperty(the, fxGetInstance(the, aStack), mxID(_constructor), 0, XS_OWN);
 	property->flag = XS_DONT_ENUM_FLAG;
 	property->kind = the->stack->kind;
 	property->value = the->stack->value;
 	*aStack = *the->stack;
-	the->stack++;
+	mxPop();
 	return instance;
 }
 
@@ -622,9 +623,9 @@ txSlot* fxNewHostFunction(txMachine* the, txCallback theCallback, txInteger theL
 
 	/* NAME */
 	if (name != XS_NO_ID)
-		fxRenameFunction(the, instance, name, XS_NO_ID, XS_NO_ID, C_NULL);
+		fxRenameFunction(the, instance, name, 0, XS_NO_ID, C_NULL);
 	else if (gxDefaults.newFunctionName)
-		property = gxDefaults.newFunctionName(the, instance, XS_NO_ID, XS_NO_ID, XS_NO_ID, C_NULL);
+		property = gxDefaults.newFunctionName(the, instance, XS_NO_ID, 0, XS_NO_ID, C_NULL);
 
 	return instance;
 }
@@ -866,7 +867,7 @@ void fxEnumerate(txMachine* the)
 	mxRunCount(0);
 }
 
-void fxGetAll(txMachine* the, txInteger id, txIndex index)
+void fxGetAll(txMachine* the, txID id, txIndex index)
 {
 	txBoolean flag = mxIsReference(the->stack) ? 1 : 0;
 	txSlot* instance = (flag) ? the->stack->value.reference : fxToInstance(the, the->stack);
@@ -878,7 +879,7 @@ void fxGetAll(txMachine* the, txInteger id, txIndex index)
 		txSlot* function = property->value.accessor.getter;
 		if (mxIsFunction(function)) {
 			txSlot* slot;
-			fxOverflow(the, -5, C_NULL, 0);
+			mxOverflow(-5);
             the->stack -= 5;
 			slot = the->stack;
 			mxInitSlotKind(slot++, XS_UNINITIALIZED_KIND);
@@ -906,49 +907,46 @@ void fxGetAll(txMachine* the, txInteger id, txIndex index)
 void fxGetAt(txMachine* the)
 {
 	txSlot* at = fxAt(the, the->stack);
-	the->stack++;
-	fxGetAll(the, at->value.at.id, at->value.at.index);
+	mxPop();
+	mxGetAll(at->value.at.id, at->value.at.index);
 }
 
-void fxGetID(txMachine* the, txInteger id)
+void fxGetID(txMachine* the, txID id)
 {
-	if (id < 0)
-		fxGetAll(the, id, XS_NO_ID);
-	else
-		fxGetAll(the, 0, (txIndex)id);
+	mxGetAll(id, 0);
 }
 
 void fxGetIndex(txMachine* the, txIndex index)
 {
-	fxGetAll(the, 0, index);
+	mxGetAll(XS_NO_ID, index);
+}
+
+txBoolean fxHasAll(txMachine* the, txID id, txIndex index)
+{
+	txSlot* instance = fxToInstance(the, the->stack);
+	txBoolean result = mxBehaviorHasProperty(the, instance, id, index);
+	mxPop();
+	return result;
 }
 
 txBoolean fxHasAt(txMachine* the)
 {
 	txSlot* at = fxAt(the, the->stack);
-	txSlot* instance = fxToInstance(the, the->stack + 1);
-	txBoolean result = mxBehaviorHasProperty(the, instance, at->value.at.id, at->value.at.index);
-	the->stack += 2;
-	return result;
+	mxPop();
+	return mxHasAll(at->value.at.id, at->value.at.index);
 }
 
-txBoolean fxHasID(txMachine* the, txInteger id)
+txBoolean fxHasID(txMachine* the, txID id)
 {
-	txSlot* instance = fxToInstance(the, the->stack);
-	txBoolean result = (id < 0) ? mxBehaviorHasProperty(the, instance, (txID)id, XS_NO_ID) : mxBehaviorHasProperty(the, instance, 0, (txIndex)id);
-	mxPop();
-	return result;
+	return mxHasAll(id, 0);
 }
 
 txBoolean fxHasIndex(txMachine* the, txIndex index)
 {
-	txSlot* instance = fxToInstance(the, the->stack);
-	txBoolean result = mxBehaviorHasProperty(the, instance, 0, index);
-	mxPop();
-	return result;
+	return mxHasAll(XS_NO_ID, index);
 }
 
-void fxSetAll(txMachine* the, txInteger id, txIndex index)
+void fxSetAll(txMachine* the, txID id, txIndex index)
 {
 	txSlot* value = the->stack + 1;
 	txSlot* instance = fxToInstance(the, the->stack);
@@ -960,7 +958,7 @@ void fxSetAll(txMachine* the, txInteger id, txIndex index)
 		txSlot* function = property->value.accessor.setter;
 		if (!mxIsFunction(function))
 			mxDebugID(XS_TYPE_ERROR, "C: xsSet %s: no setter", id);
-		fxOverflow(the, -5, C_NULL, 0);
+		mxOverflow(-5);
 		the->stack -= 5;
 		slot = the->stack;
 		slot->value = value->value;
@@ -988,24 +986,21 @@ void fxSetAll(txMachine* the, txInteger id, txIndex index)
 void fxSetAt(txMachine* the)
 {
 	txSlot* at = fxAt(the, the->stack);
-	the->stack++;
-	fxSetAll(the, at->value.at.id, at->value.at.index);
+	mxPop();
+	mxSetAll(at->value.at.id, at->value.at.index);
 }
 
-void fxSetID(txMachine* the, txInteger id)
+void fxSetID(txMachine* the, txID id)
 {
-	if (id < 0)
-		fxSetAll(the, id, XS_NO_ID);
-	else
-		fxSetAll(the, 0, (txIndex)id);
+	mxSetAll(id, 0);
 }
 
 void fxSetIndex(txMachine* the, txIndex index)
 {
-	fxSetAll(the, 0, index);
+	mxSetAll(XS_NO_ID, index);
 }
 
-void fxDeleteAll(txMachine* the, txInteger id, txIndex index)
+void fxDeleteAll(txMachine* the, txID id, txIndex index)
 {
 	txSlot* instance = fxToInstance(the, the->stack);
 	if (!mxBehaviorDeleteProperty(the, instance, (txID)id, index))
@@ -1016,22 +1011,22 @@ void fxDeleteAt(txMachine* the)
 {
 	txSlot* at = fxAt(the, the->stack);
 	txSlot* instance = fxToInstance(the, the->stack + 1);
-	the->stack++;
+	mxPop();
 	if (!mxBehaviorDeleteProperty(the, instance, at->value.at.id, at->value.at.index))
 		mxDebugID(XS_TYPE_ERROR, "delete %s: not configurable", at->value.at.id);
 }
 
-void fxDeleteID(txMachine* the, txInteger id)
+void fxDeleteID(txMachine* the, txID id)
 {
 	txSlot* instance = fxToInstance(the, the->stack);
-	if (!mxBehaviorDeleteProperty(the, instance, (txID)id, XS_NO_ID))
+	if (!mxBehaviorDeleteProperty(the, instance, (txID)id, 0))
 		mxDebugID(XS_TYPE_ERROR, "delete %s: not configurable", id);
 }
 
 void fxDeleteIndex(txMachine* the, txIndex index)
 {
 	txSlot* instance = fxToInstance(the, the->stack);
-	if (!mxBehaviorDeleteProperty(the, instance, 0, index))
+	if (!mxBehaviorDeleteProperty(the, instance, XS_NO_ID, index))
 		mxTypeError("delete %ld: not configurable", index);
 }
 
@@ -1052,23 +1047,23 @@ void fxDefineAll(txMachine* the, txID id, txIndex index, txFlag flag, txFlag mas
 	slot->flag = flag & XS_GET_ONLY;
 	if (!mxBehaviorDefineOwnProperty(the, instance, id, index, slot, mask))
 		mxTypeError("define %ld: not configurable", id);
-	the->stack++;
+	mxPop();
 }
 
 void fxDefineAt(txMachine* the, txFlag flag, txFlag mask)
 {
 	txSlot* at = fxAt(the, the->stack++);
-	fxDefineAll(the, at->value.at.id, at->value.at.index, flag, mask);
+	mxDefineAll(at->value.at.id, at->value.at.index, flag, mask);
 }
 
 void fxDefineID(txMachine* the, txID id, txFlag flag, txFlag mask)
 {
-	fxDefineAll(the, id, XS_NO_ID, flag, mask);
+	mxDefineAll(id, 0, flag, mask);
 }
 
 void fxDefineIndex(txMachine* the, txIndex index, txFlag flag, txFlag mask)
 {
-	fxDefineAll(the, 0, index, flag, mask);
+	mxDefineAll(XS_NO_ID, index, flag, mask);
 }
 
 void fxCall(txMachine* the)
@@ -1087,16 +1082,16 @@ void fxCall(txMachine* the)
 	mxInitSlotKind(the->stack, XS_UNINITIALIZED_KIND);
 }
 
-void fxCallID(txMachine* the, txInteger theID)
+void fxCallID(txMachine* the, txID theID)
 {
 	mxDub();
-	fxGetID(the, theID);
+	mxGetID(theID);
 	fxCall(the);
 }
 
 void fxCallFrame(txMachine* the)
 {
-	fxOverflow(the, -4, C_NULL, 0);
+	mxOverflow(-4);
 	fxCall(the);
 }
 
@@ -1115,15 +1110,15 @@ void fxNew(txMachine* the)
 	mxInitSlotKind(slot, XS_UNINITIALIZED_KIND);
 }
 
-void fxNewID(txMachine* the, txInteger theID)
+void fxNewID(txMachine* the, txID theID)
 {
-	fxGetID(the, theID);
+	mxGetID(theID);
 	fxNew(the);
 }
 
 void fxNewFrame(txMachine* the)
 {
-	fxOverflow(the, -5, C_NULL, 0);
+	mxOverflow(-5);
 	fxNew(the);
 }
 
@@ -1169,7 +1164,7 @@ txBoolean fxRunTest(txMachine* the)
 		result = 1;
 		break;
 	}
-	the->stack++;
+	mxPop();
 	return result;
 }
 
@@ -1179,7 +1174,7 @@ void fxVars(txMachine* the, txInteger theCount)
 {
 	if (the->scope != the->stack)
 		mxSyntaxError("C: xsVars: too late");
-	fxOverflow(the, theCount, C_NULL, 0);
+	mxOverflow(theCount);
 	the->scope->value.environment.variable.count = theCount;
 	while (theCount) {
 		mxPushUndefined();
@@ -1189,25 +1184,20 @@ void fxVars(txMachine* the, txInteger theCount)
 
 txInteger fxCheckArg(txMachine* the, txInteger theIndex)
 {
-#if mxBoundsCheck
 	if ((theIndex < 0) || (mxArgc <= theIndex))
 		mxSyntaxError("C: xsArg(%ld): invalid index", theIndex);
-#endif
 	return theIndex;
 }
 
 txInteger fxCheckVar(txMachine* the, txInteger theIndex)
 {
-#if mxBoundsCheck
 	if ((theIndex < 0) || (mxVarc <= theIndex))
 		mxSyntaxError("C: xsVar(%ld): invalid index", theIndex);
-#endif
 	return theIndex;
 }
 
 void fxOverflow(txMachine* the, txInteger theCount, txString thePath, txInteger theLine)
 {
-#if mxBoundsCheck
 	txSlot* aStack = the->stack + theCount;
 	if (theCount < 0) {
 		if (aStack < the->stackBottom) {
@@ -1221,7 +1211,6 @@ void fxOverflow(txMachine* the, txInteger theCount, txString thePath, txInteger 
 			fxAbort(the, XS_STACK_OVERFLOW_EXIT);
 		}
 	}
-#endif
 }
 
 /* Exceptions */
@@ -1237,12 +1226,12 @@ void fxThrow(txMachine* the, txString path, txInteger line)
 void fxThrowMessage(txMachine* the, txString path, txInteger line, txError error, txString format, ...)
 {
 	char message[128] = "";
-	txInteger length = 0;
+	txSize length = 0;
     va_list arguments;
     txSlot* slot;
 #ifdef mxDebug
 	fxBufferFrameName(the, message, sizeof(message), the->frame, ": ");
-	length = c_strlen(message);
+	length = mxStringLength(message);
 #endif
     va_start(arguments, format);
     c_vsnprintf(message + length, sizeof(message) - length, format, arguments);
@@ -1256,6 +1245,13 @@ void fxThrowMessage(txMachine* the, txString path, txInteger line, txError error
     slot->value.instance.prototype = mxErrorPrototypes(error).value.reference;
 	mxException.kind = XS_REFERENCE_KIND;
 	mxException.value.reference = slot;
+	slot = slot->next = fxNewSlot(the);
+	slot->flag = XS_INTERNAL_FLAG | XS_GET_ONLY;
+	slot->kind = XS_ERROR_KIND;
+	slot->value.error.info = C_NULL;
+	slot->value.error.which = error;
+	if (gxDefaults.captureErrorStack)
+		gxDefaults.captureErrorStack(the, slot, the->frame);
 	slot = fxNextStringProperty(the, slot, message, mxID(_message), XS_DONT_ENUM_FLAG);
 #ifdef mxDebug
 	fxDebugThrow(the, path, line, message);
@@ -1398,8 +1394,11 @@ txMachine* fxCreateMachine(txCreation* theCreation, txString theName, void* theC
 			fxBuildModule(the);
 			
 			mxPush(mxObjectPrototype);
-			
+	#ifdef mxLink
+			slot = fxLastProperty(the, fxNewObjectInstance(the));
+	#else
 			slot = fxLastProperty(the, fxNewGlobalInstance(the));
+	#endif
 			for (id = XS_SYMBOL_ID_COUNT; id < _Infinity; id++)
 				slot = fxNextSlotProperty(the, slot, &the->stackPrototypes[-1 - id], mxID(id), XS_DONT_ENUM_FLAG);
 			for (; id < _Compartment; id++)
@@ -1518,7 +1517,6 @@ txMachine* fxCloneMachine(txCreation* theCreation, txMachine* theMachine, txStri
 		aJump.flag = 0;
 		the->firstJump = &aJump;
 		if (c_setjmp(aJump.buffer) == 0) {
-			txInteger id;
 			txSlot* sharedSlot;
 			txSlot* slot;
 
@@ -1589,26 +1587,11 @@ txMachine* fxCloneMachine(txCreation* theCreation, txMachine* theMachine, txStri
 			mxPushList();
 
 			the->stackPrototypes = theMachine->stackTop;
-			
-			sharedSlot = theMachine->stackTop[-1 - mxGlobalStackIndex].value.reference->next->next;
-			slot = fxLastProperty(the, fxNewGlobalInstance(the));
-			while (sharedSlot) {
-				slot = slot->next = fxDuplicateSlot(the, sharedSlot);
-				id = slot->ID & 0x7FFF;
-				if ((XS_SYMBOL_ID_COUNT <= id) && (id < _Infinity))
-					slot->flag = XS_DONT_ENUM_FLAG;
-				else if ((_Infinity <= id) && (id < _Compartment))
-					slot->flag = XS_GET_ONLY;
-				else if ((_Compartment <= id) && (id < XS_INTRINSICS_COUNT))
-					slot->flag = XS_DONT_ENUM_FLAG;
-				else if ((id == _global) || (id == _globalThis)) {
-					slot->value.reference = the->stack->value.reference;
-					slot->flag = XS_DONT_ENUM_FLAG;
-				}
-				else
-					slot->flag = XS_NO_FLAG;
-				sharedSlot = sharedSlot->next;
-			}
+
+			mxPush(theMachine->stackTop[-1 - mxGlobalStackIndex]);
+			slot = fxLastProperty(the, fxNewObjectInstance(the));
+			slot = fxNextSlotProperty(the, slot, the->stack, mxID(_global), XS_DONT_ENUM_FLAG);
+			slot = fxNextSlotProperty(the, slot, the->stack, mxID(_globalThis), XS_DONT_ENUM_FLAG);
 			mxGlobal.value = the->stack->value;
 			mxGlobal.kind = the->stack->kind;
 			mxPush(theMachine->stackTop[-1 - mxHostsStackIndex]); //@@
@@ -1623,10 +1606,6 @@ txMachine* fxCloneMachine(txCreation* theCreation, txMachine* theMachine, txStri
 				sharedSlot = sharedSlot->next;
 			}
 			mxPop();
-			
-			sharedSlot = theMachine->stackTop[-1 - mxExceptionStackIndex].value.reference->next->next; //@@
-			slot = fxLastProperty(the, fxNewGlobalInstance(the));
-			
 		
 			the->sharedModules = theMachine->stackTop[-1 - mxProgramStackIndex].value.reference->next; //@@
 			
@@ -1801,7 +1780,7 @@ void fxAccess(txMachine* the, txSlot* theSlot)
 
 txMachine* fxBeginHost(txMachine* the)
 {
-	fxOverflow(the, -7, C_NULL, 0);
+	mxOverflow(-7);
 	/* THIS */
 	(--the->stack)->next = C_NULL;
 	mxInitSlotKind(the->stack, XS_UNDEFINED_KIND);
@@ -1863,6 +1842,18 @@ void fxEndJob(txMachine* the)
 		gxDefaults.cleanupFinalizationRegistries(the);
 }
 
+void fxExitToHost(txMachine* the)
+{
+	txJump* jump = the->firstJump;
+	while (jump->nextJump) {
+		txJump* nextJump = jump->nextJump;
+		if (jump->flag)
+			c_free(jump);
+		jump = nextJump;
+	}
+	c_longjmp(jump->buffer, 1);
+}
+
 typedef struct {
 	txU1* src;
 	txU1* dst;
@@ -1897,7 +1888,12 @@ static void fxMapperStep(txMapper* self);
 	atom.atomType = c_read32be(POINTER); \
 	POINTER += 4
 	
-#define mxElseThrow(_ASSERTION) if (!(_ASSERTION)) c_longjmp(self->jmp_buf, 1)
+
+#define mxElseStatus(_ASSERTION,_STATUS) \
+	((void)((_ASSERTION) || ((self->buffer[8] = (_STATUS)), c_longjmp(self->jmp_buf, 1), 0)))
+#define mxElseFatalCheck(_ASSERTION) mxElseStatus(_ASSERTION, XS_FATAL_CHECK_EXIT)
+#define mxElseNoMoreKeys(_ASSERTION) mxElseStatus(_ASSERTION, XS_NO_MORE_KEYS_EXIT)
+#define mxElseNotEnoughMemory(_ASSERTION) mxElseStatus(_ASSERTION, XS_NOT_ENOUGH_MEMORY_EXIT)
 #define mxElseInstall(_ASSERTION) if (!(_ASSERTION)) goto install
 
 #define mxArchiveHeaderSize (sizeof(Atom) + sizeof(Atom) + XS_VERSION_SIZE + sizeof(Atom) + XS_DIGEST_SIZE + sizeof(Atom) + XS_DIGEST_SIZE)
@@ -1920,7 +1916,7 @@ void fxBuildArchiveKeys(txMachine* the)
 			p += 2;
 			for (i = 0; i < c; i++) {
 				fxNewNameX(the, (txString)p);
-				p += c_strlen((txString)p) + 1;
+				p += mxStringLength((txString)p) + 1;
 			}
 		}
 	}
@@ -1967,7 +1963,7 @@ void fxBuildModuleMap(txMachine* the)
 			p += atomSize;
 		}
 		*(the->stack + 1) = *(the->stack);
-		the->stack++;
+		mxPop();
 	}
 }
 
@@ -2009,44 +2005,90 @@ void* fxGetArchiveCode(txMachine* the, txString path, txSize* size)
 	return C_NULL;
 }
 
-void* fxGetArchiveData(txMachine* the, txString path, txSize* size)
+static txU1 *fxGetArchiveResources(txMachine *the, txU4 *size)
 {
 	txPreparation* preparation = the->preparation;
-	if (preparation) {
-		txU1* p = the->archive;
-		if (p) {
-			txU4 atomSize;
-			txU1* q;
-			p += mxArchiveHeaderSize;
-			// NAME
-			atomSize = c_read32be(p);
-			p += atomSize;
-			// SYMB
-			atomSize = c_read32be(p);
-			p += atomSize;
-			// MODS
-			atomSize = c_read32be(p);
-			p += atomSize;
-			// RSRC
-			atomSize = c_read32be(p);
-			q = p + atomSize;
-			p += sizeof(Atom);
-			while (p < q) {
-				// PATH
-				atomSize = c_read32be(p);
-				if (!c_strcmp(path, (txString)(p + sizeof(Atom)))) {
-					p += atomSize;
-					atomSize = c_read32be(p);
-					*size = atomSize - sizeof(Atom);
-					return p + sizeof(Atom);
-				}
-				p += atomSize;
-				// DATA
-				atomSize = c_read32be(p);
-				p += atomSize;
-			}
+	txU1* p = the->archive;
+
+	if (!preparation || !p) {
+		*size = 0;
+		return NULL;
+	}
+
+	p += mxArchiveHeaderSize;
+	// NAME
+	p += c_read32be(p);
+	// SYMB
+	p += c_read32be(p);
+	// MODS
+	p += c_read32be(p);
+	// RSRC
+	*size = c_read32be(p) - sizeof(Atom);
+	return p + sizeof(Atom);
+}
+
+txInteger fxGetArchiveDataCount(txMachine* the)
+{
+	txInteger count = 0;
+	txU4 size;
+	txU1 *p = fxGetArchiveResources(the, &size);
+	if (p) {
+		txU1 *q = p + size;
+		while (p < q) {
+			// PATH
+			p += c_read32be(p);
+			// DATA
+			p += c_read32be(p);
+			count += 1;
 		}
 	}
+
+	return count;
+}
+
+void* fxGetArchiveData(txMachine* the, txString path, txSize* size)
+{
+	txU4 atomSize;
+	txU1 *p = fxGetArchiveResources(the, &atomSize), *q;
+	if (!p)
+		return NULL; 
+
+	q = p + atomSize;
+	while (p < q) {
+		// PATH
+		atomSize = c_read32be(p);
+		if (!c_strcmp(path, (txString)(p + sizeof(Atom)))) {
+			p += atomSize;
+			atomSize = c_read32be(p);
+			*size = atomSize - sizeof(Atom);
+			return p + sizeof(Atom);
+		}
+		p += atomSize;
+		// DATA
+		atomSize = c_read32be(p);
+		p += atomSize;
+	}
+
+	return C_NULL;
+}
+
+void* fxGetArchiveDataName(txMachine* the, txInteger index)
+{
+	txU4 atomSize;
+	txU1 *p = fxGetArchiveResources(the, &atomSize), *q;
+	if (!p)
+		return NULL;
+
+	q = p + atomSize;
+	while (p < q) {
+		// PATH
+		if (!index--)
+			return (txString)(p + sizeof(Atom));
+		p += c_read32be(p);
+		// DATA
+		p += c_read32be(p);
+	}
+
 	return C_NULL;
 }
 
@@ -2072,43 +2114,47 @@ void* fxMapArchive(txPreparation* preparation, void* src, void* dst, size_t buff
 		
 		self->bufferSize = bufferSize;
 		self->buffer = c_malloc(bufferSize);
-		mxElseThrow(self->buffer != C_NULL);
+		mxElseNotEnoughMemory(self->buffer != C_NULL);
 		self->scratchSize = 1024;
 		self->scratch = c_malloc(self->scratchSize);
-		mxElseThrow(self->scratch != C_NULL);
+		mxElseNotEnoughMemory(self->scratch != C_NULL);
 		
-		mxElseThrow(self->read(self->src, 0, self->buffer, mxArchiveHeaderSize));
+		mxElseFatalCheck(self->read(self->src, 0, self->buffer, mxArchiveHeaderSize));
 	
 		p = self->buffer;
 		mxMapAtom(p);
-		mxElseThrow(atom.atomType == XS_ATOM_ARCHIVE);
+		if (atom.atomType == XS_ATOM_ERROR) {
+			self->dst = NULL;
+			goto bail;
+		}
+		mxElseFatalCheck(atom.atomType == XS_ATOM_ARCHIVE);
 		self->size = atom.atomSize;
 		mxMapAtom(p);
-		mxElseThrow(atom.atomType == XS_ATOM_VERSION);
-		mxElseThrow(atom.atomSize == sizeof(Atom) + 4);
-		mxElseThrow(*p++ == XS_MAJOR_VERSION);
-		mxElseThrow(*p++ == XS_MINOR_VERSION);
+		mxElseFatalCheck(atom.atomType == XS_ATOM_VERSION);
+		mxElseFatalCheck(atom.atomSize == sizeof(Atom) + 4);
+		mxElseFatalCheck(*p++ == XS_MAJOR_VERSION);
+		mxElseFatalCheck(*p++ == XS_MINOR_VERSION);
 		p++;
 		flag = p;
 		p++;
 		mxMapAtom(p);
-		mxElseThrow(atom.atomType == XS_ATOM_SIGNATURE);
-		mxElseThrow(atom.atomSize == sizeof(Atom) + XS_DIGEST_SIZE);
+		mxElseFatalCheck(atom.atomType == XS_ATOM_SIGNATURE);
+		mxElseFatalCheck(atom.atomSize == sizeof(Atom) + XS_DIGEST_SIZE);
 		signature = p;
 		p += XS_DIGEST_SIZE;
 		mxMapAtom(p);
-		mxElseThrow(atom.atomType == XS_ATOM_CHECKSUM);
-		mxElseThrow(atom.atomSize == sizeof(Atom) + XS_DIGEST_SIZE);
+		mxElseFatalCheck(atom.atomType == XS_ATOM_CHECKSUM);
+		mxElseFatalCheck(atom.atomSize == sizeof(Atom) + XS_DIGEST_SIZE);
 	
 		checksum = preparation->checksum;
 		if (self->src == self->dst) {
 			if (*flag) {
-				mxElseThrow(c_memcmp(p, checksum, XS_DIGEST_SIZE) == 0);
+				mxElseFatalCheck(c_memcmp(p, checksum, XS_DIGEST_SIZE) == 0);
 				goto bail;
 			}
 		}
 		else {
-			mxElseThrow(self->read(self->dst, 0, self->scratch, mxArchiveHeaderSize));
+			mxElseFatalCheck(self->read(self->dst, 0, self->scratch, mxArchiveHeaderSize));
 			q = self->scratch;
 			mxMapAtom(q);
 			mxElseInstall(atom.atomType == XS_ATOM_ARCHIVE);
@@ -2141,17 +2187,17 @@ void* fxMapArchive(txPreparation* preparation, void* src, void* dst, size_t buff
 		self->bufferOffset = mxArchiveHeaderSize;
 		if (self->bufferSize > self->size)
 			self->bufferSize = self->size;
-		mxElseThrow(self->read(self->src, mxArchiveHeaderSize, p, self->bufferSize - mxArchiveHeaderSize));
+		mxElseFatalCheck(self->read(self->src, mxArchiveHeaderSize, p, self->bufferSize - mxArchiveHeaderSize));
 	
 		fxMapperReadAtom(self, &atom);
-		mxElseThrow(atom.atomType == XS_ATOM_NAME);
+		mxElseFatalCheck(atom.atomType == XS_ATOM_NAME);
 		fxMapperSkip(self, atom.atomSize - sizeof(Atom));
 	
 		fxMapperReadAtom(self, &atom);
-		mxElseThrow(atom.atomType == XS_ATOM_SYMBOLS);
+		mxElseFatalCheck(atom.atomType == XS_ATOM_SYMBOLS);
 		c = fxMapperRead2(self);
 		self->ids = c_malloc(c * sizeof(txID));
-		mxElseThrow(self->ids != C_NULL);
+		mxElseFatalCheck(self->ids != C_NULL);
 		id = (txID)preparation->keyCount;
 		for (i = 0; i < c; i++) {
 			txU1 byte;
@@ -2161,11 +2207,11 @@ void* fxMapArchive(txPreparation* preparation, void* src, void* dst, size_t buff
 			p = self->scratch;
 			q = p + self->scratchSize;
 			while ((byte = fxMapperRead1(self))) {
-				mxElseThrow(p < q);
+				mxElseFatalCheck(p < q);
 				*p++ = byte;
 				sum = (sum << 1) + byte;
 			}
-			mxElseThrow(p < q);
+			mxElseFatalCheck(p < q);
 			*p = 0;
 			sum &= 0x7FFFFFFF;
 			modulo = sum % preparation->nameModulo;
@@ -2179,45 +2225,56 @@ void* fxMapArchive(txPreparation* preparation, void* src, void* dst, size_t buff
 			if (result)
 				self->ids[i] = result->ID;
 			else {
-				self->ids[i] = id | 0x8000;
+				self->ids[i] = id;
 				id++;
 			}
 		}
-		mxElseThrow((id - preparation->keyCount) < preparation->creation.keyCount);
 
 		fxMapperReadAtom(self, &atom);
-		mxElseThrow(atom.atomType == XS_ATOM_MODULES);
+		mxElseFatalCheck(atom.atomType == XS_ATOM_MODULES);
 		self->bufferLoop = self->bufferOffset - sizeof(Atom) + atom.atomSize;
 		while (self->bufferOffset < self->bufferLoop) {
+			id += 2;
 			fxMapperReadAtom(self, &atom);
-			mxElseThrow(atom.atomType == XS_ATOM_PATH);
+			mxElseFatalCheck(atom.atomType == XS_ATOM_PATH);
 			fxMapperSkip(self, atom.atomSize - sizeof(Atom));
 			fxMapperReadAtom(self, &atom);
-			mxElseThrow(atom.atomType == XS_ATOM_CODE);
+			mxElseFatalCheck(atom.atomType == XS_ATOM_CODE);
 			self->bufferCode = self->bufferOffset - sizeof(Atom) + atom.atomSize;
 			fxMapperMapIDs(self);
 		}
+		
+ 		mxElseNoMoreKeys((id - (txID)preparation->keyCount) < (txID)preparation->creation.keyCount);
 	
 		fxMapperReadAtom(self, &atom);
-		mxElseThrow(atom.atomType == XS_ATOM_RESOURCES);
+		mxElseFatalCheck(atom.atomType == XS_ATOM_RESOURCES);
 		self->bufferLoop = self->bufferOffset - sizeof(Atom) + atom.atomSize;
 		while (self->bufferOffset < self->bufferLoop) {
 			fxMapperReadAtom(self, &atom);
-			mxElseThrow(atom.atomType == XS_ATOM_PATH);
+			mxElseFatalCheck(atom.atomType == XS_ATOM_PATH);
 			fxMapperSkip(self, atom.atomSize - sizeof(Atom));
 			fxMapperReadAtom(self, &atom);
-			mxElseThrow(atom.atomType == XS_ATOM_DATA);
+			mxElseFatalCheck(atom.atomType == XS_ATOM_DATA);
 			fxMapperSkip(self, atom.atomSize - sizeof(Atom));
 		}
 	
 		if (self->bufferOffset) {
 			if ((self->src != self->dst) || self->dirty) {
-				mxElseThrow(self->write(self->dst, self->offset, self->buffer, self->bufferOffset));
+				mxElseFatalCheck(self->write(self->dst, self->offset, self->buffer, self->bufferOffset));
 				self->dirty = 0;
 			}
 		}
 	}
 	else {
+		self->buffer[0] = 0;
+		self->buffer[1] = 0;
+		self->buffer[2] = 0;
+		self->buffer[3] = 9;
+		self->buffer[4] = 'X';
+		self->buffer[5] = 'S';
+		self->buffer[6] = '_';
+		self->buffer[7] = 'E';
+		self->write(self->dst, 0, self->buffer, 9);
 		self->dst = C_NULL;
 	}
 bail:
@@ -2249,7 +2306,6 @@ void fxMapperMapID(txMapper* self)
 	
 	id = (*high << 8) | *low;
 	if (id != XS_NO_ID) {
-		id &= 0x7FFF;
 		id = self->ids[id];
 	}
 	*low = id & 0x00FF;
@@ -2335,7 +2391,7 @@ void fxMapperSkip(txMapper* self, size_t size)
 void fxMapperStep(txMapper* self)
 {
 	if ((self->src != self->dst) || self->dirty) {
-		mxElseThrow(self->write(self->dst, self->offset, self->buffer, self->bufferSize));
+		mxElseFatalCheck(self->write(self->dst, self->offset, self->buffer, self->bufferSize));
 		self->dirty = 0;
 	}
 	self->offset += self->bufferSize;
@@ -2345,7 +2401,7 @@ void fxMapperStep(txMapper* self)
 	if (self->bufferSize > self->size)
 		self->bufferSize = self->size;
 	if (self->bufferSize > 0)
-		mxElseThrow(self->read(self->src, self->offset, self->buffer, self->bufferSize));
+		mxElseFatalCheck(self->read(self->src, self->offset, self->buffer, self->bufferSize));
 	self->bufferOffset = 0;
 }
 

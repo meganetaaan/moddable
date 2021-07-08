@@ -23,11 +23,23 @@
 !CMDSWITCHES +S
 !ENDIF
 
+PROJ_DIR_TEMPLATE = $(BUILD_DIR)\devices\esp32\xsProj-$(ESP32_SUBCLASS)
+
 !IF "$(UPLOAD_PORT)"==""
-UPLOAD_PORT = com8
+!IF [python $(PROJ_DIR_TEMPLATE)\getPort.py $(IDF_PATH)\tools > $(TMP_DIR)\_default_port.tmp 2> nul] == 0
+DEFAULT_PORT = \
+!INCLUDE $(TMP_DIR)\_default_port.tmp
+!IF [del $(TMP_DIR)\_default_port.tmp] == 0
+!ENDIF
+!ENDIF
+UPLOAD_PORT = $(DEFAULT_PORT)
 !ENDIF
 
-MODDABLE_TOOLS_DIR = $(BUILD_DIR)\bin\win\debug
+!IF "$(DEBUGGER_SPEED)"==""
+DEBUGGER_SPEED = 460800
+!ENDIF
+
+MODDABLE_TOOLS_DIR = $(BUILD_DIR)\bin\win\release
 BUILDCLUT = $(MODDABLE_TOOLS_DIR)\buildclut
 COMPRESSBMF = $(MODDABLE_TOOLS_DIR)\compressbmf
 IMAGE2CS = $(MODDABLE_TOOLS_DIR)\image2cs
@@ -54,10 +66,10 @@ all: $(LAUNCH)
 debug: $(ARCHIVE)
 	-tasklist /nh /fi "imagename eq serial2xsbug.exe" | (find /i "serial2xsbug.exe" > nul) && taskkill /f /t /im "serial2xsbug.exe" >nul 2>&1
 	tasklist /nh /fi "imagename eq xsbug.exe" | find /i "xsbug.exe" > nul || (start $(XSBUG).exe && echo Starting xsbug... && timeout /nobreak /t 7 > nul)
-	$(SERIAL2XSBUG) $(UPLOAD_PORT) 460800 8N1 -install $(ARCHIVE)
+	$(SERIAL2XSBUG) $(UPLOAD_PORT) $(DEBUGGER_SPEED) 8N1 -install $(ARCHIVE)
 	
 release: $(ARCHIVE)
-	$(SERIAL2XSBUG) $(UPLOAD_PORT) 460800 8N1 -install $(ARCHIVE)
+	$(SERIAL2XSBUG) $(UPLOAD_PORT) $(DEBUGGER_SPEED) 8N1 -install $(ARCHIVE)
 
 $(ARCHIVE): $(DATA) $(MODULES) $(RESOURCES)
 	@echo "# xsl "$(NAME)".xsa"

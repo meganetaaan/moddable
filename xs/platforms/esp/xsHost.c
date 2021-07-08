@@ -51,8 +51,8 @@
 	#if INSTRUMENT_CPULOAD
 		#include "driver/timer.h"
 
-		static uint16_t gCPUCounts[4];
-		static TaskHandle_t gIdles[2];
+		static uint16_t gCPUCounts[kTargetCPUCount * 2];
+		static TaskHandle_t gIdles[kTargetCPUCount];
 		static void IRAM_ATTR timer_group0_isr(void *para);
 	#endif
 #else
@@ -89,8 +89,12 @@
 	#endif
 		(char *)"System bytes free",
 	#if ESP32
-		(char *)"CPU 0",
-		(char *)"CPU 1",
+		#if kTargetCPUCount == 1
+			(char *)"CPU",
+		#else
+			(char *)"CPU 0",
+			(char *)"CPU 1",
+		#endif
 	#endif
 	};
 
@@ -110,7 +114,9 @@
 		(char *)" bytes",
 	#if ESP32
 		(char *)" percent",
-		(char *)" percent",
+		#if kTargetCPUCount > 1
+			(char *)" percent",
+		#endif
 	#endif
 	};
 #endif
@@ -145,7 +151,7 @@ ICACHE_RAM_ATTR uint32_t espRead32(const void *addr)
 	}
 }
 
-ICACHE_RAM_ATTR uint16_t espRead16be(const void *addr)
+uint16_t espRead16be(const void *addr)
 {
 	uint16_t result;
 	const uint32_t *p = (const uint32_t *)(~3 & (uint32_t)addr);
@@ -159,7 +165,7 @@ ICACHE_RAM_ATTR uint16_t espRead16be(const void *addr)
 	return (result >> 8) | (result << 8);
 }
 
-ICACHE_RAM_ATTR uint32_t espRead32be(const void *addr)
+uint32_t espRead32be(const void *addr)
 {
 	uint32_t result;
 	const uint32_t *p = (const uint32_t *)(~3 & (uint32_t)addr);
@@ -210,8 +216,8 @@ size_t espStrLen(const void *addr)
 int espStrCmp(const char *ap, const char *bp)
 {
 	while (true) {
-		uint8_t a = espRead8(ap);
-		uint8_t b = espRead8(bp);
+		uint8_t a = c_read8(ap);
+		uint8_t b = c_read8(bp);
 
 		if ((a != b) || !a)
 			return a - b;
@@ -224,8 +230,8 @@ int espStrCmp(const char *ap, const char *bp)
 int espStrNCmp(const char *ap, const char *bp, size_t count)
 {
 	while (count--) {
-		uint8_t a = espRead8(ap);
-		uint8_t b = espRead8(bp);
+		uint8_t a = c_read8(ap);
+		uint8_t b = c_read8(bp);
 
 		if ((a != b) || !a)
 			return a - b;
@@ -242,7 +248,7 @@ void espStrCpy(char *dst, const char *src)
 	uint8_t c;
 
 	do {
-		c = espRead8(src++);
+		c = c_read8(src++);
 		*dst++ = c;
 	} while (c);
 }
@@ -254,7 +260,7 @@ void espStrNCpy(char *dst, const char *src, size_t count)
 	if (0 == count) return;
 
 	do {
-		c = espRead8(src++);
+		c = c_read8(src++);
 		*dst++ = c;
 	} while (--count && c);
 
@@ -264,7 +270,7 @@ void espStrNCpy(char *dst, const char *src, size_t count)
 
 void espStrCat(char *dst, const char *src)
 {
-	while (0 != espRead8(dst))
+	while (0 != c_read8(dst))
 		dst++;
 
 	espStrCpy(dst, src);
@@ -272,11 +278,11 @@ void espStrCat(char *dst, const char *src)
 
 void espStrNCat(char *dst, const char *src, size_t count)
 {
-	while (0 != espRead8(dst))
+	while (0 != c_read8(dst))
 		dst++;
 
 	while (count--) {
-		char c = espRead8(src++);
+		char c = c_read8(src++);
 		if (0 == c)
 			break;
 
@@ -289,7 +295,7 @@ void espStrNCat(char *dst, const char *src, size_t count)
 char *espStrChr(const char *str, int c)
 {
 	do {
-		char value = espRead8(str);
+		char value = c_read8(str);
 		if (!value)
 			return NULL;
 
@@ -318,13 +324,13 @@ char *espStrRChr(const char *str, int c)
 
 char *espStrStr(const char *src, const char *search)
 {
-	char searchFirst = espRead8(search++);
+	char searchFirst = c_read8(search++);
 	char c;
 
 	if (0 == searchFirst)
 		return (char *)src;
 
-	while ((c = espRead8(src++))) {
+	while ((c = c_read8(src++))) {
 		const char *ap, *bp;
 		uint8_t a, b;
 
@@ -333,11 +339,11 @@ char *espStrStr(const char *src, const char *search)
 
 		ap = src, bp = search;
 		while (true) {
-			b = espRead8(bp++);
+			b = c_read8(bp++);
 			if (!b)
 				return (char *)src - 1;
 
-			a = espRead8(ap++);
+			a = c_read8(ap++);
 			if ((a != b) || !a)
 				break;
 		}
@@ -442,7 +448,7 @@ void espMemCpy(void *dst, const void *src, size_t count)
 
 	// tail
 	while (count--)
-		*d++ = espRead8(s++);
+		*d++ = c_read8(s++);
 }
 
 int espMemCmp(const void *a, const void *b, size_t count)
@@ -451,8 +457,8 @@ int espMemCmp(const void *a, const void *b, size_t count)
 	const uint8_t *b8 = b;
 
 	while (count--) {
-		uint8_t av = espRead8(a8++);
-		uint8_t bv = espRead8(b8++);
+		uint8_t av = c_read8(a8++);
+		uint8_t bv = c_read8(b8++);
 		if (av == bv)
 			continue;
 		return av - bv;
@@ -570,7 +576,7 @@ struct modTm *modGmTime(const modTime_t *timep)
 	gTM.tm_yday = t;
 
 	for (gTM.tm_mon = 0; gTM.tm_mon < 12; gTM.tm_mon++) {
-		uint8_t daysInMonth = espRead8(gDaysInMonth + gTM.tm_mon);
+		uint8_t daysInMonth = c_read8(gDaysInMonth + gTM.tm_mon);
 
 		if ((1 == gTM.tm_mon) && isLeapYear(gTM.tm_year))
 			daysInMonth = 29;
@@ -738,7 +744,7 @@ void modPrelaunch(void)
 
 void *ESP_cloneMachine(uint32_t allocation, uint32_t stackCount, uint32_t slotCount, const char *name)
 {
-	xsMachine *result;
+	xsMachine *the;
 	uint8_t *context[2];
 	xsCreation *creationP;
 	void *preparation = xsPreparationAndCreation(&creationP);
@@ -770,22 +776,29 @@ void *ESP_cloneMachine(uint32_t allocation, uint32_t stackCount, uint32_t slotCo
 		}
 		context[1] = context[0] + allocation;
 
-		result = xsPrepareMachine(&creation, preparation, name ? (txString)name : "main", context, archive);
-		if (NULL == result) {
+		the = xsPrepareMachine(&creation, preparation, name ? (txString)name : "main", context, archive);
+		if (NULL == the) {
 			if (context[0])
 				c_free(context[0]);
 			return NULL;
 		}
 	}
 	else {
-		result = xsPrepareMachine(NULL, preparation, "main", NULL, archive);
-		if (NULL == result)
+		the = xsPrepareMachine(NULL, preparation, "main", NULL, archive);
+		if (NULL == the)
 			return NULL;
 	}
 
-	xsSetContext(result, NULL);
+	xsSetContext(the, NULL);
 
-	return result;
+#if MODDEF_XS_MODS
+	if (XS_ATOM_ERROR == c_read32be(4 + kModulesStart)) {
+		uint8_t status = *(8 + (uint8_t *)kModulesStart);
+		xsLog("Mod failed: %s\n", gXSAbortStrings[status]);
+	}
+#endif
+
+	return the;
 }
 
 static uint16_t gSetupPending = 0;
@@ -852,7 +865,16 @@ void mc_setup(xsMachine *the)
 
 void *mc_xs_chunk_allocator(txMachine* the, size_t size)
 {
-	if (the->heap_ptr + size <= the->heap_pend) {
+	txBlock* block = the->firstBlock;
+	if (block) {	// reduce size by number of free bytes in current chunk heap
+		txSize grow = size - sizeof(txBlock) - (block->limit - block->current);
+		if (the->heap_ptr + grow <= the->heap_pend) {
+			the->heap_ptr += grow;
+			block->limit = (txByte*)the->heap_ptr - size; // fxGrowChunks adds theSize
+			return block->limit;
+		}
+	}
+	else if (the->heap_ptr + size <= the->heap_pend) {
 		void *ptr = the->heap_ptr;
 		the->heap_ptr += size;
 		return ptr;
@@ -1023,7 +1045,7 @@ txID fxFindModule(txMachine* the, txSlot* realm, txID moduleID, txSlot* slot)
 	txString slash;
 	txID id;
 
-	fxToStringBuffer(the, slot, name, sizeof(name));
+	fxToStringBuffer(the, slot, name, sizeof(name) - preparation->baseLength - 4);
 // #if MODDEF_XS_MODS
 // 	if (findMod(the, name, NULL)) {
 // 		c_strcpy(path, "/");
@@ -1048,11 +1070,20 @@ txID fxFindModule(txMachine* the, txSlot* realm, txID moduleID, txSlot* slot)
 		relative = 1;
 		search = 1;
 	}
+	slash = c_strrchr(name, '/');
+	if (!slash)
+		slash = name;
+	slash = c_strrchr(slash, '.');
+	if (slash && (!c_strcmp(slash, ".js") || !c_strcmp(slash, ".mjs")))
+		*slash = 0;
 	if (absolute) {
 		c_strcpy(path, preparation->base);
 		c_strcat(path, name + 1);
-		if (fxFindScript(the, realm, path, &id))
+		c_strcat(path, ".xsb");
+		if (fxFindScript(the, realm, path, &id)) {
+// 			fxReport(the, "ABSOLUTE %s\n", path);
 			return id;
+		}
 	}
 	if (relative && (moduleID != XS_NO_ID)) {
 		c_strcpy(path, fxGetKeyName(the, moduleID));
@@ -1070,8 +1101,11 @@ txID fxFindModule(txMachine* the, txSlot* realm, txID moduleID, txSlot* slot)
 		if (!c_strncmp(path, preparation->base, preparation->baseLength)) {
 			*slash = 0;
 			c_strcat(path, name + dot);
-			if (fxFindScript(the, realm, path, &id))
+			c_strcat(path, ".xsb");
+			if (fxFindScript(the, realm, path, &id)) {
+// 				fxReport(the, "RELATIVE %s\n", path);
 				return id;
+			}
 		}
 #if 0
 		*slash = 0;
@@ -1086,8 +1120,10 @@ txID fxFindModule(txMachine* the, txSlot* realm, txID moduleID, txSlot* slot)
 		slot = slot->value.reference->next;
 		while (slot) {
 			txSlot* key = fxGetKey(the, slot->ID);
-			if (key && !c_strcmp(key->value.key.string, name))
+			if (key && !c_strcmp(key->value.key.string, name)) {
+// 				fxReport(the, "SEARCH %s\n", name);
 				return slot->value.symbol;
+			}
 			slot = slot->next;
 		}
 	}
@@ -1142,11 +1178,6 @@ void fxLoadModule(txMachine* the, txSlot* realm, txID moduleID)
 #endif
 }
 
-void fxMarkHost(txMachine* the, txMarkRoot markRoot)
-{
-	the->host = C_NULL;
-}
-
 txScript* fxParseScript(txMachine* the, void* stream, txGetter getter, txUnsigned flags)
 {
 	txParser _parser;
@@ -1156,6 +1187,15 @@ txScript* fxParseScript(txMachine* the, void* stream, txGetter getter, txUnsigne
 	fxInitializeParser(parser, the, the->parserBufferSize, the->parserTableModulo);
 	parser->firstJump = &jump;
 	if (c_setjmp(jump.jmp_buf) == 0) {
+#ifdef mxDebug
+		if (fxIsConnected(the)) {
+			char tag[16];
+			flags |= mxDebugFlag;
+			fxGenerateTag(the, tag, sizeof(tag), C_NULL);
+			fxFileEvalString(the, ((txStringStream*)stream)->slot->value.string, tag);
+			parser->path = fxNewParserSymbol(parser, tag);
+		}
+#endif
 		fxParserTree(parser, stream, getter, flags, NULL);
 		fxParserHoist(parser);
 		fxParserBind(parser);
@@ -1167,10 +1207,6 @@ txScript* fxParseScript(txMachine* the, void* stream, txGetter getter, txUnsigne
 #endif
 	fxTerminateParser(parser);
 	return script;
-}
-
-void fxSweepHost(txMachine* the)
-{
 }
 
 /*
@@ -1238,6 +1274,7 @@ static int32_t modInstrumentationCPU0(void *theIn)
 	return result;
 }
 
+#if kTargetCPUCount > 1
 static int32_t modInstrumentationCPU1(void *theIn)
 {
 	int32_t result, total = (gCPUCounts[2] + gCPUCounts[3]);
@@ -1247,6 +1284,7 @@ static int32_t modInstrumentationCPU1(void *theIn)
 	gCPUCounts[2] = gCPUCounts[3] = 0;
 	return result;
 }
+#endif
 #endif
 
 #ifdef mxDebug
@@ -1279,8 +1317,10 @@ void espInitInstrumentation(txMachine *the)
 
 #if INSTRUMENT_CPULOAD
 	modInstrumentationSetCallback(CPU0, modInstrumentationCPU0);
+#if kTargetCPUCount > 1
 	modInstrumentationSetCallback(CPU1, modInstrumentationCPU1);
-
+#endif
+	
 	timer_config_t config = {
 		.divider = 16,
 		.counter_dir = TIMER_COUNT_UP,
@@ -1359,11 +1399,17 @@ void espInstrumentMachineReset(txMachine *the)
 #if INSTRUMENT_CPULOAD
 void IRAM_ATTR timer_group0_isr(void *para)
 {
+#if kTargetCPUCount == 2
 	TIMERG0.int_clr_timers.t0 = 1;
+#else
+	TIMERG0.int_clr.t0 = 1;
+#endif
     TIMERG0.hw_timer[TIMER_0].config.alarm_en = TIMER_ALARM_EN;
 
 	gCPUCounts[0 + (xTaskGetCurrentTaskHandleForCPU(0) == gIdles[0])] += 1;
+#if kTargetCPUCount > 1
 	gCPUCounts[2 + (xTaskGetCurrentTaskHandleForCPU(1) == gIdles[1])] += 1;
+#endif
 }
 #endif
 #endif
@@ -1381,6 +1427,7 @@ uint32_t modMilliseconds(void)
 	64-bit atomics
 */
 
+#if kTargetCPUCount == 2
 bool __atomic_compare_exchange_8(txU8 *ptr, txU8 *expected, txU8 desired, bool weak, int success_memorder, int failure_memorder)
 {
 	modCriticalSectionBegin();
@@ -1491,6 +1538,7 @@ txU8 __atomic_fetch_xor_8(txU8 *ptr, txU8 val, int memorder)
 
 	return result;
 }
+#endif // kTargetCPUCount == 2
 
 /*
 	messages
@@ -1598,9 +1646,13 @@ void modMessageService(xsMachine *the, int maxDelayMS)
 	}
 }
 
+#ifndef modTaskGetCurrent
+	#error make sure MOD_TASKS and modTaskGetCurrent are defined
+#endif
+
 void modMachineTaskInit(xsMachine *the)
 {
-	the->task = xTaskGetCurrentTaskHandle();
+	the->task = (void *)modTaskGetCurrent();
 	the->msgQueue = xQueueCreate(10, sizeof(modMessageRecord));
 }
 
@@ -1840,19 +1892,18 @@ static txBoolean spiWrite(void *dst, size_t offset, void *buffer, size_t size)
 
 void *installModules(txPreparation *preparation)
 {
+	spi_flash_mmap_handle_t handle;
+
 	gPartition = esp_partition_find_first(0x40, 1,  NULL);
 	if (!gPartition) return NULL;
 
-	if (fxMapArchive(preparation, (void *)gPartition, (void *)gPartition, SPI_FLASH_SEC_SIZE, spiRead, spiWrite)) {
-		spi_flash_mmap_handle_t handle;
+	if (ESP_OK != esp_partition_mmap(gPartition, 0, gPartition->size, SPI_FLASH_MMAP_DATA, (const void **)&gPartitionAddress, &handle))
+		return NULL;
 
-		if (ESP_OK != esp_partition_mmap(gPartition, 0, gPartition->size, SPI_FLASH_MMAP_DATA, (const void **)&gPartitionAddress, &handle))
-			return NULL;
-	}
-	else
-		return 0;
+	if (fxMapArchive(preparation, (void *)gPartition, (void *)gPartition, SPI_FLASH_SEC_SIZE, spiRead, spiWrite))
+		return (void *)gPartitionAddress;
 
-	return (void *)gPartitionAddress;
+	return NULL;
 }
 
 #else /* ESP8266 */

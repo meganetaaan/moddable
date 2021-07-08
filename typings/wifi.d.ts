@@ -19,34 +19,43 @@
 */
 
 declare module "wifi" {
-  type WiFiOptions = {
+  export type WiFiOptions = {
     bssid?: string,
     ssid: string,
     password?: string
   }
-  type WiFiCallback = (message: "connect" | "gotIP" | "disconnect") => void
-  type WiFiScanCallback = (item: {
+  export type WiFiCallback = (message: "connect" | "gotIP" | "lostIP" | "disconnect") => void
+  export type WiFiScanCallback = (item: {
     ssid: string,
     authentication: string,
     rssi: number,
-    bssid: string,
+    bssid: ArrayBuffer,
   } | null) => void;
-  type StationMode = 1;
-  type AccessPointMode = 2;
+  export type StationMode = 1;
+  export type AccessPointMode = 2;
+  export type ScanOptions = {hidden?: boolean, channel?: number}
+  export type AccessPointOptions = {
+    ssid: string,
+    password?: string,
+    channel?: number,
+    hidden?: boolean,
+    interval?: number,
+    max?: number
+  }
+
   class WiFi {
+    static gotIP: "gotIP";
+    static lostIP: "lostIP";
+    static connected: "connect";
+    static disconnected: "disconnect";
+    
     constructor(options: WiFiOptions, callback: WiFiCallback);
     close(): void;
-    static scan(options: {hidden?: boolean, channel: number}, callback: WiFiScanCallback): void;
-    mode: StationMode | AccessPointMode;
-    static connect(options?: WiFiOptions);
-    static accessPoint(options: {
-      ssid: string,
-      password?: string,
-      channel?: number,
-      hidden?: boolean,
-      interval?: number,
-      max?: number
-    });
+    static scan(options: ScanOptions, callback: WiFiScanCallback): void;
+    static mode: StationMode | AccessPointMode;
+    static connect(options?: WiFiOptions): void;
+    static disconnect(): void;
+    static accessPoint(options: AccessPointOptions): void;
   }
   export {WiFi as default};
 }

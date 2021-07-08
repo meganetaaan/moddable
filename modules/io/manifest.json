@@ -4,49 +4,65 @@
 	},
 	"include": [
 		"$(MODDABLE)/examples/manifest_base.json",
-		"$(MODDABLE)/examples/manifest_net.json"
+		"$(MODDABLE)/examples/manifest_net.json",
+		"$(MODULES)/pins/digital/manifest.json",
+		"$(MODULES)/pins/spi/manifest.json"
 	],
 	"modules": {
 		"*": [
-			"$(IO)/common/builtinCommon"
+			"$(IO)/common/builtinCommon",
+			"$(IO)/digital/$(PLATFORM)/*",
+			"$(IO)/i2c/$(PLATFORM)/*",
+			"$(IO)/spi/$(PLATFORM)/*"
 		],
-		"builtin/analog": "$(IO)/analog/*",
-		"builtin/digital": "$(IO)/digital/digital",
-		"builtin/digitalbank": "$(IO)/digital/digitalbank",
-		"builtin/i2c": "$(IO)/i2c/_i2c",
-		"builtin/serial": "$(IO)/serial/*",
-		"builtin/smbus": "$(IO)/i2c/smbus",
-		"builtin/socket/listener": "$(IO)/socket/listener",
-		"builtin/socket/tcp": "$(IO)/socket/tcp",
-		"builtin/socket/udp": "$(IO)/socket/udp",
-		"builtin/wakeabledigital": "$(IO)/wakeabledigital/wakeabledigital",
-		"builtin/pwm": "$(IO)/pwm/pwm",
+		"commodetto/Bitmap": "$(COMMODETTO)/commodettoBitmap",
 
-		"expander": "$(IO)/expander/*",
+		"embedded:io/analog": "$(IO)/analog/$(PLATFORM)/*",
+		"embedded:io/digital": "$(IO)/digital/digital",
+		"embedded:io/digitalbank": "$(IO)/digital/digitalbank",
+		"embedded:io/i2c": "$(IO)/i2c/_i2c",
+		"embedded:io/smbus": "$(IO)/i2c/smbus",
+		"embedded:io/pwm": "$(IO)/pwm/$(PLATFORM)/*",
+		"embedded:io/serial": "$(IO)/serial/$(PLATFORM)/*",
+		"embedded:io/spi": "$(IO)/spi/spi",
+
+		"embedded:io/provider/MCP23017": "$(IO)/expander/*",
+
+		"embedded:io/socket/tcp": "$(IO)/socket/tcp",
+		"embedded:io/socket/udp": "$(IO)/socket/udp",
+		"embedded:io/socket/listener": "$(IO)/socket/listener",
 
 		"system": "$(IO)/system/*"
 	},
 	"preload": [
-		"builtin/analog",
-		"builtin/digital",
-		"builtin/digitalbank",
-		"builtin/i2c",
-		"builtin/serial",
-		"builtin/socket/listener",
-		"builtin/socket/tcp",
-		"builtin/socket/udp",
-		"builtin/wakeabledigital",
-		"builtin/pwm",
-
-		"expander",
-
+		"embedded:*",
 		"system"
 	],
 	"platforms": {
+		"esp/*": {
+			"modules": {
+				"embedded:provider/builtin": "$(IO)/host/$(PLATFORM)/$(SUBPLATFORM)/provider"
+			}
+		},
 		"esp": {
+			"modules": {
+				"embedded:provider/builtin": "$(IO)/host/$(PLATFORM)/provider"
+			}
+		},
+		"esp32/*": {
+			"modules": {
+				"embedded:provider/builtin": "$(IO)/host/$(PLATFORM)/$(SUBPLATFORM)/provider",
+				"embedded:io/pulsecount": "$(IO)/pulsecount/$(PLATFORM)/*"
+			}
+		},
+		"esp32": {
+			"modules": {
+				"embedded:provider/builtin": "$(IO)/host/$(PLATFORM)/provider",
+				"embedded:io/pulsecount": "$(IO)/pulsecount/$(PLATFORM)/*"
+			}
 		},
 		"...": {
-			"error": "Experimental TC53 IO modules unsupported"
+			"error": "Experimental TC53 IO modules currently available for ESP8266 and ESP32 only. For now, use the modules in the pins directory instead"
 		}
 	}
 }

@@ -320,7 +320,7 @@ void PiuContainerPlaceContentHorizontally(void* it, PiuContent* content)
 		bounds->x = width - bounds->width - coordinates->right;
 	else
 #ifdef piuPC
-        bounds->x = round((width - bounds->width) / 2);
+        bounds->x = (PiuCoordinate)round((width - bounds->width) / 2);
 #else
 		bounds->x = ((width - bounds->width + 1) >> 1);
 #endif
@@ -341,7 +341,7 @@ void PiuContainerPlaceContentVertically(void* it, PiuContent* content)
 		bounds->y = height - bounds->height - coordinates->bottom;
 	else
 #ifdef piuPC
-        bounds->y = round((height - bounds->height) / 2);
+        bounds->y = (PiuCoordinate)round((height - bounds->height) / 2);
 #else
         bounds->y = ((height - bounds->height + 1) >> 1);
 #endif
@@ -686,7 +686,7 @@ void PiuContainer_firstThat(xsMachine *the)
 {
 	PiuContainer* self = PIU(Container, xsThis);
 	xsVars(2);
-	xsIndex id = xsToID(xsArg(0));
+	xsIdentifier id = xsToID(xsArg(0));
 	xsIntegerValue c = xsToInteger(xsArgc);
 	PiuContent* content;
 	xsAssert(self != NULL);
@@ -731,7 +731,7 @@ void PiuContainer_lastThat(xsMachine *the)
 {
 	PiuContainer* self = PIU(Container, xsThis);
 	xsVars(2);
-	xsIndex id = xsToID(xsArg(0));
+	xsIdentifier id = xsToID(xsArg(0));
 	xsIntegerValue c = xsToInteger(xsArgc);
 	PiuContent* content;
 	xsAssert(self != NULL);

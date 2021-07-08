@@ -20,12 +20,12 @@
 PKGCONFIG = $(shell which pkg-config)
 
 ifeq ($(DEBUG),1)
-	LIB_DIR = $(BUILD_DIR)/tmp/lin/debug/mc/lib
+	LIB_DIR = $(BUILD_DIR)/tmp/lin/mc/debug/lib
 else
 	ifeq ($(INSTRUMENT),1)
-		LIB_DIR = $(BUILD_DIR)/tmp/lin/instrument/mc/lib
+		LIB_DIR = $(BUILD_DIR)/tmp/lin/mc/instrument/lib
 	else
-		LIB_DIR = $(BUILD_DIR)/tmp/lin/release/mc/lib
+		LIB_DIR = $(BUILD_DIR)/tmp/lin/mc/release/lib
 	endif
 endif
 
@@ -120,7 +120,7 @@ else
 #	C_FLAGS += -DMC_MEMORY_DEBUG=1
 endif
 
-LINK_LIBRARIES = -lm -lc $(shell $(PKGCONFIG) --libs gio-2.0)
+LINK_LIBRARIES = -lm -lc $(shell $(PKGCONFIG) --libs gio-2.0) -lpthread
 
 LINK_OPTIONS = -fPIC -shared -Wl,-Bdynamic\,-Bsymbolic
 
@@ -143,7 +143,7 @@ VPATH += $(XS_DIRECTORIES)
 .PHONY: all	
 	
 all: precursor
-	$(shell nohup $(SIMULATOR) $(BIN_DIR)/mc.so > /dev/null 2>&1 &)
+	$(shell nohup $(SIMULATOR) $(SIMULATORS) $(BIN_DIR)/mc.so > /dev/null 2>&1 &)
 
 precursor: $(LIB_DIR) $(BIN_DIR)/mc.so
 

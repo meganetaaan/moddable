@@ -145,6 +145,17 @@ class PreferencesColumnBehavior extends Behavior {
 				{
 					Template: PreferencesTable,
 					expanded: true,
+					name: "LOCATIONS",
+					items: model.mappings.map((mapping, index) => ({
+						Template: LocationRow,
+						index,
+						name: mapping.remote + (mapping.alien ? model.alienSeparator : model.separator) + "*",
+						value: mapping.locale + model.separator + "*",
+					})),
+				},
+				{
+					Template: PreferencesTable,
+					expanded: true,
 					name: "NETWORK",
 					items: [
 						{
@@ -174,16 +185,34 @@ class PreferencesColumnBehavior extends Behavior {
 						},
 					],
 				},
-				{
+					{
 					Template: PreferencesTable,
 					expanded: true,
-					name: "LOCATIONS",
-					items: model.mappings.map((mapping, index) => ({
-						Template: LocationRow,
-						index,
-						name: mapping.remote + (mapping.alien ? model.alienSeparator : model.separator) + "*",
-						value: mapping.locale + model.separator + "*",
-					})),
+					name: "SERIAL",
+					items: [
+						{
+							Template: FieldRow,
+							name: "Device Path",
+							width: 208,
+							get value() {
+								return model.serialDevicePath;
+							},
+							set value(it) {
+								model.serialDevicePath = it;
+							},
+						},
+						{
+							Template: FieldRow,
+							name: "Baud Rates",
+							width: 208,
+							get value() {
+								return model.serialBaudRates.join(",");
+							},
+							set value(it) {
+								model.serialBaudRates = it.split(",").map(item => parseInt(item));
+							},
+						},
+					],
 				},
 				{
 					Template: PreferencesTable,
@@ -203,13 +232,24 @@ class PreferencesColumnBehavior extends Behavior {
 						},
 						{
 							Template: ToggleRow,
-							comment: "Show Test262 tab",
-							name: "Test262",
+							comment: "Show Serial tab",
+							name: "Serial",
 							get value() {
 								return model.visibleTabs[2];
 							},
 							set value(it) {
 								model.showTab(2, it);
+							},
+						},
+						{
+							Template: ToggleRow,
+							comment: "Show Test262 tab",
+							name: "Test262",
+							get value() {
+								return model.visibleTabs[3];
+							},
+							set value(it) {
+								model.showTab(3, it);
 							},
 						},
 					],
@@ -375,7 +415,7 @@ var FieldRow = Row.template($ => ({
 			Behavior: class extends ButtonBehavior {
 				onTap(button) {
 					let field = button.previous.first;
-					this.data.value = field.string();
+					this.data.value = field.string;
 					field.focus();
 				}
 			},

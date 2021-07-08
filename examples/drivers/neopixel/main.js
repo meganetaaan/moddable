@@ -1,12 +1,12 @@
 /*
- * Copyright (c) 2018  Moddable Tech, Inc.
+ * Copyright (c) 2021 Moddable Tech, Inc.
  *
  *   This file is part of the Moddable SDK.
  *
  *   This work is licensed under the
  *       Creative Commons Attribution 4.0 International License.
  *   To view a copy of this license, visit
- *       <https://creativecommons.org/licenses/by/4.0>.
+ *       <http://creativecommons.org/licenses/by/4.0>.
  *   or send a letter to Creative Commons, PO Box 1866,
  *   Mountain View, CA 94042, USA.
  *
@@ -14,7 +14,7 @@
 import NeoPixel from "neopixel";
 import Timer from "timer";
 
-const np = new NeoPixel({length: 19, pin: 22, order: "GRB"});
+const np = new NeoPixel({length: 1, pin: 1, order: "GRB"});
 
 Timer.delay(1);
 np.fill(np.makeRGB(255, 255, 255)); np.update();

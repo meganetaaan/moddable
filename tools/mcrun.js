@@ -139,7 +139,7 @@ class ToDoFile extends FILE {
 			line.push(tool.resourcesPath + tool.slash + result.target);
 		}
 		if (tool.stringFiles.length) {
-			line.push(tool.resourcesPath + tool.slash + "locals.mhi");
+			line.push(tool.resourcesPath + tool.slash + tool.localsName + ".mhi");
 		}
 		lines.push(line);
 	}
@@ -316,6 +316,7 @@ class ToDoFile extends FILE {
 			if (tool.format)
 				line.push("-s");
 			line.push("-o", tool.resourcesPath);
+			line.push("-r", tool.localsName);
 			lines.push(line);
 		}
 	}
@@ -344,18 +345,18 @@ export default class extends Tool {
 		this.createDirectory(path);
 		path += this.slash + first;
 		this.createDirectory(path);
-		path += this.slash + this.platform;
+		var platform = this.platform;
+		path += this.slash + platform;
 		this.createDirectory(path);
+		if ((platform == "mac") || (platform == "win") || (platform == "lin")) {
+			path += this.slash + "mc";
+			this.createDirectory(path);
+		}
 		if (this.debug) 
 			path += this.slash + "debug";
 		else
 			path += this.slash + "release";
 		this.createDirectory(path);
-		var platform = this.platform;
-		if ((platform == "mac") || (platform == "win") || (platform == "lin")) {
-			path += this.slash + "mc";
-			this.createDirectory(path);
-		}
 		path += this.slash + last;
 		this.createDirectory(path);
 		return path;
@@ -385,7 +386,9 @@ export default class extends Tool {
 		}
 	}
 	run() {
+		this.localsName = "modLocals";
 		super.run();
+
 		if ("URL" in this.config)
 			this.environment.URL = this.config.URL;
 
@@ -415,11 +418,11 @@ export default class extends Tool {
 		this.dataPath = this.modulesPath = this.resourcesPath = path;
 		this.createDirectory(path);
 		for (var folder of this.dataFolders)
-			this.createDirectory(path + this.slash + folder);
+			this.createFolder(path, folder);
 		for (var folder of this.jsFolders)
-			this.createDirectory(path + this.slash + folder);
+			this.createFolder(path, folder);
 		for (var folder of this.resourcesFolders)
-			this.createDirectory(path + this.slash + folder);
+			this.createFolder(path, folder);
 		
 		var file;
 		if (this.format) {

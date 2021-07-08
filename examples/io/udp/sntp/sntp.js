@@ -6,36 +6,39 @@
  *   This work is licensed under the
  *       Creative Commons Attribution 4.0 International License.
  *   To view a copy of this license, visit
- *       <https://creativecommons.org/licenses/by/4.0>.
+ *       <http://creativecommons.org/licenses/by/4.0>.
  *   or send a letter to Creative Commons, PO Box 1866,
  *   Mountain View, CA 94042, USA.
  *
  */
 
- import UDP from "builtin/socket/udp";
+ import UDP from "embedded:io/socket/udp";
 
-class SNTP extends UDP {
+class SNTP  {
+	#udp;
 	#onTime;
 	#onError;
 	#timer;
-	constructor(dictionary) {
-		super({});
+	constructor(options) {
+		this.#udp = new UDP({
+			target: this,
+			onReadable: this.#onReadable
+		});
 
-		this.#onTime = dictionary.onTime || this.onTime;
+		this.#onTime = options.onTime;
 		if (!this.#onTime)
 			throw new Error("onTime required");
 
-		this.#onError = dictionary.onError || this.onError;
+		this.#onError = options.onError;
 
-		System.resolve(dictionary.host, (name, address) => {
+		System.resolve(options.host, (name, address) => {
 			if (!address) {
-				if (this.#onError)
-					this.#onError();
+				this.#onError?.();
 				return;
 			}
 
-			request.call(this, address);
-			this.#timer = System.setInterval(() => request.call(this, address), 5 * 1000);
+			request.call(this.#udp, address);
+			this.#timer = System.setInterval(() => request.call(this.#udp, address), 5 * 1000);
 		});
 	}
 	close() {
@@ -43,21 +46,21 @@ class SNTP extends UDP {
 			System.clearInterval(this.#timer);
 		super.close();
 	}
-	onReadable(count) {
+	#onReadable(count) {
+		const target = this.target;
 		let packet;
 
 		while (count--)
 			packet = new DataView(this.read());
 
-		System.clearInterval(this.#timer);
-		this.#timer = undefined;
+		System.clearInterval(target.#timer);
+		target.#timer = undefined;
 
-		this.#onTime((packet.getUint32(40) - 2208988800) * 1000);		// convert from NTP to Unix Epoch time in milliseconds
+		target.#onTime((packet.getUint32(40) - 2208988800) * 1000);		// convert from NTP to Unix Epoch time in milliseconds
 	}
 }
 
-function request(address)
-{
+function request(address) {
 	const packet = new Uint8Array(48);
 	packet[0] = (4 << 3) | (3 << 0);		// version 4, mode 3 (client)
 	this.write(address, 123, packet);

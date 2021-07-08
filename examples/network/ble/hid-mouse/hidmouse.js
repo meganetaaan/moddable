@@ -6,7 +6,7 @@
  *   This work is licensed under the
  *       Creative Commons Attribution 4.0 International License.
  *   To view a copy of this license, visit
- *       <https://creativecommons.org/licenses/by/4.0>.
+ *       <http://creativecommons.org/licenses/by/4.0>.
  *   or send a letter to Creative Commons, PO Box 1866,
  *   Mountain View, CA 94042, USA.
  *
@@ -24,9 +24,11 @@
 import {BLEHIDClient, ReportType, UsageID} from "hidclient";
 
 class BLEHIDMouse extends BLEHIDClient {
-	constructor() {
+	#mouseReady;
+	
+	constructor(dictionary = { bonding:false }) {
 		super();
-		this.configure({ usageID: UsageID.MOUSE, reportTypes:[ReportType.INPUT] });
+		this.configure({ usageID: UsageID.MOUSE, reportTypes:[ReportType.INPUT], bonding:dictionary.bonding });
 		this.onDeviceDisconnected();
 	}
 	onCharacteristicNotification(characteristic, value) {
@@ -34,6 +36,14 @@ class BLEHIDMouse extends BLEHIDClient {
 	}
 	onDeviceDisconnected() {
 		this.buttons = 0;
+	}
+	onDeviceConnected(device) {
+		trace("Pairing mouse...\n");
+	}
+	onDeviceReady() {
+		trace("Pairing complete.\n");
+		this.onMouseReady();
+		this.#mouseReady = true;
 	}
 	onDeviceReportMap(buffer) {
 		// @@ TBD - parse report map for mouse data payload format
@@ -43,6 +53,9 @@ class BLEHIDMouse extends BLEHIDClient {
 			reports[0].characteristic.enableNotifications();
 	}
 	onReportData(view) {
+		if (!this.#mouseReady)
+			return;
+			
 		// This is the HID mouse report
 		//trace(report.join(' ') + '\n');
 		//return;
@@ -74,6 +87,8 @@ class BLEHIDMouse extends BLEHIDClient {
 			this.onMoved(x, y, buttons);
 		}
 		this.buttons = buttons;
+	}
+	onMouseReady() {
 	}
 	onButtonDown(x, y, buttons) {
 		debugger;

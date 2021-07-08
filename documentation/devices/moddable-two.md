@@ -1,9 +1,9 @@
-# Getting Started with Moddable Two
+# Moddable Two Developer Guide
 
 Copyright 2019-2020 Moddable Tech, Inc.<BR>
-Revised: September 14, 2020
+Revised: January 19, 2021
 
-This document describes how to start building Moddable applications for Moddable Two. It provides information on how to configure the host build environment and how to build and deploy apps. It also provides information about development resources, including a summary of the examples available in this repository that run on Moddable Two.
+This document provides information about Moddable Two, including details about its pins and other components, how to build and deploy apps, and links to other development resources.
 
 ## Table of Contents
 
@@ -11,6 +11,7 @@ This document describes how to start building Moddable applications for Moddable
 	- [Components](#components)
 	- [Pinout](#pinout)
 	- [Pin Information](#pin-info)
+	- [Dimensions](#dimensions)
 - [SDK and Host Environment Setup](#setup)
 - [Building and Deploying Apps](#building-and-deploying-apps)
 - [Troubleshooting](#troubleshooting)
@@ -96,15 +97,24 @@ Power can be supplied to the Moddable Two via the following:
 * 5V - VIN on 16 pin external header
 * 3.3V - 3.3V pin external header
 
+<a id="dimensions"></a>
+### Dimensions
+
+The complete dimensions of Moddable Two are provided in this [PDF document](../assets/devices/moddable-two-dimensions.pdf). These are helpful when designing a case for Moddable Two. 
+
 <a id="setup"></a>
 ## SDK and Host Environment Setup
 
-The [Moddable SDK Getting Started document](../Moddable%20SDK%20-%20Getting%20Started.md) describes how to configure the host build environment and install the required SDKs, drivers, and development tools. Follow the instructions in the **Host environment setup** and **ESP32 setup** sections for your computer's operating system.
+To build and run apps on Moddable Two, you'll need to:
+
+1. Install the [Moddable SDK](./../Moddable%20SDK%20-%20Getting%20Started.md)
+2. Install [ESP32 tools](./esp32.md)
+3. Follow the instructions in the **Building and Deploying Apps** section below.
 
 <a id="building-and-deploying-apps"></a>
 ## Building and Deploying Apps
 
-After you've set up your host environment, take the following steps to install an application on your Moddable Two.
+After you've set up your host environment and ESP32 tools, take the following steps to install an application on your Moddable Two.
 
 1. Attach the programmer to your Moddable Two.
 
@@ -134,7 +144,7 @@ After you've set up your host environment, take the following steps to install a
 <a id="troubleshooting"></a>
 ## Troubleshooting
 
-See the Troubleshooting section of the [Moddable SDK Getting Started document](../Moddable%20SDK%20-%20Getting%20Started.md) for a list of common issues and how to resolve them.
+See the Troubleshooting section of the [ESP32 documentation](./esp32.md) for a list of common issues and how to resolve them.
 
 <a id="development-resources"></a>
 ## Development Resources
@@ -193,8 +203,8 @@ The `backlight` global contains an instance of a subclass of `PWM`. If you do no
 
 ```javascript
 "config": {
-	"brightness": "none",
-},
+	"brightness": "none"
+}
 ```
 
 **Note**: Backlight support is present in all builds using the `esp32/moddable_two` build target, however it only works for revision two.

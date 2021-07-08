@@ -121,10 +121,23 @@ export class MakeFile extends FILE {
 		// Read base debug build sdkconfig.defaults file
 		let mergedConfig = [];
 		let regex = /[\r\n]+/gm;
-		let baseConfigDirectory = tool.buildPath + tool.slash + "devices" + tool.slash + "esp32" + tool.slash + "xsProj";
+		let baseConfigDirectory = tool.buildPath + tool.slash + "devices" + tool.slash + "esp32" + tool.slash + "xsProj-";
+		let outputConfigDirectory = tool.buildPath + tool.slash + "tmp" + tool.slash + "esp32" + tool.slash + (tool.subplatform ?? "") + tool.slash + (tool.debug ? "debug" : "release") + tool.slash + "config-";
+
+		if (undefined === tool.environment.ESP32_SUBCLASS) {
+			baseConfigDirectory += "esp32";
+			outputConfigDirectory += "esp32";
+		}else{
+			baseConfigDirectory += tool.environment.ESP32_SUBCLASS;
+			outputConfigDirectory += tool.environment.ESP32_SUBCLASS;
+		}
+			
 		let baseConfigFile = baseConfigDirectory + tool.slash + "sdkconfig.defaults";
 		let baseConfig = tool.readFileString(baseConfigFile);
 		let baseConfigLength = baseConfig.length;
+
+		tool.createDirectory(outputConfigDirectory);
+		tool.setenv("CONFIGDIR", outputConfigDirectory);
 
 		// For release builds merge base sdkconfig.defaults.release file
 		if (tool.debug === false) {
@@ -143,12 +156,16 @@ export class MakeFile extends FILE {
 		// Merge any application sdkconfig files
 		if (tool.environment.SDKCONFIGPATH != baseConfigDirectory) {
 			let appConfigFile = tool.environment.SDKCONFIGPATH + tool.slash + "sdkconfig.defaults";
-			if ((false === tool.debug) && (1 == tool.isDirectoryOrFile(appConfigFile + ".release")))
-				appConfigFile += ".release";
 			if (1 == tool.isDirectoryOrFile(appConfigFile)) {
 				let entries = tool.readFileString(appConfigFile);
 				mergedConfig = mergedConfig.concat(entries.split(regex));
 			}
+			
+			if ((false === tool.debug) && (1 == tool.isDirectoryOrFile(appConfigFile + ".release"))) {
+				let entries = tool.readFileString(appConfigFile + ".release");
+				mergedConfig = mergedConfig.concat(entries.split(regex));
+			}
+				
 			if (tool.debug === false && tool.instrument === true) {
 				appConfigFile = tool.environment.SDKCONFIGPATH + tool.slash + "sdkconfig.inst";
 				if (1 == tool.isDirectoryOrFile(appConfigFile)) {
@@ -214,20 +231,20 @@ export class MakeFile extends FILE {
 			if (client || server) {
 				options.push({ name: "CONFIG_BT_ENABLED", value: "y" });
 				if (nimble) {
-					options.push({ name: "CONFIG_NIMBLE_ENABLED", value: "y" });
-					options.push({ name: "CONFIG_BLUEDROID_ENABLED", value: "n" });
+					options.push({ name: "CONFIG_BT_NIMBLE_ENABLED", value: "y" });
+					options.push({ name: "CONFIG_BT_BLUEDROID_ENABLED", value: "n" });
 					options.push({ name: "CONFIG_BTDM_CTRL_MODE_BLE_ONLY", value: "y" });
-					options.push({ name: "CONFIG_NIMBLE_SM_LEGACY", value: "y" });
-					options.push({ name: "CONFIG_NIMBLE_SM_SC", value: "y" });
-					options.push({ name: "CONFIG_NIMBLE_ROLE_PERIPHERAL", value: (server ? "y" : "n") });
-					options.push({ name: "CONFIG_NIMBLE_ROLE_CENTRAL", value: (client ? "y" : "n") });
+					options.push({ name: "CONFIG_BT_NIMBLE_SM_LEGACY", value: "y" });
+					options.push({ name: "CONFIG_BT_NIMBLE_SM_SC", value: "y" });
+					options.push({ name: "CONFIG_BT_NIMBLE_ROLE_PERIPHERAL", value: (server ? "y" : "n") });
+					options.push({ name: "CONFIG_BT_NIMBLE_ROLE_CENTRAL", value: (client ? "y" : "n") });
 				}
 				else {
-					options.push({ name: "CONFIG_BLUEDROID_ENABLED", value: "y" });
-					options.push({ name: "CONFIG_NIMBLE_ENABLED", value: "n" });
-					options.push({ name: "CONFIG_BLE_SMP_ENABLE", value: "y" });
-					options.push({ name: "CONFIG_GATTS_ENABLE", value: (server ? "y" : "n") });
-					options.push({ name: "CONFIG_GATTC_ENABLE", value: (client ? "y" : "n") });
+					options.push({ name: "CONFIG_BT_BLUEDROID_ENABLED", value: "y" });
+					options.push({ name: "CONFIG_BT_NIMBLE_ENABLED", value: "n" });
+					options.push({ name: "CONFIG_BT_BLE_SMP_ENABLE", value: "y" });
+					options.push({ name: "CONFIG_BT_GATTS_ENABLE", value: (server ? "y" : "n") });
+					options.push({ name: "CONFIG_BT_GATTC_ENABLE", value: (client ? "y" : "n") });
 				}
 			} else {
 				options.push({ name: "CONFIG_BT_ENABLED", value: "n" });
@@ -242,7 +259,7 @@ export class MakeFile extends FILE {
 		}
 		
 		// Write the result, if it has changed
-		let buildConfigFile = baseConfigDirectory + tool.slash + "sdkconfig.mc";
+		let buildConfigFile = outputConfigDirectory + tool.slash + "sdkconfig.mc";
 		tool.setenv("SDKCONFIG_FILE", buildConfigFile);
 		if (tool.isDirectoryOrFile(buildConfigFile) == 1){
 			const oldConfig = tool.readFileString(buildConfigFile);
@@ -415,7 +432,7 @@ export class MakeFile extends FILE {
 				var target = result.target;
 				var targetParts = tool.splitPath(target);
 				var temporary = source.slice(common, -3) + ".js"
-				this.line("$(MODULES_DIR)", tool.slash, target, ": $(MODULES_DIR)", temporary);
+				this.line("$(MODULES_DIR)", tool.slash, target, ": $(MODULES_DIR)", tool.slash, temporary);
 				this.echo(tool, "xsc ", target);
 				var options = "";
 				if (result.commonjs)
@@ -424,9 +441,9 @@ export class MakeFile extends FILE {
 					options += " -d";
 				if (tool.config)
 					options += " -c";
-				this.line("\t$(XSC) $(MODULES_DIR)", temporary, options, " -e -o $(@D) -r ", targetParts.name);
+				this.line("\t$(XSC) $(MODULES_DIR)", tool.slash, temporary, options, " -e -o $(@D) -r ", targetParts.name);
 				if (tool.windows)
-					this.line("$(MODULES_DIR)", temporary, ": TSCONFIG");
+					this.line("$(MODULES_DIR)", tool.slash, temporary, ": TSCONFIG");
 				temporaries.push("%" + temporary);
 			}
 			if (tool.windows)
@@ -494,7 +511,7 @@ export class MakeFile extends FILE {
 		if (tool.stringFiles.length) {
 			this.write("\\\n\t$(RESOURCES_DIR)");
 			this.write(tool.slash);
-			this.write("locals.mhi");
+			this.write(tool.localsName + ".mhi");
 		}
 		this.line("");
 		this.line("");
@@ -714,10 +731,10 @@ export class MakeFile extends FILE {
 		}
 
 		for (var result of tool.stringFiles)
-			this.line("$(RESOURCES_DIR)", tool.slash, result.target, ": ", "$(RESOURCES_DIR)", tool.slash, "locals.mhi");
+			this.line("$(RESOURCES_DIR)", tool.slash, result.target, ": ", "$(RESOURCES_DIR)", tool.slash, tool.localsName, ".mhi");
 		this.write("$(RESOURCES_DIR)");
 		this.write(tool.slash);
-		this.write("locals.mhi: $(HEADERS)");
+		this.write(tool.localsName + ".mhi: $(HEADERS)");
 		for (var result of tool.stringFiles) {
 			this.write(" ");
 			this.write(result.source);
@@ -733,7 +750,7 @@ export class MakeFile extends FILE {
 			this.write(" -d");
 		if (tool.format)
 			this.write(" -s");
-		this.line(" -o $(@D)");
+		this.line(" -o $(@D) -r ", tool.localsName);
 		this.line("");
 	}
 	generateRules(tool) {
@@ -754,10 +771,12 @@ export class TSConfigFile extends FILE {
 		let json = {
 			compilerOptions: {
 				baseUrl: "./",
+				forceConsistentCasingInFileNames: true,
 				module: "es2020",
 				outDir: tool.modulesPath,
 				paths: {
 				},
+				lib: ["es2020"],
 				sourceMap: true,
 				target: "ES2020",
 				types: [
@@ -794,7 +813,7 @@ export class PrerequisiteFile {
 		this.current = ""
 	}
 	close() {
-		if (this.former.compare(this.current))
+		if (this.former.localeCompare(this.current))
 			this.tool.writeFileString(this.path, this.current);
 	}
 	line(...strings) {
@@ -923,6 +942,7 @@ class Rule {
 			if (target == "~") {
 			}
 			else {
+				target = tool.resolvePrefix(target);
 				target = tool.resolveSlash(target);
 				var slash = target.lastIndexOf(tool.slash);
 				if (slash >= 0)
@@ -1138,7 +1158,7 @@ class ResourcesRule extends Rule {
 		if (tool.dataFiles.already[source])
 			return;
 		if ((parts.extension == ".json") && (parts.directory.endsWith("strings"))) {
-			this.appendFile(tool.stringFiles, "locals." + parts.name + ".mhr", source, include);
+			this.appendFile(tool.stringFiles, tool.localsName + "." + parts.name + ".mhr", source, include);
 			return;
 		}
 		if (tool.format) {
@@ -1203,6 +1223,7 @@ export class Tool extends TOOL {
 		this.mainPath = null;
 		this.make = false;
 		this.manifestPath = null;
+		this.mcsim = false;
 		this.outputPath = null;
 		this.platform = null;
 		this.rotation = undefined;
@@ -1267,14 +1288,23 @@ export class Tool extends TOOL {
 				this.environment.FULLPLATFORM = name;
 				this.environment.PLATFORMPATH = "";
 				let parts = name.split("/");
-				if (parts[1]) {
-					this.subplatform = parts[1];
-					this.environment.SUBPLATFORM = parts[1];
-					this.environment.PLATFORMPATH = this.slash + parts[1];
+				if ((parts[0] == "sim") || (parts[0] == "simulator")) {
+					parts[0] = this.currentPlatform;
+					this.mcsim = true;
 				}
 				this.platform = parts[0];
-				this.environment.PLATFORM = parts[0];
-				this.environment.PLATFORMPATH = parts[0] + this.environment.PLATFORMPATH;
+				if (parts[1]) {
+					this.subplatform = parts[1];
+					this.environment.SUBPLATFORM = this.subplatform;
+					this.fullplatform = this.platform + "/" + this.subplatform;
+					this.environment.PLATFORMPATH = this.platform + this.slash + this.subplatform;
+				}
+				else {
+					this.fullplatform = this.platform;
+					this.environment.PLATFORMPATH = this.platform;
+				}
+				this.environment.PLATFORM = this.platform;
+				this.environment.FULLPLATFORM = this.fullplatform;
 				break;
 			case "-r":
 				argi++;
@@ -1336,6 +1366,10 @@ export class Tool extends TOOL {
 		if ("esp32" == this.platform) {
 			let bluedroid = this.getenv("ESP32_BLUEDROID") === "1";
 			path += bluedroid ? this.platform : "nimble";
+/**/			let subclass = this.getenv("ESP32_SUBCLASS");
+/**/			if (undefined === subclass)
+/**/				subclass = "esp32";
+/**/			this.environment.ESP32_SUBCLASS = subclass;
 		}
 		else if ("mac" == this.platform || "win" == this.platform || "lin" == this.platform)
 			path += "sim";
@@ -1378,12 +1412,24 @@ export class Tool extends TOOL {
 			this.format = null;
 		else if (!this.format)
 			this.format = "UNDEFINED";
-		if (this.platform == "mac")
-			this.environment.SIMULATOR = this.moddablePath + "/build/bin/mac/debug/Screen Test.app";
-		else if (this.platform == "win")
-			this.environment.SIMULATOR = this.moddablePath + "\\build\\bin\\win\\debug\\simulator.exe";
-		else if (this.platform == "lin")
-			this.environment.SIMULATOR = this.moddablePath + "/build/bin/lin/debug/simulator";
+		if (this.mcsim) {
+			if (this.platform == "mac")
+				this.environment.SIMULATOR = this.moddablePath + "/build/bin/mac/debug/mcsim.app";
+			else if (this.platform == "win")
+				this.environment.SIMULATOR = this.moddablePath + "\\build\\bin\\win\\debug\\mcsim.exe";
+			else if (this.platform == "lin")
+				this.environment.SIMULATOR = this.moddablePath + "/build/bin/lin/debug/mcsim";
+			this.environment.BUILD_SIMULATOR = this.moddablePath + this.slash + "build" + this.slash + "simulators";
+		}
+		else {
+			if (this.platform == "mac")
+				this.environment.SIMULATOR = this.moddablePath + "/build/bin/mac/debug/Screen Test.app";
+			else if (this.platform == "win")
+				this.environment.SIMULATOR = this.moddablePath + "\\build\\bin\\win\\debug\\simulator.exe";
+			else if (this.platform == "lin")
+				this.environment.SIMULATOR = this.moddablePath + "/build/bin/lin/debug/simulator";
+			this.environment.BUILD_SIMULATOR = this.moddablePath + this.slash + "build" + this.slash + "simulator";
+		}
 	}
 	concatProperties(object, properties, flag) {
 		if (properties) {
@@ -1403,6 +1449,13 @@ export class Tool extends TOOL {
 		if ((value instanceof Array) || (typeof value == "string"))
 			return array.concat(value);
 		return array;
+	}
+	createFolder(path, folder) {
+		const names = folder.split(this.slash);
+		for (let name of names) {
+			path += this.slash + name;
+			this.createDirectory(path)
+		}
 	}
 	includeManifest(name) {
 		var currentDirectory = this.currentDirectory;
@@ -1535,6 +1588,13 @@ export class Tool extends TOOL {
 		}
 		this.manifests.push(manifest);
 		return manifest;
+	}
+	resolvePrefix(value) {
+		const colon = value.indexOf(":");
+		if (colon > 0) {
+			value = "~." + value.slice(0, colon) + "/" + value.slice(colon + 1);
+		}
+		return value;
 	}
 	resolveSlash(value) {
 		if (this.windows)

@@ -6,7 +6,7 @@
  *   This work is licensed under the
  *       Creative Commons Attribution 4.0 International License.
  *   To view a copy of this license, visit
- *       <https://creativecommons.org/licenses/by/4.0>.
+ *       <http://creativecommons.org/licenses/by/4.0>.
  *   or send a letter to Creative Commons, PO Box 1866,
  *   Mountain View, CA 94042, USA.
  *
@@ -24,11 +24,7 @@
 import BLEHIDMouse from "hidmouse";
 
 class Mouse extends BLEHIDMouse {
-	onDeviceConnected() {
-		trace("Pairing mouse...\n")
-	}
-	onDeviceReady() {
-		trace("Pairing complete.\n");
+	onMouseReady() {
 		this.onMoved(0, 0, 0);
 	}
 	onButtonDown(x, y, buttons) {
@@ -52,4 +48,4 @@ class Mouse extends BLEHIDMouse {
 	}
 }
 
-let mouse = new Mouse;
+let mouse = new Mouse({ bonding:false });

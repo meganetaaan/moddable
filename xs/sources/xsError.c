@@ -37,7 +37,7 @@
 
 #include "xsAll.h"
 
-static txSlot* fx_Error_aux(txMachine* the, txSlot* prototype, txInteger i);
+static txSlot* fx_Error_aux(txMachine* the, txError error, txInteger i);
 
 void fxBuildError(txMachine* the)
 {
@@ -49,10 +49,11 @@ void fxBuildError(txMachine* the)
 	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_Error_toString), 0, mxID(_toString), XS_DONT_ENUM_FLAG);
 	slot = fxNextStringXProperty(the, slot, "Error", mxID(_name), XS_DONT_ENUM_FLAG);
 	slot = fxNextStringXProperty(the, slot, "", mxID(_message), XS_DONT_ENUM_FLAG);
+	slot = fxNextHostAccessorProperty(the, slot, mxCallback(fx_Error_prototype_get_stack), C_NULL, mxID(_stack), XS_DONT_ENUM_FLAG);
 	mxErrorPrototype = *the->stack;
 	prototype = fxBuildHostConstructor(the, mxCallback(fx_Error), 1, mxID(_Error));
 	mxErrorConstructor = *the->stack;
-	the->stack++;
+	mxPop();
 	mxPush(mxErrorPrototype);
 	slot = fxLastProperty(the, fxNewObjectInstance(the));
 	slot = fxNextStringXProperty(the, slot, "AggregateError", mxID(_name), XS_DONT_ENUM_FLAG);
@@ -61,7 +62,7 @@ void fxBuildError(txMachine* the)
 	instance = fxBuildHostConstructor(the, mxCallback(fx_AggregateError), 2, mxID(_AggregateError));
 	instance->value.instance.prototype = prototype;
 	mxAggregateErrorConstructor = *the->stack;
-	the->stack++;
+	mxPop();
 	mxPush(mxErrorPrototype);
 	slot = fxLastProperty(the, fxNewObjectInstance(the));
 	slot = fxNextStringXProperty(the, slot, "EvalError", mxID(_name), XS_DONT_ENUM_FLAG);
@@ -70,7 +71,7 @@ void fxBuildError(txMachine* the)
 	instance = fxBuildHostConstructor(the, mxCallback(fx_EvalError), 1, mxID(_EvalError));
 	instance->value.instance.prototype = prototype;
 	mxEvalErrorConstructor = *the->stack;
-	the->stack++;
+	mxPop();
 	mxPush(mxErrorPrototype);
 	slot = fxLastProperty(the, fxNewObjectInstance(the));
 	slot = fxNextStringXProperty(the, slot, "RangeError", mxID(_name), XS_DONT_ENUM_FLAG);
@@ -79,7 +80,7 @@ void fxBuildError(txMachine* the)
 	instance = fxBuildHostConstructor(the, mxCallback(fx_RangeError), 1, mxID(_RangeError));
 	instance->value.instance.prototype = prototype;
 	mxRangeErrorConstructor = *the->stack;
-	the->stack++;
+	mxPop();
 	mxPush(mxErrorPrototype);
 	slot = fxLastProperty(the, fxNewObjectInstance(the));
 	slot = fxNextStringXProperty(the, slot, "ReferenceError", mxID(_name), XS_DONT_ENUM_FLAG);
@@ -88,7 +89,7 @@ void fxBuildError(txMachine* the)
 	instance = fxBuildHostConstructor(the, mxCallback(fx_ReferenceError), 1, mxID(_ReferenceError));
 	instance->value.instance.prototype = prototype;
 	mxReferenceErrorConstructor = *the->stack;
-	the->stack++;
+	mxPop();
 	mxPush(mxErrorPrototype);
 	slot = fxLastProperty(the, fxNewObjectInstance(the));
 	slot = fxNextStringXProperty(the, slot, "SyntaxError", mxID(_name), XS_DONT_ENUM_FLAG);
@@ -97,7 +98,7 @@ void fxBuildError(txMachine* the)
 	instance = fxBuildHostConstructor(the, mxCallback(fx_SyntaxError), 1, mxID(_SyntaxError));
 	instance->value.instance.prototype = prototype;
 	mxSyntaxErrorConstructor = *the->stack;
-	the->stack++;
+	mxPop();
 	mxPush(mxErrorPrototype);
 	slot = fxLastProperty(the, fxNewObjectInstance(the));
 	slot = fxNextStringXProperty(the, slot, "TypeError", mxID(_name), XS_DONT_ENUM_FLAG);
@@ -106,7 +107,7 @@ void fxBuildError(txMachine* the)
 	instance = fxBuildHostConstructor(the, mxCallback(fx_TypeError), 1, mxID(_TypeError));
 	instance->value.instance.prototype = prototype;
 	mxTypeErrorConstructor = *the->stack;
-	the->stack++;
+	mxPop();
 	mxPush(mxErrorPrototype);
 	slot = fxLastProperty(the, fxNewObjectInstance(the));
 	slot = fxNextStringXProperty(the, slot, "URIError", mxID(_name), XS_DONT_ENUM_FLAG);
@@ -115,15 +116,56 @@ void fxBuildError(txMachine* the)
 	instance = fxBuildHostConstructor(the, mxCallback(fx_URIError), 1, mxID(_URIError));
 	instance->value.instance.prototype = prototype;
 	mxURIErrorConstructor = *the->stack;
-	the->stack++;
+	mxPop();
+}
+
+void fxCaptureErrorStack(txMachine* the, txSlot* internal, txSlot* frame)
+{
+	txSlot* slot = internal->value.reference = fxNewSlot(the);
+	slot->kind = XS_INSTANCE_KIND;
+	slot->value.instance.garbage = C_NULL;
+	slot->value.instance.prototype = C_NULL;
+	while (frame->next) {
+		txSlot* environment = mxFrameToEnvironment(frame);
+		txSlot* function = frame + 3; 
+		if (function->kind == XS_REFERENCE_KIND) {
+			function = function->value.reference;
+			if (mxIsFunction(function)) {
+				txSlot* name = mxBehaviorGetProperty(the, function, mxID(_name), 0, XS_OWN);
+				slot = slot->next = fxNewSlot(the);
+				slot->flag = XS_GET_ONLY;
+				slot->kind = XS_KEY_KIND;
+				slot->ID = environment->ID;
+				slot->value.key.string = C_NULL;
+				slot->value.key.sum = environment->value.environment.line;
+				if (name && ((name->kind == XS_STRING_KIND) || (name->kind == XS_STRING_X_KIND))) {
+					if (name->kind == XS_STRING_X_KIND)
+						slot->kind = XS_KEY_X_KIND;
+					slot->value.key.string = name->value.string;
+				}
+				else {
+					txSlot* code = mxFunctionInstanceCode(function);
+					if (code->ID != XS_NO_ID) {
+						txSlot* key = fxGetKey(the, code->ID);
+						if (key) {
+							if (key->kind == XS_KEY_X_KIND)
+								slot->kind = XS_KEY_X_KIND;
+							slot->value.key.string = key->value.key.string;
+						}
+					}
+				}
+			}
+		}
+		frame = frame->next;
+	}
 }
 
 void fx_Error(txMachine* the)
 {
-	fx_Error_aux(the, &mxErrorPrototype, 0);
+	fx_Error_aux(the, XS_UNKNOWN_ERROR, 0);
 }
 
-txSlot* fx_Error_aux(txMachine* the, txSlot* prototype, txInteger i)
+txSlot* fx_Error_aux(txMachine* the, txError error, txInteger i)
 {
 	txSlot* instance;
 	txSlot* slot;
@@ -131,12 +173,16 @@ txSlot* fx_Error_aux(txMachine* the, txSlot* prototype, txInteger i)
 		mxPushSlot(mxFunction);
 	else
 		mxPushSlot(mxTarget);
-	fxGetPrototypeFromConstructor(the, prototype);
+	fxGetPrototypeFromConstructor(the, &mxErrorPrototypes(error));
 	instance = fxNewObjectInstance(the);
 	mxPullSlot(mxResult);
 	slot = instance->next = fxNewSlot(the);
 	slot->flag = XS_INTERNAL_FLAG | XS_GET_ONLY;
 	slot->kind = XS_ERROR_KIND;
+	slot->value.error.info = C_NULL;
+	slot->value.error.which = error;
+	if (gxDefaults.captureErrorStack)
+		gxDefaults.captureErrorStack(the, slot, the->frame->next);
 	if ((mxArgc > i) && (mxArgv(i)->kind != XS_UNDEFINED_KIND)) {
 		fxToString(the, mxArgv(i));
 		slot = fxNextSlotProperty(the, slot, mxArgv(i), mxID(_message), XS_DONT_ENUM_FLAG);
@@ -151,14 +197,14 @@ void fx_Error_toString(txMachine* the)
 	if (mxThis->kind != XS_REFERENCE_KIND)
 		mxTypeError("this is no Error instance");
 	mxPushSlot(mxThis);
-	fxGetID(the, mxID(_name));
+	mxGetID(mxID(_name));
 	if (the->stack->kind == XS_UNDEFINED_KIND) 
 		fxStringX(the, the->stack, "Error");
 	else	
 		fxToString(the, the->stack);
 	name = the->stack;
 	mxPushSlot(mxThis);
-	fxGetID(the, mxID(_message));
+	mxGetID(mxID(_message));
 	if (the->stack->kind == XS_UNDEFINED_KIND) 
 		*the->stack = mxEmptyString;
 	else	
@@ -180,7 +226,7 @@ void fx_Error_toString(txMachine* the)
 void fx_AggregateError(txMachine* the)
 {
 	txSlot* stack = the->stack;
-	txSlot* property = fx_Error_aux(the, &mxAggregateErrorPrototype, 1);
+	txSlot* property = fx_Error_aux(the, XS_AGGREGATE_ERROR, 1);
 	txSlot* array;
 	txSlot** address;
 	txIndex length = 0;
@@ -218,31 +264,62 @@ void fx_AggregateError(txMachine* the)
 
 void fx_EvalError(txMachine* the)
 {
-	fx_Error_aux(the, &mxEvalErrorPrototype, 0);
+	fx_Error_aux(the, XS_EVAL_ERROR, 0);
 }
 
 void fx_RangeError(txMachine* the)
 {
-	fx_Error_aux(the, &mxRangeErrorPrototype, 0);
+	fx_Error_aux(the, XS_RANGE_ERROR, 0);
 }
 
 void fx_ReferenceError(txMachine* the)
 {
-	fx_Error_aux(the, &mxReferenceErrorPrototype, 0);
+	fx_Error_aux(the, XS_REFERENCE_ERROR, 0);
 }
 
 void fx_SyntaxError(txMachine* the)
 {
-	fx_Error_aux(the, &mxSyntaxErrorPrototype, 0);
+	fx_Error_aux(the, XS_SYNTAX_ERROR, 0);
 }
 
 void fx_TypeError(txMachine* the)
 {
-	fx_Error_aux(the, &mxTypeErrorPrototype, 0);
+	fx_Error_aux(the, XS_TYPE_ERROR, 0);
 }
 
 void fx_URIError(txMachine* the)
 {
-	fx_Error_aux(the, &mxURIErrorPrototype, 0);
+	fx_Error_aux(the, XS_URI_ERROR, 0);
 }
 
+void fx_Error_prototype_get_stack(txMachine* the)
+{
+	txSlot* slot;
+	if (mxThis->kind != XS_REFERENCE_KIND)
+		mxTypeError("this is no Error instance");
+	slot = mxThis->value.reference->next;
+	if (slot && (slot->kind == XS_ERROR_KIND)) {
+		fx_Error_toString(the);
+		slot = slot->value.reference;
+		if (slot) {
+			slot = slot->next;
+			while (slot) {
+				fxConcatStringC(the, mxResult, "\n at");
+				if ((slot->value.key.string != C_NULL) && (mxStringLength(slot->value.key.string))) {
+					fxConcatStringC(the, mxResult, " ");
+					fxConcatString(the, mxResult, slot);
+				}
+				fxConcatStringC(the, mxResult, " (");
+				if (slot->ID != XS_NO_ID) {
+					fxIDToString(the, slot->ID, the->nameBuffer, sizeof(the->nameBuffer));
+					fxConcatStringC(the, mxResult, the->nameBuffer);
+					fxConcatStringC(the, mxResult, ":");
+					fxIntegerToString(the, (txInteger)slot->value.key.sum, the->nameBuffer, sizeof(the->nameBuffer));
+					fxConcatStringC(the, mxResult, the->nameBuffer);
+				}
+				fxConcatStringC(the, mxResult, ")");
+				slot = slot->next;
+			}
+		}
+	}
+}

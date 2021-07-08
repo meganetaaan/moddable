@@ -37,9 +37,7 @@
 #define kCommodettoBitmapCLUT16 (11)
 #define kCommodettoBitmapRGB444 (12)
 
-#define mxScreenIdling 1
-
-static xsBooleanValue fxFindResult(xsMachine* the, xsSlot* slot, xsIndex id);
+static xsBooleanValue fxFindResult(xsMachine* the, xsSlot* slot, xsIdentifier id);
 #define xsFindResult(_THIS,_ID) fxFindResult(the, &_THIS, _ID)
 static xsBooleanValue fxArchiveRead(void* src, size_t offset, void* buffer, size_t size);
 static xsBooleanValue fxArchiveWrite(void* src, size_t offset, void* buffer, size_t size);
@@ -72,10 +70,12 @@ static void screen_end(xsMachine* the);
 static void screen_get_clut(xsMachine* the);
 static void screen_pixelsToBytes(xsMachine* the);
 static void screen_postMessage(xsMachine* the);
+static void screen_readLED(xsMachine* the);
 static void screen_send(xsMachine* the);
 static void screen_set_clut(xsMachine* the);
 static void screen_start(xsMachine* the);
 static void screen_stop(xsMachine* the);
+static void screen_writeLED(xsMachine* the);
 static void screen_get_pixelFormat(xsMachine* the);
 static void screen_get_rotation(xsMachine* the);
 static void screen_get_width(xsMachine* the);
@@ -136,16 +136,48 @@ static char* gxTouchEventNames[4] = {
 
 void fxAbort(xsMachine* the, int status)
 {
-	txScreen* screen = the->host;
-	if (status == xsNotEnoughMemoryExit)
-		xsUnknownError("not enough memory");
-	else if (status == xsStackOverflowExit)
-		xsUnknownError("stack overflow");
-	else if (status == xsDeadStripExit)
-		xsUnknownError("dead strip");
-	else if (status == xsUnhandledExceptionExit) {
-		xsTrace("unhandled exception\n");
-		(*screen->abort)(screen);
+	static int exitToHost = 1;
+	if (exitToHost) {
+		txScreen* screen = the->host;
+		if (!screen)
+			screen = the->context;
+		char* why = NULL;
+		switch (status) {
+		case XS_STACK_OVERFLOW_EXIT:
+			why = "stack overflow";
+			break;
+		case XS_NOT_ENOUGH_MEMORY_EXIT:
+			why = "memory full";
+			break;
+		case XS_NO_MORE_KEYS_EXIT:
+			why = "not enough keys";
+			break;
+		case XS_DEAD_STRIP_EXIT:
+			why = "dead strip";
+			break;
+		case XS_DEBUGGER_EXIT:
+			break;
+		case XS_FATAL_CHECK_EXIT:
+			break;
+		case XS_UNHANDLED_EXCEPTION_EXIT:
+			why = "unhandled exception";
+			break;
+		case XS_UNHANDLED_REJECTION_EXIT:
+			exitToHost = 0;
+			why = "unhandled rejection";
+			break;
+		default:
+			why = "unknown";
+			break;
+		}
+		if (why)
+			xsLog("XS abort: %s\n", why);
+		if (screen)
+			(*screen->abort)(screen, status);
+		if (exitToHost) {
+			exitToHost = 0;
+			fxExitToHost(the);
+		}
 	}
 }
 
@@ -177,12 +209,14 @@ void fxScreenIdle(txScreen* screen)
 				xsNumberValue when;
 				xsVars(2);
 				xsVar(0) = xsGet(xsGlobal, xsID_screen);
-				when = xsToNumber(xsGet(xsVar(0), xsID_when));
-				if (!c_isnan(when) && (when <= fxDateNow())) {
-					xsVar(1) = xsGet(xsVar(0), xsID_context);
-					if (xsTest(xsVar(1))) {
-						if (xsFindResult(xsVar(1), xsID_onIdle)) {
-							xsCallFunction0(xsResult, xsVar(1));
+				if (xsTest(xsVar(0))) {
+					when = xsToNumber(xsGet(xsVar(0), xsID_when));
+					if (!c_isnan(when) && (when <= fxDateNow())) {
+						xsVar(1) = xsGet(xsVar(0), xsID_context);
+						if (xsTest(xsVar(1))) {
+							if (xsFindResult(xsVar(1), xsID_onIdle)) {
+								xsCallFunction0(xsResult, xsVar(1));
+							}
 						}
 					}
 				}
@@ -198,14 +232,23 @@ void fxScreenInvoke(txScreen* screen, char* buffer, int size)
 	{
 		xsVars(2);
 		xsVar(0) = xsGet(xsGlobal, xsID_screen);
-		xsVar(1) = xsGet(xsVar(0), xsID_context);
-		if (xsTest(xsVar(1))) {
-			if (xsFindResult(xsVar(1), xsID_onMessage)) {
+		if (xsTest(xsVar(0))) {
+			if (xsFindResult(xsVar(0), xsID_onMessage)) {
 				if (size)
-					(void)xsCallFunction1(xsResult, xsVar(1), xsArrayBuffer(buffer, size));
+					(void)xsCallFunction1(xsResult, xsVar(0), xsArrayBuffer(buffer, size));
 				else
-					(void)xsCallFunction1(xsResult, xsVar(1), xsString(buffer));
+					(void)xsCallFunction1(xsResult, xsVar(0), xsString(buffer));
+
+			}
+			xsVar(1) = xsGet(xsVar(0), xsID_context);
+			if (xsTest(xsVar(1))) {
+				if (xsFindResult(xsVar(1), xsID_onMessage)) {
+					if (size)
+						(void)xsCallFunction1(xsResult, xsVar(1), xsArrayBuffer(buffer, size));
+					else
+						(void)xsCallFunction1(xsResult, xsVar(1), xsString(buffer));
 	
+				}
 			}
 		}
 	}
@@ -219,10 +262,12 @@ void fxScreenKey(txScreen* screen, int kind, char* string, int modifiers, double
 		{
 			xsVars(2);
 			xsVar(0) = xsGet(xsGlobal, xsID_screen);
-			xsVar(1) = xsGet(xsVar(0), xsID_context);
-			if (xsTest(xsVar(1))) {
-				if (xsFindResult(xsVar(1), xsID(gxKeyEventNames[kind]))) {
-					xsCallFunction3(xsResult, xsVar(1), xsString(string), xsInteger(modifiers), xsNumber(when));
+			if (xsTest(xsVar(0))) {
+				xsVar(1) = xsGet(xsVar(0), xsID_context);
+				if (xsTest(xsVar(1))) {
+					if (xsFindResult(xsVar(1), xsID(gxKeyEventNames[kind]))) {
+						xsCallFunction3(xsResult, xsVar(1), xsString(string), xsInteger(modifiers), xsNumber(when));
+					}
 				}
 			}
 		}
@@ -230,11 +275,13 @@ void fxScreenKey(txScreen* screen, int kind, char* string, int modifiers, double
 	}
 }
 
+
 void fxScreenLaunch(txScreen* screen)
 {
+	static xsStringValue signature = PIU_DOT_SIGNATURE;
 	void* preparation = xsPreparation();
 	void* archive = (screen->archive) ? fxMapArchive(preparation, screen->archive, screen->archive, 4 * 1024, fxArchiveRead, fxArchiveWrite) : NULL;
-	screen->machine = fxPrepareMachine(NULL, preparation, "mc", screen, archive);
+	screen->machine = fxPrepareMachine(NULL, preparation, strrchr(signature, '.') + 1, screen, archive);
 	if (!screen->machine)
 		return;	
 	((txMachine*)(screen->machine))->host = screen;
@@ -254,6 +301,8 @@ void fxScreenLaunch(txScreen* screen)
 	xsBeginHost(screen->machine);
 	{
 		xsVars(2);
+		if (screen->archive && !the->archive)
+			fxAbort(the, ((txByte*)(screen->archive))[8]);
 		xsCollectGarbage();
 		xsVar(0) = xsNewHostObject(NULL); // no destructor
 		xsSetHostData(xsVar(0), screen);
@@ -277,12 +326,16 @@ void fxScreenLaunch(txScreen* screen)
 		xsDefine(xsVar(0), xsID_pixelsToBytes, xsVar(1), xsDefault);
 		xsVar(1) = xsNewHostFunction(screen_postMessage, 1);
 		xsDefine(xsVar(0), xsID_postMessage, xsVar(1), xsDefault);
+		xsVar(1) = xsNewHostFunction(screen_readLED, 0);
+		xsDefine(xsVar(0), xsID_readLED, xsVar(1), xsDefault);
 		xsVar(1) = xsNewHostFunction(screen_send, 1);
 		xsDefine(xsVar(0), xsID_send, xsVar(1), xsDefault);
 		xsVar(1) = xsNewHostFunction(screen_start, 1);
 		xsDefine(xsVar(0), xsID_start, xsVar(1), xsDefault);
 		xsVar(1) = xsNewHostFunction(screen_stop, 0);
 		xsDefine(xsVar(0), xsID_stop, xsVar(1), xsDefault);
+		xsVar(1) = xsNewHostFunction(screen_writeLED, 1);
+		xsDefine(xsVar(0), xsID_writeLED, xsVar(1), xsDefault);
 		xsVar(1) = xsNewHostFunction(screen_get_pixelFormat, 0);
 		xsDefine(xsVar(0), xsID_pixelFormat, xsVar(1), xsIsGetter);
 		xsVar(1) = xsNewHostFunction(screen_set_pixelFormat, 0);
@@ -299,6 +352,7 @@ void fxScreenLaunch(txScreen* screen)
 		xsVar(1) = xsNewHostFunction(screen_get_frameBuffer, 0);
 		xsDefine(xsVar(0), xsID_frameBuffer, xsVar(1), xsIsGetter);
 #endif
+
 		xsSet(xsVar(0), xsID_pixelFormat, xsInteger(kCommodettoBitmapFormat));
 		xsSet(xsVar(0), xsID_when, xsNumber(C_NAN));
 		xsSet(xsGlobal, xsID_screen, xsVar(0));
@@ -347,10 +401,12 @@ void fxScreenQuit(txScreen* screen)
 		{
 			xsVars(2);
 			xsVar(0) = xsGet(xsGlobal, xsID_screen);
-			xsVar(1) = xsGet(xsVar(0), xsID_context);
-			if (xsTest(xsVar(1))) {
-				if (xsFindResult(xsVar(1), xsID_onQuit)) {
-					xsCallFunction0(xsResult, xsVar(1));
+			if (xsTest(xsVar(0))) {
+				xsVar(1) = xsGet(xsVar(0), xsID_context);
+				if (xsTest(xsVar(1))) {
+					if (xsFindResult(xsVar(1), xsID_onQuit)) {
+						xsCallFunction0(xsResult, xsVar(1));
+					}
 				}
 			}
 		}
@@ -489,6 +545,12 @@ void screen_postMessage(xsMachine* the)
 		else
 			(*screen->post)(screen, xsToString(xsArg(0)), 0);
 	}
+}
+
+void screen_readLED(xsMachine* the)
+{
+	txScreen* screen = xsGetHostData(xsThis);
+	xsResult = (screen->flags & mxScreenLED) ? xsInteger(1) :  xsInteger(0);
 }
 
 void screen_send(xsMachine* the)
@@ -728,6 +790,16 @@ void screen_stop(xsMachine* the)
 	xsSet(xsThis, xsID_when, xsNumber(C_NAN));
 }
 
+void screen_writeLED(xsMachine* the)
+{
+	txScreen* screen = xsGetHostData(xsThis);
+	if (xsTest(xsArg(0)))
+		screen->flags |= mxScreenLED;
+	else
+		screen->flags &= ~mxScreenLED;
+	(*screen->formatChanged)(screen);
+}
+
 void screen_get_clut(xsMachine* the)
 {
 	txScreen* screen = xsGetHostData(xsThis);
@@ -807,7 +879,7 @@ void screen_get_frameBuffer(xsMachine* the)
 }
 #endif
 
-xsBooleanValue fxFindResult(xsMachine* the, xsSlot* slot, xsIndex id)
+xsBooleanValue fxFindResult(xsMachine* the, xsSlot* slot, xsIdentifier id)
 {
 	xsBooleanValue result;
 	xsOverflow(-1);

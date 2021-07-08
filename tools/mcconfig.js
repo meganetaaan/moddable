@@ -569,7 +569,7 @@ class XcodeFile extends PrerequisiteFile {
 			this.addResource(tool.resourcesPath + "/" + target);
 		}
 		if (tool.stringFiles.length)
-			this.addResource(tool.resourcesPath + "/locals.mhi");
+			this.addResource(tool.resourcesPath + "/" + tool.localsName + ".mhi");
 
 		this.addResource(tool.mainPath + "/ios/Assets.xcassets", true);
 	
@@ -789,6 +789,10 @@ export default class extends Tool {
 				path += this.slash + this.subplatform;
 				this.createDirectory(path);
 			}
+			else if ((platform == "lin") || (platform == "mac") || (platform == "win")) {
+				path += this.slash + "mc";
+				this.createDirectory(path);
+			}
 		}
 		if (this.debug) 
 			path += this.slash + "debug";
@@ -797,10 +801,6 @@ export default class extends Tool {
 		else
 			path += this.slash + "release";
 		this.createDirectory(path);
-		if ((platform == "lin") || (platform == "mac") || (platform == "win")) {
-			path += this.slash + "mc";
-			this.createDirectory(path);
-		}
 		if (last) {
 			path += this.slash + last;
 			this.createDirectory(path);
@@ -901,6 +901,7 @@ export default class extends Tool {
 				tsFile.preload = false;
 			}
 			for (var pattern of preload) {
+				pattern = this.resolvePrefix(pattern);
 				pattern = this.resolveSlash(pattern);
 				var star = pattern.lastIndexOf("*");
 				if (star >= 0) {
@@ -1016,6 +1017,7 @@ export default class extends Tool {
 		}
 	}
 	run() {
+		this.localsName = "locals";
 		super.run();
 		
 		this.filterCommonjs(this.manifest.commonjs);
@@ -1038,11 +1040,15 @@ export default class extends Tool {
 		this.modulesPath = this.tmpPath + this.slash + "modules";
 		this.createDirectory(this.modulesPath);
 		for (var folder of this.jsFolders)
-			this.createDirectory(this.modulesPath + this.slash + folder);
+			this.createFolder(this.modulesPath, folder);
 
 		if (this.platform == "esp32") {
-			if (undefined === this.environment.SDKCONFIGPATH)
-				this.environment.SDKCONFIGPATH = this.buildPath + this.slash + "devices" + this.slash + "esp32" + this.slash + "xsProj";
+			if (undefined === this.environment.SDKCONFIGPATH) {
+				if (undefined === this.environment.ESP32_SUBCLASS)
+					this.environment.SDKCONFIGPATH = this.buildPath + this.slash + "devices" + this.slash + "esp32" + this.slash + "xsProj-esp32";
+				else
+					this.environment.SDKCONFIGPATH = this.buildPath + this.slash + "devices" + this.slash + "esp32" + this.slash + "xsProj-" + this.environment.ESP32_SUBCLASS;
+			}
 		}
 		
 		if ((this.platform == "x-android") || (this.platform == "x-android-simulator")) {
@@ -1116,9 +1122,9 @@ export default class extends Tool {
 			this.createDirectory(this.resourcesPath);
 		}
 		for (var folder of this.dataFolders)
-			this.createDirectory(this.dataPath + this.slash + folder);
+			this.createFolder(this.dataPath, folder);
 		for (var folder of this.resourcesFolders)
-			this.createDirectory(this.resourcesPath + this.slash + folder);
+			this.createFolder(this.resourcesPath, folder);
 			
 		var file = new DefinesFile(this.tmpPath + this.slash + "mc.defines.h", this);
 		file.generate(this);

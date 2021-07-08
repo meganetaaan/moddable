@@ -84,12 +84,15 @@ struct modBLEWhitelistAddressRecord {
 };
 
 int modBLEWhitelistContains(uint8_t addressType, uint8_t *address);
+void modBLEWhitelistClear(void);
 
 /* security */
 
 uint16_t modBLESetSecurityParameters(uint8_t encryption, uint8_t bonding, uint8_t mitm, uint16_t ioCapability);
 
 /* connections */
+
+#define kInvalidConnectionID 0xFFFF
 
 typedef enum {
 	kBLEConnectionTypeClient = 0,

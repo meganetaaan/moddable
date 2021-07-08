@@ -1,7 +1,7 @@
 # Manifest
 
-Copyright 2017-2020 Moddable Tech, Inc.<BR>
-Revised: September 29, 2020
+Copyright 2017-2021 Moddable Tech, Inc.<BR>
+Revised: June 16, 2021
 
 A manifest is a JSON file that describes the modules and resources necessary to build a Moddable app. This document explains the properties of the JSON object and how manifests are processed by the Moddable SDK build tools.
 
@@ -13,12 +13,16 @@ A manifest is a JSON file that describes the modules and resources necessary to 
 	* [`build`](#build)
 	* [`include`](#include)
 	* [`creation`](#creation)
+	* [`defines`](#defines)
+	* [`config`](#config)
 	* [`strip`](#strip)
 	* [`modules`](#modules)
 	* [`preload`](#preload)
 	* [`resources`](#resources)
 	* [`data`](#data)
 	* [`platforms`](#platforms)
+		* [`subplatforms`](#subplatforms)
+	* [`bundle`](#bundle)
 * [How manifests are processed](#process)
 
 <a id="example"></a>
@@ -74,16 +78,17 @@ When you build an application, the default output directory name is taken from t
 	
 #### `ESP32-specific environment variables`
 
-The `esp32` platform object supports a number of optional environment variables applications can use to customize the Moddable SDK ESP32 build:
+The `esp32` platform object supports a number of optional environment variables applications can use to customize the Moddable SDK build for ESP32 and ESP32-S2:
 
 | Variable | Description |
 | --- | :--- | 
-| `SDKCONFIGPATH` | Pathname to a directory containing custom [sdkconfig defaults](https://docs.espressif.com/projects/esp-idf/en/v3.3.2/api-guides/build-system-cmake.html?highlight=sdkconfig#custom-sdkconfig-defaults) entries. 
-| `PARTITIONS_FILE` | Full pathname to a [partiion table](https://docs.espressif.com/projects/esp-idf/en/v3.3.2/api-guides/partition-tables.html#) in CSV format
+| `SDKCONFIGPATH` | Pathname to a directory containing custom [sdkconfig defaults](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/build-system.html#custom-sdkconfig-defaults) entries. 
+| `PARTITIONS_FILE` | Full pathname to a [partition table](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/partition-tables.html) in CSV format.
+| `BOOTLOADERPATH` | Pathname to a directory containing a custom [ESP-IDF bootloader component](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/bootloader.html#custom-bootloader).
 
-> Note: This document does not cover native code ESP32 and ESP-IDF build details. Refer to the [ESP-IDF documentation](https://docs.espressif.com/projects/esp-idf/en/v3.3.2/get-started/index.html) for additional information.
+> Note: This document does not cover native code ESP32 and ESP-IDF build details. Refer to the [ESP-IDF documentation](https://docs.espressif.com/projects/esp-idf/en/v4.2/esp32/get-started/index.html) for additional information.
  
-The [modClock](https://github.com/Moddable-OpenSource/moddable/tree/public/contributed/modClock) example app leverages both environment variables:
+The [modClock](https://github.com/Moddable-OpenSource/moddable/tree/public/contributed/modClock) example app leverages the `SDKCONFIGPATH` and `PARTITIONS_FILE` environment variables:
 
 ```js
 "build": {
@@ -92,11 +97,11 @@ The [modClock](https://github.com/Moddable-OpenSource/moddable/tree/public/contr
 },
 ```
 
-In this example, the modClock [partitions.csv](https://github.com/Moddable-OpenSource/moddable/blob/public/contributed/modClock/sdkconfig/partitions.csv) file completely replaces the base Moddable SDK [partiions.csv](https://github.com/Moddable-OpenSource/moddable/blob/public/build/devices/esp32/xsProj/partitions.csv) file at build time to provide additional partitions for OTA updates. The `sdkconfig` directory contains sdkconfig files that override and supplement the base Moddable SDK [sdkconfig.defaults](https://github.com/Moddable-OpenSource/moddable/blob/public/build/devices/esp32/xsProj/sdkconfig.defaults) entries. The following section describes how the Moddable ESP32 build processes sdkconfig files.
+In this example, the modClock [partitions.csv](https://github.com/Moddable-OpenSource/moddable/blob/public/contributed/modClock/sdkconfig/partitions.csv) file completely replaces the base Moddable SDK [partitions.csv](https://github.com/Moddable-OpenSource/moddable/blob/public/build/devices/esp32/xsProj-esp32/partitions.csv) file at build time to provide additional partitions for OTA updates. The `sdkconfig` directory contains sdkconfig files that override and supplement the base Moddable SDK [sdkconfig.defaults](https://github.com/Moddable-OpenSource/moddable/blob/public/build/devices/esp32/xsProj-esp32/sdkconfig.defaults) entries. The following section describes how the Moddable ESP32 build processes sdkconfig files.
 
 #### How sdkconfig files are processed
 
-The Moddable SDK sdkconfig defaults files are located in the `$MODDABLE/build/devices/esp32/xsProj` directory. The [sdkconfig.defaults](https://github.com/Moddable-OpenSource/moddable/blob/public/build/devices/esp32/xsProj/sdkconfig.defaults) file is the base configuration file used by all ESP32 builds. Release and instrumented release builds merge additional configuration options, on top of the base `sdkconfig.defaults` file, from the [sdkconfig.defaults.release](https://github.com/Moddable-OpenSource/moddable/blob/public/build/devices/esp32/xsProj/sdkconfig.defaults.release) and [sdkconfig.inst](https://github.com/Moddable-OpenSource/moddable/blob/public/build/devices/esp32/xsProj/sdkconfig.inst) files respectively. When merging, configuration options that exist in the base sdkconfig.defaults file are replaced and options that don't exist in the base sdkconfig.defaults file are added. The merge processing order is as follows:
+The Moddable SDK sdkconfig defaults files are located in the `$MODDABLE/build/devices/esp32/xsProj-esp32` and `$MODDABLE/build/devices/esp32/xsProj-esp32s2` directories for ESP32 and ESP32-S2, respectively. The `sdkconfig.defaults` ([ESP32](https://github.com/Moddable-OpenSource/moddable/blob/public/build/devices/esp32/xsProj-esp32/sdkconfig.defaults)/[ESP32-S2](https://github.com/Moddable-OpenSource/moddable/blob/public/build/devices/esp32/xsProj-esp32s2/sdkconfig.defaults)) file is the base configuration file used by all ESP32/ESP32-S2 builds. Release and instrumented release builds merge additional configuration options, on top of the base `sdkconfig.defaults` file, from the `sdkconfig.defaults.release` ([ESP32](https://github.com/Moddable-OpenSource/moddable/blob/public/build/devices/esp32/xsProj-esp32/sdkconfig.defaults.release)/[ESP32-S2](https://github.com/Moddable-OpenSource/moddable/blob/public/build/devices/esp32/xsProj-esp32s2/sdkconfig.defaults.release)) and `sdkconfig.inst` ([ESP32](https://github.com/Moddable-OpenSource/moddable/blob/public/build/devices/esp32/xsProj-esp32/sdkconfig.inst)/[ESP32-S2](https://github.com/Moddable-OpenSource/moddable/blob/public/build/devices/esp32/xsProj-esp32s2/sdkconfig.inst)) files respectively. When merging, configuration options that exist in the base `sdkconfig.defaults` file are replaced and options that don't exist in the base `sdkconfig.defaults` file are added. The merge processing order is as follows:
 
 1. All base `sdkconfig.defaults` options are applied to the build.
 2. On release builds, the `sdkconfig.defaults.release` options are merged on top of the `sdkconfig.defaults` options.
@@ -105,7 +110,7 @@ The Moddable SDK sdkconfig defaults files are located in the `$MODDABLE/build/de
 	When applications specify optional sdkconfig files using the `SDKCONFIGPATH` manifest environment variable, the merge processing additionally includes the following:
 
 4. On debug builds, the application `sdkconfig.defaults` file, when provided, is merged on top of the base Moddable SDK `sdkconfig.defaults` file.
-5. On release builds, the application `sdkconfig.defaults.release` options, when provided,  are merged on top of the merge performed in step 2.
+5. On release builds, the application `sdkconfig.defaults.release` options, when provided,  are merged on top of the merge performed in step 4.
 6. On release instrumented builds, the `sdkconfig.inst` options, when provided, are merged on top of the merge performed in step 5.
 
 ***
@@ -161,7 +166,9 @@ The `creation` object defines the creation parameters of the XS machine that wil
 	"main": "main",
 },
 ```
-	
+
+These values correspond to machine allocation values [described](../xs/XS%20in%20C.md#machine-allocation) in the XS in C documentation (the sole exception is the `main` property, which is the module specifier of the module loaded following the [set-up phase](../base/setup.md)). Take care when changing these values as configuring them improperly can result in an unstable or unusable system. Bigger values are not always better, especially on devices with limited resources.
+
 ***
 
 <a id="defines"></a>
@@ -202,6 +209,8 @@ if (!config.ssid) {
 ```
 
 The `config` object in the `mc/config` module is frozen, preventing its values from being changed at runtime.
+
+The content of the `config` object may be overridden by adding key value pairs to the command line provided to `mcconfig`. See the Arguments section of the [Tools document](./tools.md#arguments) for details.
 
 ***
 
@@ -438,6 +447,7 @@ For example, if the `platforms` object of a manifest is as follows, building for
 }
 ```
 
+<a id="subplatforms"></a>
 #### Subplatforms
 
 A subplatform is used to configure an application for the variations in a product family. They are useful when devices are similar and share much of the same configuration, but have slight differences.
@@ -483,6 +493,31 @@ The `SUBPLATFORM` variable is automatically defined by `mcconfig`. A wildcard is
 
 ***
 
+<a id="bundle"></a>
+### `bundle`
+
+The `bundle` object is used by the [`mcbundle` command line tool](./tools.md#mcbundle) to build and package app archives for the Moddable Store. It has the following properties:
+
+| Property | Required | Description |
+| :---: | :---: | :--- |
+| `id` | ✓ | The app signature. We typically use the app signature `tech.moddable.` + the name of the app, for example `tech.moddable.balls` for an app called `balls`.
+| `devices` | ✓ | An array of platform identifiers or device signatures that support the app.<BR><BR>You can also use wildcards (e.g. `esp/*` or `esp32/*`).
+| `custom` | | The path to the `custom` directory for the app's configurable preferences, if any.
+| `icon` | | The path to the custom app icon, if any. The app icon is the image that shows up next to the app name in the Moddable Store. The Moddable Store supplies a default icon based on the Moddable logo.
+
+```
+"bundle": {
+    "id": "tech.moddable.countdown",
+    "devices": [
+        "esp/moddable_one",
+        "com.moddable.two"
+    ],
+    “custom”: “./store/custom”,
+    “icon”: “./store/icon.png”
+}
+```
+
+***
 <a id="process"></a>
 ## How manifests are processed
 

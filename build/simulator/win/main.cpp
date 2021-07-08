@@ -35,12 +35,13 @@ typedef struct {
 	int width;
 	int height;
 	char* title;
+	char* name;
 } txMockup;
 
 static BOOL CALLBACK fxMockupCount(HMODULE hModule, LPCTSTR lpszType, LPTSTR lpszName, LONG_PTR lParam);
 static BOOL CALLBACK fxMockupCreate(HMODULE hModule, LPCTSTR lpszType, LPTSTR lpszName, LONG_PTR lParam);
 static void fxMockupCreateAux(txMockup* mockup, char* nameFrom, char* nameTo, char* valueFrom, char* valueTo);
-static void fxScreenAbort(txScreen* screen);
+static void fxScreenAbort(txScreen* screen, int status);
 static void fxScreenBufferChanged(txScreen* screen);
 static void fxScreenFormatChanged(txScreen* screen);
 static void fxScreenStart(txScreen* screen, double interval);
@@ -305,6 +306,14 @@ BOOL CALLBACK fxMockupCreate(HMODULE hModule, LPCTSTR lpszType, LPTSTR lpszName,
 		string++;
 		offset++;
 	}
+	offset = 0;
+	size = (ULONG)strlen(lpszName) - 5;
+	mockup->name = (char*)malloc(size + 1);
+	while (offset < size) {
+		mockup->name[offset] = tolower(lpszName[5 + offset]);
+		offset++;
+	}
+	mockup->name[offset] = 0;
 	gxMockups[gxMockupIndex] = mockup;
 	gxMockupIndex++;
 	return TRUE;
@@ -313,7 +322,7 @@ BOOL CALLBACK fxMockupCreate(HMODULE hModule, LPCTSTR lpszType, LPTSTR lpszName,
 void fxMockupCreateAux(txMockup* mockup, char* nameFrom, char* nameTo, char* valueFrom, char* valueTo)
 {
 	if (!strncmp("title", nameFrom, nameTo - nameFrom)) {
-		long length = valueTo - valueFrom;
+		size_t length = valueTo - valueFrom;
 		mockup->title = (char*)malloc(length + 1);
 		memcpy(mockup->title, valueFrom, length);
 		mockup->title[length] = 0;
@@ -328,10 +337,10 @@ void fxMockupCreateAux(txMockup* mockup, char* nameFrom, char* nameTo, char* val
 		mockup->height = atoi(valueFrom);
 }
 
-void fxScreenAbort(txScreen* screen)
+void fxScreenAbort(txScreen* screen, int status)
 {
 	HWND view = (HWND)screen->view;
-	PostMessage(view, WM_QUIT_MACHINE, 0, 0);
+	PostMessage(view, WM_QUIT_MACHINE, status, 0);
 }
 
 void fxScreenBufferChanged(txScreen* screen)
@@ -592,6 +601,7 @@ LRESULT CALLBACK fxScreenWindowProc(HWND window, UINT message, WPARAM wParam, LP
 	case WM_OPEN_FILE: {
 		char* path = (char*)lParam;
 		HWND view = GetWindow(window, GW_CHILD);
+		BOOL launch = FALSE;
 		SendMessage(view, WM_QUIT_MACHINE, 0, 0);
 		if (path) {
 			char* slash = strrchr(path, '\\');
@@ -607,7 +617,7 @@ LRESULT CALLBACK fxScreenWindowProc(HWND window, UINT message, WPARAM wParam, LP
 							begin = strrchr(path, '\\');
 							strcpy(gxLibraryName, begin + 1);
 							*end = '/';
-							SendMessage(view, WM_LAUNCH_MACHINE, 0, 0);
+							launch = TRUE;
 						}
 					}
 					else if (!strcmp(dot, ".xsa")) {
@@ -617,11 +627,35 @@ LRESULT CALLBACK fxScreenWindowProc(HWND window, UINT message, WPARAM wParam, LP
 							begin = strrchr(path, '\\');
 							strcpy(gxArchiveName, begin + 1);
 							*end = '/';
-							SendMessage(view, WM_LAUNCH_MACHINE, 0, 0);
+							launch = TRUE;
+						}
+					}
+					
+				}
+			}
+		}
+		if (launch) {
+			char* slash;
+			int i;
+			for (i = 0; i < 3; i++) {
+				slash = strrchr(path, '\\');
+				if (!slash)
+					break;
+				*slash = 0;
+			}
+			if (slash) {
+				slash++;
+				for (i = 0; i < gxMockupCount; i++) {
+					if (!strcmp(gxMockups[i]->name, slash)) {
+						if (gxMockupIndex != i) {
+							SendMessage(window, WM_DELETE_SCREEN, 0, 0);
+							gxMockupIndex = i;
+							SendMessage(window, WM_CREATE_SCREEN, 0, 0);
 						}
 					}
 				}
 			}
+			SendMessage(view, WM_LAUNCH_MACHINE, 0, 0);
 		}
 		} break;
 	case WM_PAINT: {
@@ -740,6 +774,28 @@ LRESULT CALLBACK fxScreenViewProc(HWND view, UINT message, WPARAM wParam, LPARAM
 		}
 		InvalidateRect(view, NULL, TRUE);
 		SetWindowText(GetParent(view), "Screen Test");
+		if (wParam) {
+			PWSTR reasons[9] = {
+				L"",
+				L"XS abort: memory full!",
+				L"XS abort: stack overflow!",
+				L"XS abort: fatal check!",
+				L"XS abort: dead strip!",
+				L"XS abort: unhandled exception!",
+				L"XS abort: not enough keys!",
+				L"XS abort: too much computation!",
+				L"XS abort: unhandled rejection!",
+			};
+			MSGBOXPARAMSW params;
+			memset(&params, 0, sizeof(params));
+			params.cbSize = sizeof(params);
+			params.hwndOwner = GetParent(view);
+			params.hInstance = gInstance;
+			params.dwLanguageId = MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT);
+			params.dwStyle = MB_ICONSTOP;
+			params.lpszText = reasons[wParam];
+			MessageBoxIndirectW(&params);
+		}
 		} break;
 	case WM_TIMER: {
 		if (gxScreen && gxScreen->idle) 

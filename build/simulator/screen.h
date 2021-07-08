@@ -70,7 +70,7 @@
 
 typedef struct sxScreen txScreen;
 
-typedef void (*txScreenAbortProc)(txScreen* screen);
+typedef void (*txScreenAbortProc)(txScreen* screen, int status);
 typedef void (*txScreenBufferChangedProc)(txScreen* screen);
 typedef void (*txScreenFormatChangedProc)(txScreen* screen);
 typedef void (*txScreenIdleProc)(txScreen* screen);
@@ -84,6 +84,9 @@ typedef void (*txScreenTouchProc)(txScreen* screen, int kind, int index, int x, 
 typedef void (*txScreenWorkerCallbackProc)(void* machine, void* job);
 
 #define screenBytesPerPixel 4
+
+#define mxScreenIdling 1
+#define mxScreenLED 2
 
 struct sxScreen {
 	void* machine;

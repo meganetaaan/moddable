@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2016-2018  Moddable Tech, Inc.
+# Copyright (c) 2016-2020  Moddable Tech, Inc.
 #
 #   This file is part of the Moddable SDK Tools.
 # 
@@ -122,6 +122,7 @@ MODULES = \
 	$(MOD_DIR)/colorcellencode.xsb \
 	$(MOD_DIR)/compressbmf.xsb \
 	$(MOD_DIR)/image2cs.xsb \
+	$(MOD_DIR)/mcbundle.xsb \
 	$(MOD_DIR)/mcconfig.xsb \
 	$(MOD_DIR)/mclocal.xsb \
 	$(MOD_DIR)/mcmanifest.xsb \
@@ -190,8 +191,9 @@ COMMANDS = \
 	$(BIN_DIR)/colorcellencode \
 	$(BIN_DIR)/compressbmf \
 	$(BIN_DIR)/image2cs \
-	$(BIN_DIR)/mclocal \
+	$(BIN_DIR)/mcbundle \
 	$(BIN_DIR)/mcconfig \
+	$(BIN_DIR)/mclocal \
 	$(BIN_DIR)/mcrez \
 	$(BIN_DIR)/png2bmp \
 	$(BIN_DIR)/rle4encode \
@@ -230,7 +232,7 @@ else
 	C_FLAGS += -D_RELEASE=1 -O3
 endif
 
-LIBRARIES = -lm -lc $(shell $(PKGCONFIG) --libs gio-2.0)
+LIBRARIES = -lm -lc $(shell $(PKGCONFIG) --libs gio-2.0) -latomic -lpthread
 
 LINK_FLAGS = -fPIC
 
@@ -310,6 +312,11 @@ $(BIN_DIR)/image2cs: $(MAKEFILE_LIST)
 	@echo "#" $(NAME) $(GOAL) ": image2cs"
 	printf '#!/bin/bash\n$$MODDABLE/build/bin/lin/'$(GOAL)'/tools image2cs "$$@"' > $(BIN_DIR)/image2cs
 	chmod +x $(BIN_DIR)/image2cs
+
+$(BIN_DIR)/mcbundle: $(MAKEFILE_LIST)
+	@echo "#" $(NAME) $(GOAL) ": mcbundle"
+	printf '#!/bin/bash\n$$MODDABLE/build/bin/lin/'$(GOAL)'/tools mcbundle "$$@"' > $(BIN_DIR)/mcbundle
+	chmod +x $(BIN_DIR)/mcbundle
 
 $(BIN_DIR)/mcconfig: $(MAKEFILE_LIST)
 	@echo "#" $(NAME) $(GOAL) ": mcconfig"

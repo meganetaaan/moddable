@@ -63,7 +63,7 @@ void xs_gap_whitelist_add(xsMachine *the)
 	for (int i = 0; i < 6; ++i)
 		bda[i] = address[5 - i];
 
-	ret = esp_ble_gap_update_whitelist(ESP_BLE_WHITELIST_ADD, bda);
+	ret = esp_ble_gap_update_whitelist(ESP_BLE_WHITELIST_ADD, bda, addressType);
 	
 	if (0 != ret)
 		xsUnknownError("whitelist add failed");
@@ -93,7 +93,7 @@ void xs_gap_whitelist_remove(xsMachine *the)
 			for (int i = 0; i < 6; ++i)
 				bda[i] = address[5 - i];
 				
-			ret = esp_ble_gap_update_whitelist(ESP_BLE_WHITELIST_REMOVE, bda);
+			ret = esp_ble_gap_update_whitelist(ESP_BLE_WHITELIST_REMOVE, bda, addressType);
 			
 			c_free(walker);
 			break;
@@ -106,6 +106,11 @@ void xs_gap_whitelist_remove(xsMachine *the)
 
 void xs_gap_whitelist_clear(xsMachine *the)
 {
+	modBLEWhitelistClear();
+}
+
+void modBLEWhitelistClear(void)
+{
 	esp_bd_addr_t bda;
 	modBLEWhitelistAddress walker = gWhitelist;
 	
@@ -114,9 +119,10 @@ void xs_gap_whitelist_clear(xsMachine *the)
 		walker = walker->next;
 		for (int i = 0; i < 6; ++i)
 			bda[i] = addr->address[5 - i];
-		esp_ble_gap_update_whitelist(ESP_BLE_WHITELIST_REMOVE, bda);
+		esp_ble_gap_update_whitelist(ESP_BLE_WHITELIST_REMOVE, bda, addr->addressType);
 		c_free(addr);
 	}
+	gWhitelist = NULL;
 }
 
 int modBLEWhitelistContains(uint8_t addressType, uint8_t *address)

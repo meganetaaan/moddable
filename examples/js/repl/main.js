@@ -1,3 +1,3 @@
 import REPL from "repl";
 
-let console = new REPL;
+const console = new REPL;

@@ -23,6 +23,7 @@
 #ifdef piuGPU
 #else
 enum {
+	piuDrawContentCommand,
 	piuDrawFrameCommand,
 	piuDrawStringCommand,
 	piuDrawTextureCommand,
@@ -34,6 +35,16 @@ enum {
 };
 
 typedef uint8_t PiuCommandID;
+
+typedef struct {
+	PiuCommandID id;
+	PiuViewDrawContentProc proc;
+	PiuContent* content;
+	PocoCoordinate x;
+	PocoCoordinate y;
+	PocoDimension sw;
+	PocoDimension sh;
+} PiuDrawContentCommand;
 
 typedef struct {
 	PiuCommandID id;
@@ -360,6 +371,26 @@ void PiuViewDictionary(xsMachine* the, void* it)
 	(*self)->coordinates.height = (*self)->bounds.height = height;
 }
 
+void PiuViewDrawContent(PiuView* self, PiuViewDrawContentProc proc, void* it, PiuCoordinate x, PiuCoordinate y, PiuDimension sw, PiuDimension sh)
+{
+	Poco poco = (*self)->poco;
+	x += poco->xOrigin;
+	y += poco->yOrigin;
+#ifdef piuGPU
+	(*proc)(it, self, x, y, sw, sh);
+#else
+	{
+		PIUQueueCommand(DrawContentCommand);
+		command->proc = proc;
+		command->content = it;
+		command->x = x;
+		command->y = y;
+		command->sw = sw;
+		command->sh = sh;
+	}
+#endif
+}
+
 void PiuViewDrawFrame(PiuView* self, uint8_t *data, uint32_t dataSize, PiuCoordinate x, PiuCoordinate y, PiuDimension sw, PiuDimension sh)
 {
 	Poco poco = (*self)->poco;
@@ -413,17 +444,30 @@ void PiuViewDrawStringAux(PiuView* self, xsSlot* string, xsIntegerValue offset, 
 	PiuGlyph glyph;
 	PiuCoordinate advance;
 	
-	static const char *ellipsis = "...";
+	static const char ellipsisUTF8[4] = {0xE2, 0x80, 0xA6, 0};		// 0x2026
+	static const char *ellipsisFallback = "...";
+	const char *ellipsis;
 	PocoDimension ellipsisWidth;
 	if (width) {
-		PiuGlyph glyph = PiuFontGetGlyph(font, '.', 0);
-		if (glyph)
-			ellipsisWidth = 3 * glyph->advance;
-		else
-			ellipsisWidth = 0;
+		PiuGlyph glyph = PiuFontGetGlyph(font, 0x2026, 0);
+		if (glyph) {
+			ellipsisWidth = glyph->advance;
+			ellipsis = (char *)ellipsisUTF8;
+		}
+		else {
+			glyph = PiuFontGetGlyph(font, '.', 0);
+			if (glyph) {
+				ellipsisWidth = 3 * glyph->advance;
+				ellipsis = ellipsisFallback;
+			}
+			else
+				ellipsisWidth = 0;
+		}
 	}
-	else
+	else {
+		ellipsis = NULL;
 		ellipsisWidth = 0;
+	}
 
 	text += offset;
 	while (length) {
@@ -780,6 +824,10 @@ void PiuViewMark(xsMachine* the, void* it, xsMarkRoot markRoot)
 	while (current < limit) {
 		uint8_t* command = ((uint8_t*)self) + current;
 		switch(*((PiuCommandID*)command)) {
+		case piuDrawContentCommand:
+			PiuMarkHandle(the, ((PiuDrawContentCommand*)command)->content);
+			current += sizeof(PiuDrawContentCommand);
+			break;
 		case piuDrawFrameCommand:
 			current += sizeof(PiuDrawFrameCommand);
 			break;
@@ -932,6 +980,7 @@ void PiuViewUpdateStep(PiuView* self, PocoCoordinate x, PocoCoordinate y, PocoDi
 {
 #if (defined(__GNUC__) && defined(__OPTIMIZE__)) || defined(__llvm__)
 	static void *const gxDispatches[] ICACHE_XS6RO_ATTR = {
+		&&PIUDrawContentCommand,
 		&&PIUDrawFrameCommand,
 		&&PIUDrawStringCommand,
 		&&PIUDrawTextureCommand,
@@ -988,6 +1037,9 @@ void PiuViewUpdateStep(PiuView* self, PocoCoordinate x, PocoCoordinate y, PocoDi
 
 	while (1) {
 		PIUSwitch(*((PiuCommandID*)(((uint8_t*)(*self)) + current))) {
+		PIUCase(DrawContentCommand)
+			(*command->proc)(command->content, self, command->x, command->y, command->sw, command->sh);
+			PIUBreak;
 		PIUCase(DrawFrameCommand)
 			PocoDrawFrame(poco, command->data, command->dataSize, command->x, command->y, command->sw, command->sh);
 			PIUBreak;
@@ -1015,6 +1067,7 @@ void PiuViewUpdateStep(PiuView* self, PocoCoordinate x, PocoCoordinate y, PocoDi
 				uint8_t depth = 1;
 				do {
 					switch (*((PiuCommandID*)(((uint8_t*)(*self)) + current))) {
+						case piuDrawContentCommand:		current += sizeof(PiuDrawContentCommand); break;
 						case piuDrawFrameCommand:		current += sizeof(PiuDrawFrameCommand); break;
 						case piuDrawStringCommand:		current += sizeof(PiuDrawStringCommand); break;
 						case piuDrawTextureCommand:		current += sizeof(PiuDrawTextureCommand); break;
@@ -1408,7 +1461,7 @@ void PiuView_onTouchBegan(xsMachine* the)
 	y = c; 
 #endif
 	(*self)->updating = 1;
-	(*self)->idleTicks = ticks;
+	(*self)->idleTicks = (PiuTick)ticks;
 	PiuApplicationTouchBegan(application, index, x, y, ticks);
 	PiuApplicationAdjust(application);
 	(*self)->updating = 0;
@@ -1439,7 +1492,7 @@ void PiuView_onTouchEnded(xsMachine* the)
 	y = c; 
 #endif
 	(*self)->updating = 1;
-	(*self)->idleTicks = ticks;
+	(*self)->idleTicks = (PiuTick)ticks;
 	PiuApplicationTouchEnded(application, index, x, y, ticks);
 	PiuApplicationAdjust(application);
 	(*self)->updating = 0;

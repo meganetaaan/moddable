@@ -108,7 +108,7 @@ void fxBuildString(txMachine* the)
 	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_String_prototype_includes), 1, mxID(_includes), XS_DONT_ENUM_FLAG);
 	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_String_prototype_indexOf), 1, mxID(_indexOf), XS_DONT_ENUM_FLAG);
 	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_String_prototype_lastIndexOf), 1, mxID(_lastIndexOf), XS_DONT_ENUM_FLAG);
-	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_String_prototype_compare), 1, mxID(_localeCompare), XS_DONT_ENUM_FLAG);
+	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_String_prototype_localeCompare), 1, mxID(_localeCompare), XS_DONT_ENUM_FLAG);
 	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_String_prototype_normalize), 0, mxID(_normalize), XS_DONT_ENUM_FLAG);
 	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_String_prototype_padEnd), 1, mxID(_padEnd), XS_DONT_ENUM_FLAG);
 	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_String_prototype_padStart), 1, mxID(_padStart), XS_DONT_ENUM_FLAG);
@@ -121,7 +121,6 @@ void fxBuildString(txMachine* the)
 	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_String_prototype_substr), 2, mxID(_substr), XS_DONT_ENUM_FLAG);
 	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_String_prototype_substring), 2, mxID(_substring), XS_DONT_ENUM_FLAG);
 	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_String_prototype_toLowerCase), 0, mxID(_toLocaleLowerCase), XS_DONT_ENUM_FLAG);
-	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_String_prototype_valueOf), 0, mxID(_toLocaleString), XS_DONT_ENUM_FLAG);
 	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_String_prototype_toUpperCase), 0, mxID(_toLocaleUpperCase), XS_DONT_ENUM_FLAG);
 	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_String_prototype_toLowerCase), 0, mxID(_toLowerCase), XS_DONT_ENUM_FLAG);
 	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_String_prototype_valueOf), 0, mxID(_toString), XS_DONT_ENUM_FLAG);
@@ -144,7 +143,7 @@ void fxBuildString(txMachine* the)
 	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_String_fromCharCode), 1, mxID(_fromCharCode), XS_DONT_ENUM_FLAG);
 	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_String_fromCodePoint), 1, mxID(_fromCodePoint), XS_DONT_ENUM_FLAG);
 	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_String_raw), 1, mxID(_raw), XS_DONT_ENUM_FLAG);
-	the->stack++;
+	mxPop();
 
 	mxPush(mxIteratorPrototype);
 	slot = fxLastProperty(the, fxNewObjectInstance(the));
@@ -269,14 +268,14 @@ void fxStringOwnKeys(txMachine* the, txSlot* instance, txFlag flag, txSlot* keys
 		property = property->next;
 	}
 	if (flag & XS_EACH_NAME_FLAG)
-		keys = fxQueueKey(the, mxID(_length), XS_NO_ID, keys);
+		keys = fxQueueKey(the, mxID(_length), 0, keys);
 	fxQueueIDKeys(the, property, flag, keys);
 }
 
 txSlot* fxStringSetProperty(txMachine* the, txSlot* instance, txID id, txIndex index, txFlag flag)
 {
 	if ((id == mxID(_length)) || (!id && (mxStringInstanceLength(instance) > index)))
-		return 0;
+		return C_NULL;
 	return fxOrdinarySetProperty(the, instance, id, index, flag);
 }
 
@@ -313,7 +312,9 @@ void fx_String_fromArrayBuffer(txMachine* the)
 {
 	txSlot* slot;
 	txSlot* arrayBuffer = C_NULL;
-	txInteger length;
+	txInteger limit, offset;
+	txInteger inLength, outLength = 0;
+	unsigned char *in;
 	txString string;
 	if (mxArgc < 1)
 		mxTypeError("no argument");
@@ -325,12 +326,57 @@ void fx_String_fromArrayBuffer(txMachine* the)
 	}
 	if (!arrayBuffer)
 		mxTypeError("argument is no ArrayBuffer instance");
-	length = arrayBuffer->value.arrayBuffer.length;
-	string = fxNewChunk(the, length + 1);
-	c_memcpy(string, arrayBuffer->value.arrayBuffer.address, length);
-	string[length] = 0;
+
+	limit = arrayBuffer->value.arrayBuffer.length;
+	offset = fxArgToByteOffset(the, 1, 0);
+	if (limit < offset)
+		mxRangeError("out of range byteOffset %ld", offset);
+	inLength = fxArgToByteLength(the, 2, limit - offset);
+	if (limit < (offset + inLength))
+		mxRangeError("out of range byteLength %ld", inLength);
+
+	in = offset + (unsigned char *)arrayBuffer->value.arrayBuffer.address;
+	while (inLength > 0) {
+		unsigned char first = c_read8(in++), clen;
+		if (first < 0x80){
+			if (0 == first)
+				break;
+			inLength -= 1;
+			outLength += 1;
+			continue;
+		}
+
+		if (0xC0 == (first & 0xE0))
+			clen = 2;
+		else if (0xE0 == (first & 0xF0))
+			clen = 3;
+		else if (0xF0 == (first & 0xF0))
+			clen = 4;
+		else
+			goto badUTF8;
+
+		inLength -= clen;
+		if (inLength < 0)
+			goto badUTF8;
+
+		outLength += clen;
+		clen -= 1;
+		do {
+			if (0x80 != (0xc0 & c_read8(in++)))
+				goto badUTF8;
+		} while (--clen > 0);
+	}
+
+	string = fxNewChunk(the, outLength + 1);
+	c_memcpy(string, offset + arrayBuffer->value.arrayBuffer.address, outLength);
+	string[outLength] = 0;
 	mxResult->value.string = string;
 	mxResult->kind = XS_STRING_KIND;
+
+	return;
+
+badUTF8:
+	mxTypeError("invalid UTF-8");
 }
 
 void fx_String_fromCharCode(txMachine* the)
@@ -432,10 +478,10 @@ void fx_String_raw(txMachine* the)
 	else
 		mxTypeError("cannot coerce undefined to object");
 	mxPushSlot(mxArgv(0));
-	fxGetID(the, mxID(_raw));
+	mxGetID(mxID(_raw));
 	raw = the->stack;
 	mxPushSlot(raw);
-	fxGetID(the, mxID(_length));
+	mxGetID(mxID(_length));
 	rawCount = fxToInteger(the, the->stack);
 	mxPop();
 	if (rawCount <= 0) {
@@ -450,7 +496,7 @@ void fx_String_raw(txMachine* the)
 		mxPushSlot(list);
 		for (;;) {
 			mxPushSlot(raw);
-			fxGetID(the, index);
+			mxGetIndex(index);
 			fxToString(the, the->stack);
 			item = item->next = fxNewSlot(the);
 			mxPullSlot(item);
@@ -469,7 +515,7 @@ void fx_String_raw(txMachine* the)
 		size = 0;
 		item = list->next;
 		while (item) {
-			item->value.key.sum = c_strlen(item->value.string);
+			item->value.key.sum = mxStringLength(item->value.string);
 			size += item->value.key.sum;
 			item = item->next;
 		}
@@ -548,6 +594,12 @@ fail:
 	mxResult->kind = XS_NUMBER_KIND;
 }
 
+void fx_String_prototype_compare(txMachine* the)
+{
+	fxReport(the, "# Use standard String.prototype.localeCompare instead of soon obsolete String.prototype.compare\n");
+	fx_String_prototype_localeCompare(the);
+}
+
 void fx_String_prototype_codePointAt(txMachine* the)
 {
 	txString string = fxCoerceToString(the, mxThis);
@@ -565,20 +617,6 @@ void fx_String_prototype_codePointAt(txMachine* the)
 	}
 }
 
-void fx_String_prototype_compare(txMachine* the)
-{
-	txString aString;
-
-	aString = fxCoerceToString(the, mxThis);
-	if (mxArgc < 1)
-		mxResult->value.integer = c_strcmp(aString, "undefined");
-	else {
-		fxToString(the, mxArgv(0));
-		mxResult->value.integer = c_strcmp(aString, mxArgv(0)->value.string);
-	}
-	mxResult->kind = XS_INTEGER_KIND;
-}
-
 void fx_String_prototype_concat(txMachine* the)
 {
 	txInteger aCount;
@@ -587,9 +625,9 @@ void fx_String_prototype_concat(txMachine* the)
 	
 	fxCoerceToString(the, mxThis);
 	aCount = mxArgc;
-	aLength = c_strlen(mxThis->value.string);
+	aLength = mxStringLength(mxThis->value.string);
 	for (anIndex = 0; anIndex < aCount; anIndex++)
-		aLength += c_strlen(fxToString(the, mxArgv(anIndex)));
+		aLength += mxStringLength(fxToString(the, mxArgv(anIndex)));
 	mxResult->value.string = (txString)fxNewChunk(the, aLength + 1);
 	mxResult->kind = XS_STRING_KIND;
 	c_strcpy(mxResult->value.string, mxThis->value.string);
@@ -611,7 +649,7 @@ void fx_String_prototype_endsWith(txMachine* the)
 	if (fxIsRegExp(the, mxArgv(0)))
 		mxTypeError("future editions");
 	searchString = fxToString(the, mxArgv(0));
-	searchLength = c_strlen(searchString);
+	searchLength = mxStringLength(searchString);
 	offset = fxUnicodeToUTF8Offset(string, fxArgToPosition(the, 1, length, length));
 	if (offset < searchLength)
 		return;
@@ -622,7 +660,7 @@ void fx_String_prototype_endsWith(txMachine* the)
 void fx_String_prototype_includes(txMachine* the)
 {
 	txString string = fxCoerceToString(the, mxThis);
-	txInteger length = c_strlen(string);
+	txInteger length = mxStringLength(string);
 	txString searchString;
 	txInteger searchLength;
 	txInteger offset;
@@ -633,7 +671,7 @@ void fx_String_prototype_includes(txMachine* the)
 	if (fxIsRegExp(the, mxArgv(0)))
 		mxTypeError("future editions");
 	searchString = fxToString(the, mxArgv(0));
-	searchLength = c_strlen(searchString);
+	searchLength = mxStringLength(searchString);
 	offset = fxUnicodeToUTF8Offset(string, fxArgToPosition(the, 1, 0, fxUnicodeLength(string)));
 	if ((length - offset) < searchLength)
 		return;
@@ -669,7 +707,7 @@ void fx_String_prototype_indexOf(txMachine* the)
 	}
 	if (anOffset + aSubLength <= aLength) {
 		anOffset = fxUnicodeToUTF8Offset(aString, anOffset);
-		aLimit = c_strlen(aString) - c_strlen(aSubString);
+		aLimit = mxStringLength(aString) - mxStringLength(aSubString);
 		while (anOffset <= aLimit) {
 			p = aString + anOffset;
 			q = aSubString;
@@ -769,6 +807,20 @@ void fx_String_prototype_lastIndexOf(txMachine* the)
 	mxResult->kind = XS_INTEGER_KIND;
 }
 
+void fx_String_prototype_localeCompare(txMachine* the)
+{
+	txString aString;
+
+	aString = fxCoerceToString(the, mxThis);
+	if (mxArgc < 1)
+		mxResult->value.integer = c_strcmp(aString, "undefined");
+	else {
+		fxToString(the, mxArgv(0));
+		mxResult->value.integer = c_strcmp(aString, mxArgv(0)->value.string);
+	}
+	mxResult->kind = XS_INTEGER_KIND;
+}
+
 void fx_String_prototype_match(txMachine* the)
 {	
 	if (fx_String_prototype_withRegexp(the, mxID(_Symbol_match), 0, 1))
@@ -788,7 +840,7 @@ void fx_String_prototype_normalize(txMachine* the)
 	txString result = mxEmptyString.value.string;
 	#if (mxWindows && (WINVER >= 0x0600))
 	txString string = fxCoerceToString(the, mxThis);
-	txInteger stringLength = c_strlen(string);
+	txInteger stringLength = mxStringLength(string);
 	{
 		NORM_FORM form;
 		txInteger unicodeLength;
@@ -834,7 +886,7 @@ void fx_String_prototype_normalize(txMachine* the)
 	}
 	#elif (mxMacOSX || mxiOS)
 	txString string = fxCoerceToString(the, mxThis);
-	txInteger stringLength = c_strlen(string);
+	txInteger stringLength = mxStringLength(string);
 	{
 		CFStringNormalizationForm form;
 		CFStringRef cfString = NULL;
@@ -890,7 +942,7 @@ void fx_String_prototype_normalize(txMachine* the)
 void fx_String_prototype_pad(txMachine* the, txBoolean flag)
 {
 	txString string = fxCoerceToString(the, mxThis), filler;
-	txInteger stringLength = c_strlen(string), fillerLength;
+	txInteger stringLength = mxStringLength(string), fillerLength;
 	txInteger stringSize = fxUnicodeLength(string), fillerSize;
 	txInteger resultSize = (txInteger)fxArgToRange(the, 0, 0, 0, 0x7FFFFFFF);
 	*mxResult = *mxThis;
@@ -900,13 +952,13 @@ void fx_String_prototype_pad(txMachine* the, txBoolean flag)
 		else
 			mxPushSlot(mxArgv(1));
 		filler = fxToString(the, the->stack);
-		fillerLength = c_strlen(filler);
+		fillerLength = mxStringLength(filler);
 		fillerSize = fxUnicodeLength(filler);
 		if (fillerSize > 0) {
 			txInteger delta = resultSize - stringSize;
 			txInteger count = delta / fillerSize;
 			txInteger rest = fxUnicodeToUTF8Offset(filler, delta % fillerSize);
-			txString result = mxResult->value.string = (txString)fxNewChunk(the, stringLength + (fillerLength * count) + rest + 1);
+			txString result = mxResult->value.string = (txString)fxNewChunk(the, fxAddChunkSizes(the, fxAddChunkSizes(the, stringLength, fxMultiplyChunkSizes(the, fillerLength, count)), rest + 1));
 			mxResult->kind = XS_STRING_KIND;
 			string = fxToString(the, mxThis);
 			filler = fxToString(the, the->stack);
@@ -946,17 +998,27 @@ void fx_String_prototype_padStart(txMachine* the)
 void fx_String_prototype_repeat(txMachine* the)
 {
 	txString string = fxCoerceToString(the, mxThis), result;
-	txInteger length = c_strlen(string), count;
-	txNumber COUNT = (mxArgc > 0) ? c_trunc(fxToNumber(the, mxArgv(0))) : 0;
-    if (COUNT < 0)
-		mxRangeError("count < 0");
-	else if (COUNT == C_INFINITY)
-		mxRangeError("count == Infinity");
-    else if (c_isnan(COUNT))
-        count = 0;
-    else
-        count = (txInteger)COUNT;
-	result = mxResult->value.string = (txString)fxNewChunk(the, (length * count) + 1);
+	txInteger length = mxStringLength(string);
+	txInteger count = 0;
+	txSlot *arg = mxArgv(0);
+	if ((mxArgc > 0) && (arg->kind != XS_UNDEFINED_KIND)) {
+		if (XS_INTEGER_KIND == arg->kind) {
+			count = arg->value.integer;
+			if (count < 0)
+				mxRangeError("out of range count");
+		}
+		else {
+			txNumber value = c_trunc(fxToNumber(the, arg));
+			if (c_isnan(value))
+				count = 0;
+			else {
+				if ((value < 0) || (0x7FFFFFFF < value))
+					mxRangeError("out of range count");
+				count = (txInteger)value;
+			}
+		}
+	}
+	result = mxResult->value.string = (txString)fxNewChunk(the, fxAddChunkSizes(the, fxMultiplyChunkSizes(the, length, count), 1));
 	mxResult->kind = XS_STRING_KIND;
 	string = fxToString(the, mxThis);
 	if (length) {
@@ -998,12 +1060,12 @@ void fx_String_prototype_replace(txMachine* the)
 	}
 	string = c_strstr(mxThis->value.string, match->value.string);
 	if (string) {
-		txInteger offset = string - mxThis->value.string;
-		txInteger size = c_strlen(mxThis->value.string);
-		txInteger matchLength = c_strlen(match->value.string);
-		txInteger replaceLength;
+		txSize offset = mxPtrDiff(string - mxThis->value.string);
+		txSize size = mxStringLength(mxThis->value.string);
+		txSize matchLength = mxStringLength(match->value.string);
+		txSize replaceLength;
  		fx_String_prototype_replaceAux(the, size, offset, function, match, matchLength, replace);
-		replaceLength = c_strlen(the->stack->value.string);
+		replaceLength = mxStringLength(the->stack->value.string);
 		mxResult->value.string = (txString)fxNewChunk(the, size - matchLength + replaceLength + 1);
 		c_memcpy(mxResult->value.string, mxThis->value.string, offset);
 		c_memcpy(mxResult->value.string + offset, the->stack->value.string, replaceLength);
@@ -1049,8 +1111,8 @@ void fx_String_prototype_replaceAll(txMachine* the)
 		replace = the->stack;
 		fxToString(the, replace);
 	}
-	size = c_strlen(mxThis->value.string);
-	matchLength = c_strlen(match->value.string);
+	size = mxStringLength(mxThis->value.string);
+	matchLength = mxStringLength(match->value.string);
 	
 	list = item = fxNewInstance(the);
 	mxPushSlot(list);
@@ -1059,7 +1121,7 @@ void fx_String_prototype_replaceAll(txMachine* the)
 		fx_String_prototype_replaceAux(the, size, offset, function, match, matchLength, replace);
 		item = item->next = fxNewSlot(the);
 		mxPullSlot(item);
-		item->value.key.sum = c_strlen(item->value.string);
+		item->value.key.sum = mxStringLength(item->value.string);
 		resultSize += item->value.key.sum;
 	}
 	while (offset < size) {
@@ -1070,7 +1132,7 @@ void fx_String_prototype_replaceAll(txMachine* the)
 		else {
 			txString string = c_strstr(mxThis->value.string + offset, match->value.string);
 			if (string)
-				current = string - mxThis->value.string;
+				current = mxPtrDiff(string - mxThis->value.string);
 			else
 				current = size;
 		}
@@ -1088,7 +1150,7 @@ void fx_String_prototype_replaceAll(txMachine* the)
  			fx_String_prototype_replaceAux(the, size, current, function, match, matchLength, replace);
 			item = item->next = fxNewSlot(the);
             mxPullSlot(item);
-			item->value.key.sum = c_strlen(item->value.string);
+			item->value.key.sum = mxStringLength(item->value.string);
 			resultSize += item->value.key.sum;
 		}
 		offset = current + matchLength;
@@ -1172,7 +1234,7 @@ void fx_String_prototype_split(txMachine* the)
 	if (fx_String_prototype_withRegexp(the, mxID(_Symbol_split), 0, 2))
 		return;
 	aString = fxToString(the, mxThis);
-	aLength = c_strlen(aString);
+	aLength = mxStringLength(aString);
 	aLimit = ((mxArgc > 1) && (!mxIsUndefined(mxArgv(1)))) ? (txIndex)fxToUnsigned(the, mxArgv(1)) : 0xFFFFFFFF;
 	mxPush(mxArrayPrototype);
 	anArray = fxNewArrayInstance(the);
@@ -1186,7 +1248,7 @@ void fx_String_prototype_split(txMachine* the)
 		goto bail;
 	}
 	aSubString = fxToString(the, mxArgv(0));
-	aSubLength = c_strlen(aSubString);
+	aSubLength = mxStringLength(aSubString);
 	if (!aLimit)
 		goto bail;
 	if (aSubLength == 0) {
@@ -1241,7 +1303,7 @@ txSlot* fx_String_prototype_split_aux(txMachine* the, txSlot* theString, txSlot*
 void fx_String_prototype_startsWith(txMachine* the)
 {
 	txString string = fxCoerceToString(the, mxThis);
-	txInteger length = c_strlen(string);
+	txInteger length = mxStringLength(string);
 	txString searchString;
 	txInteger searchLength;
 	txInteger offset;
@@ -1252,7 +1314,7 @@ void fx_String_prototype_startsWith(txMachine* the)
 	if (fxIsRegExp(the, mxArgv(0)))
 		mxTypeError("future editions");
 	searchString = fxToString(the, mxArgv(0));
-	searchLength = c_strlen(searchString);
+	searchLength = mxStringLength(searchString);
 	offset = fxUnicodeToUTF8Offset(string, fxArgToPosition(the, 1, 0, fxUnicodeLength(string)));
 	if (length - offset < searchLength)
 		return;
@@ -1336,7 +1398,7 @@ void fx_String_prototype_substring(txMachine* the)
 void fx_String_prototype_toCase(txMachine* the, txBoolean flag)
 {
 	txString string = fxCoerceToString(the, mxThis);
-	txInteger stringLength = c_strlen(string);
+	txInteger stringLength = mxStringLength(string);
 	if (stringLength) {
 	#if mxWindows
 		txInteger unicodeLength;
@@ -1455,7 +1517,7 @@ void fx_String_prototype_trimAux(txMachine* the, txBoolean trimStart, txBoolean 
 	txInteger offset, length;
 	if (trimStart) {
 		start = fxSkipSpaces(string);
-		offset = start - string;
+		offset = mxPtrDiff(start - string);
 	}
 	else {
 		start = string;
@@ -1468,10 +1530,10 @@ void fx_String_prototype_trimAux(txMachine* the, txBoolean trimStart, txBoolean 
 			end = current + 1;
 			current = fxSkipSpaces(end);
 		}
-		length = end - start;
+		length = mxPtrDiff(end - start);
 	}
 	else
-		length = c_strlen(start);
+		length = mxStringLength(start);
 	mxResult->value.string = (txString)fxNewChunk(the, length + 1);
 	c_memcpy(mxResult->value.string, mxThis->value.string + offset, length);
 	mxResult->value.string[length] = 0;
@@ -1507,14 +1569,14 @@ txBoolean fx_String_prototype_withRegexp(txMachine* the, txID id, txBoolean glob
 		if (!mxIsUndefined(regexp) && !mxIsNull(regexp)) {
 			if (global && fxIsRegExp(the, regexp)) {
 				mxPushSlot(regexp);
-				fxGetID(the, mxID(_flags));
+				mxGetID(mxID(_flags));
 				if (!c_strchr(fxToString(the, the->stack), 'g'))
 					mxTypeError("regexp has no g flag");
 				mxPop();
 			}
 			mxPushSlot(regexp);
 			mxPushSlot(regexp);
-			fxGetID(the, id);
+			mxGetID(id);
 			if (!mxIsUndefined(the->stack) && !mxIsNull(the->stack)) {
 				mxCall();
 				mxPushSlot(mxThis);
@@ -1552,7 +1614,7 @@ void fx_String_prototype_withoutRegexp(txMachine* the, txID id, txBoolean global
 		mxPushUndefined();
 	mxRunCount(2);
 	mxDub();
-	fxGetID(the, id);
+	mxGetID(id);
 	mxCall();
 	mxPushSlot(mxThis);
 	if (count > 1) {
@@ -1680,7 +1742,7 @@ void fxPushSubstitutionString(txMachine* the, txSlot* string, txInteger size, tx
 						r++;
 					}
 					if (d) {
-						txInteger n = r - t;
+						txInteger n = mxPtrDiff(r - t);
 						txID name;
 						if (n > 255)
 							fxJump(the);
@@ -1689,10 +1751,10 @@ void fxPushSubstitutionString(txMachine* the, txSlot* string, txInteger size, tx
 						name = fxFindName(the, the->nameBuffer);
 						if (name) {
  							mxPushSlot(groups);
-							fxGetID(the, name);
+							mxGetID(name);
 							if (!mxIsUndefined(the->stack)) {
-// 								fxToString(the, the->stack);
-								l += c_strlen(the->stack->value.string);
+								fxToString(the, the->stack);
+								l += mxStringLength(the->stack->value.string);
 							}
 							mxPop();
 						}
@@ -1726,7 +1788,7 @@ void fxPushSubstitutionString(txMachine* the, txSlot* string, txInteger size, tx
 					if ((0 < i) && (i <= count)) {
 						capture = (captures + count - i);
 						if (capture->kind != XS_UNDEFINED_KIND)
-							l += c_strlen(capture->value.string);
+							l += mxStringLength(capture->value.string);
 						flag = 1;
 					}
 					else {
@@ -1786,7 +1848,7 @@ void fxPushSubstitutionString(txMachine* the, txSlot* string, txInteger size, tx
 							r++;
 						}
 						if (d) {
-							txInteger n = r - t;
+							txInteger n = mxPtrDiff(r - t);
 							txID name;
 							if (n > 255)
 								fxJump(the);
@@ -1795,10 +1857,10 @@ void fxPushSubstitutionString(txMachine* the, txSlot* string, txInteger size, tx
 							name = fxFindName(the, the->nameBuffer);
 							if (name) {
 								mxPushSlot(groups);
-								fxGetID(the, name);
+								mxGetID(name);
 								if (!mxIsUndefined(the->stack)) {
-// 									fxToString(the, the->stack);
-									l = c_strlen(the->stack->value.string);
+									fxToString(the, the->stack);
+									l = mxStringLength(the->stack->value.string);
 									c_memcpy(s, the->stack->value.string, l);
 									s += l;
 								}
@@ -1835,7 +1897,7 @@ void fxPushSubstitutionString(txMachine* the, txSlot* string, txInteger size, tx
 						if ((0 < i) && (i <= count)) {
 							capture = (captures + count - i);
 							if (capture->kind != XS_UNDEFINED_KIND) {
-								l = c_strlen(capture->value.string);
+								l = mxStringLength(capture->value.string);
 								c_memcpy(s, capture->value.string, l);
 								s += l;
 							}

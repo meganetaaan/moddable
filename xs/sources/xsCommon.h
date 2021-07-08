@@ -56,7 +56,11 @@ extern "C" {
 
 typedef txS1 txByte;
 typedef txU1 txFlag;
-typedef txS2 txID;
+#ifdef mx32bitID
+	typedef txU4 txID;
+#else
+	typedef txU2 txID;
+#endif
 typedef txU4 txIndex;
 typedef txS1 txKind;
 typedef txS4 txSize;
@@ -83,6 +87,7 @@ typedef struct {
 
 #define XS_ATOM_ARCHIVE 0x58535F41 /* 'XS_A' */
 #define XS_ATOM_BINARY 0x58535F42 /* 'XS_B' */
+#define XS_ATOM_ERROR 0x58535F45 /* 'XS_E' */
 #define XS_ATOM_CHECKSUM 0x43484B53 /* 'CHKS' */
 #define XS_ATOM_CODE 0x434F4445 /* 'CODE' */
 #define XS_ATOM_DATA 0x44415441 /* 'DATA' */
@@ -95,7 +100,7 @@ typedef struct {
 #define XS_ATOM_SYMBOLS 0x53594D42 /* 'SYMB' */
 #define XS_ATOM_VERSION 0x56455253 /* 'VERS' */
 #define XS_MAJOR_VERSION 10
-#define XS_MINOR_VERSION 4
+#define XS_MINOR_VERSION 8
 #define XS_PATCH_VERSION 0
 
 #define XS_DIGEST_SIZE 16
@@ -397,6 +402,8 @@ enum {
 	mxSuperFlag = 1 << 5,
 	mxTargetFlag = 1 << 6,
 	mxFieldFlag = 1 << 15,
+	mxFunctionFlag = 1 << 16,
+	mxGeneratorFlag = 1 << 21,
 };
 
 extern void fxDeleteScript(txScript* script);
@@ -419,16 +426,17 @@ extern txString fxStringifyUnicodeEscape(txString string, txInteger character, t
 
 mxExport txString fxUTF8Decode(txString string, txInteger* character);
 mxExport txString fxUTF8Encode(txString string, txInteger character);
-mxExport txInteger fxUTF8Length(txInteger character);
-mxExport txInteger fxUTF8ToUnicodeOffset(txString theString, txInteger theOffset);
-mxExport txInteger fxUnicodeLength(txString theString);
-mxExport txInteger fxUnicodeToUTF8Offset(txString theString, txInteger theOffset);
+mxExport txSize fxUTF8Length(txInteger character);
+mxExport txSize fxUTF8ToUnicodeOffset(txString theString, txSize theOffset);
+mxExport txSize fxUnicodeLength(txString theString);
+mxExport txSize fxUnicodeToUTF8Offset(txString theString, txSize theOffset);
 
 txFlag fxIntegerToIndex(void* dtoa, txInteger theInteger, txIndex* theIndex);
 txFlag fxNumberToIndex(void* dtoa, txNumber theNumber, txIndex* theIndex);
 txFlag fxStringToIndex(void* dtoa, txString theString, txIndex* theIndex);
 
 /* ? */
+mxExport char* fxCStackLimit();
 mxExport void fxGenerateTag(void* console, txString buffer, txInteger bufferSize, txString path);
 mxExport void fxVReport(void* console, txString theFormat, c_va_list theArguments);
 mxExport void fxVReportError(void* console, txString thePath, txInteger theLine, txString theFormat, c_va_list theArguments);
@@ -459,15 +467,15 @@ mxExport txInteger fxMatchRegExp(void* the, txInteger* code, txInteger* data, tx
 /* xsBigInt.c */
 
 extern void fxBigIntEncode(txByte* code, txBigInt* bigint, txSize size);
-extern txSize fxBigIntMaximum(txInteger length);
-extern txSize fxBigIntMaximumB(txInteger length);
-extern txSize fxBigIntMaximumO(txInteger length);
-extern txSize fxBigIntMaximumX(txInteger length);
+extern txSize fxBigIntMaximum(txSize length);
+extern txSize fxBigIntMaximumB(txSize length);
+extern txSize fxBigIntMaximumO(txSize length);
+extern txSize fxBigIntMaximumX(txSize length);
 extern txSize fxBigIntMeasure(txBigInt* bigint);
-extern void fxBigIntParse(txBigInt* bigint, txString string, txInteger length, txInteger sign);
-extern void fxBigIntParseB(txBigInt* bigint, txString string, txInteger length);
-extern void fxBigIntParseO(txBigInt* bigint, txString string, txInteger length);
-extern void fxBigIntParseX(txBigInt* bigint, txString string, txInteger length);
+extern void fxBigIntParse(txBigInt* bigint, txString string, txSize length, txInteger sign);
+extern void fxBigIntParseB(txBigInt* bigint, txString string, txSize length);
+extern void fxBigIntParseO(txBigInt* bigint, txString string, txSize length);
+extern void fxBigIntParseX(txBigInt* bigint, txString string, txSize length);
 
 #if mxBigEndian
 #define mxDecode2(THE_CODE, THE_VALUE)	{ \
@@ -539,6 +547,12 @@ extern void fxBigIntParseX(txBigInt* bigint, txString string, txInteger length);
 	}
 #endif
 
+#ifdef mx32bitID
+#define mxDecodeID(THE_CODE, THE_VALUE) mxDecode4(THE_CODE, THE_VALUE)	
+#else
+#define mxDecodeID(THE_CODE, THE_VALUE) mxDecode2(THE_CODE, THE_VALUE)	
+#endif	
+
 #if mxBigEndian
 #define mxEncode2(THE_CODE, THE_VALUE)	{ \
 	txByte* dst = (THE_CODE); \
@@ -609,8 +623,14 @@ extern void fxBigIntParseX(txBigInt* bigint, txString string, txInteger length);
 	}
 #endif
 
-#define XS_NO_ID -1
+#ifdef mx32bitID
+#define mxEncodeID(THE_CODE, THE_VALUE) mxEncode4(THE_CODE, THE_VALUE)	
+#else
+#define mxEncodeID(THE_CODE, THE_VALUE) mxEncode2(THE_CODE, THE_VALUE)	
+#endif	
+
 enum {
+	XS_NO_ID = 0,
 	_Symbol_asyncIterator = 1,
 	_Symbol_hasInstance,
 	_Symbol_isConcatSpreadable,
@@ -850,7 +870,6 @@ enum {
 	_getUint16,
 	_getUint32,
 	_getUint8,
-	_getUint8Clamped,
 	_getYear,
 	_global,
 	_globalThis,
@@ -929,7 +948,6 @@ enum {
 	_pow,
 	_preventExtensions,
 	_propertyIsEnumerable,
-	_propertyIsScriptable,
 	_prototype,
 	_proxy,
 	_push,
@@ -981,7 +999,6 @@ enum {
 	_setUint16,
 	_setUint32,
 	_setUint8,
-	_setUint8Clamped,
 	_setYear,
 	_shift,
 	_sign,
@@ -996,6 +1013,7 @@ enum {
 	_splice,
 	_split,
 	_sqrt,
+	_stack,
 	_startsWith,
 	_status,
 	_sticky,
@@ -1067,6 +1085,10 @@ extern const txString gxIDStrings[XS_ID_COUNT];
 #ifndef c_isEmpty
 	#define c_isEmpty(s) (!c_read8(s))
 #endif
+
+#define mxStringLength(_STRING) ((txSize)c_strlen(_STRING))
+
+#define mxPtrDiff(_DIFF) ((txSize)(_DIFF))
 
 #ifdef __cplusplus
 }

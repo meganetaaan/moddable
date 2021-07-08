@@ -80,6 +80,10 @@ import {
 } from "PreferencesView";
 
 import {
+	SerialPane,
+} from "SerialPane";
+
+import {
 	TabsPane,
 } from "TabsPane";
 
@@ -164,12 +168,22 @@ class ApplicationBehavior extends DebugBehavior {
 		
 		this.test262Context = new Test262Context;
 		
-		this.visibleTabs = [ true, true, false ];
+		this.visibleTabs = [ true, true, false, false ];
 		
 		this.path = undefined;
 		this.state = undefined;
 		
+		this.evalDirectory = system.buildPath(system.localDirectory, "eval");
+		system.ensureDirectory(this.evalDirectory);
 		this.readPreferences();
+		if (this.path == undefined) {
+			let items = this.history.items;
+			if (items.length) {
+				let item = items.shift();
+				this.path = item.path;
+				this.state = item.state;
+			}
+		}
 		application.add(new MainContainer(this));
 		this.doOpenView();
 			
@@ -191,6 +205,8 @@ class ApplicationBehavior extends DebugBehavior {
 						container.replace(container.first, new FilePane(this));
 					else if (tab == 1)
 						container.replace(container.first, new MessagePane(this));
+					else if (tab == 2)
+						container.replace(container.first, new SerialPane(this));
 					else
 						container.replace(container.first, new Test262Pane(this));
 				}	
@@ -228,9 +244,9 @@ class ApplicationBehavior extends DebugBehavior {
 	onOpenFile(application, path) {
 		let info = system.getFileInfo(path);
 		if (info.directory)
-			this.doOpenDirectoryCallback(path);
+			application.defer("doOpenDirectoryCallback", new String(path));
 		else
-			this.doOpenFileCallback(path);
+			application.defer("doOpenFileCallback", new String(path));
 	}
 	onPathChanged(application, path) {
 		application.invalidateMenus();
@@ -239,6 +255,14 @@ class ApplicationBehavior extends DebugBehavior {
 		this.stop();
 		application.distribute("onStateChanging", this.path);
 		this.writePreferences();
+		
+		let iterator = new system.DirectoryIterator(this.evalDirectory);
+		let info = iterator.next();
+		while (info) {
+			system.deleteFile(info.path);
+			info = iterator.next();
+		}
+		
 		application.quit();
 	}
 /* APP MENU */
@@ -280,25 +304,35 @@ class ApplicationBehavior extends DebugBehavior {
 		return this.path ? true : false;
 	}
 	doOpenDirectory() {
-		system.openDirectory({ prompt:"Open Folder" }, path => { if (path) this.doOpenDirectoryCallback(path); });
+		system.openDirectory({ prompt:"Open Folder" }, path => { if (path) application.defer("doOpenDirectoryCallback", new String(path)); });
 	}
-	doOpenDirectoryCallback(path) {
+	doOpenDirectoryCallback(application, path) {
 		let items = this.homes.items;
 		let home = items.find(item => item.path == path);
 		if (!home) {
 			home = new Home(path);
 			items.push(home);
-			items.sort((a, b) => a.name.compare(b.name));
+			items.sort((a, b) => a.name.localeCompare(b.name));
 			application.distribute("onHomesChanged");
 		}
 		return home;
 	}
 	doOpenFile() {
-		system.openFile({ prompt:"Open File" }, path => { if (path) this.doOpenFileCallback(path); });
+		system.openFile({ prompt:"Open File" }, path => { if (path) application.defer("doOpenFileCallback", new String(path)); });
 	}
-	doOpenFileCallback(path) {
+	doOpenFileCallback(application, path) {
 		if (path.endsWith(".js") || path.endsWith(".json") || path.endsWith(".ts") || path.endsWith(".xml") || path.endsWith(".xs"))
 			this.selectFile(path);
+		else if (path.endsWith(".bin")) {
+			this.showTab(2, true);
+			this.selectMachine(null, 2);
+			this.serial.doInstallApp(path);
+		}
+		else if (path.endsWith(".xsa")) {
+			this.showTab(2, true);
+			this.selectMachine(null, 2);
+			this.serial.doInstallMod(path);
+		}
 	}
 	doCloseDirectory(path) {
 		let items = this.homes.items;
@@ -394,7 +428,7 @@ class ApplicationBehavior extends DebugBehavior {
 			if (index >= 0)
 				items.splice(index, 1);
 			application.distribute("onStateChanging", this.state);
-			if (this.path && (this.path != "preferences")) {
+			if (this.path && (this.path != "preferences") && (this.path != "device")) {
 				items.unshift({ path:this.path, state:this.state });
 				if (items.length > 32)
 					items.length = 32;
@@ -460,7 +494,8 @@ class ApplicationBehavior extends DebugBehavior {
 				if ("mappings" in preferences)
 					this.mappings = preferences.mappings;
 				if ("path" in preferences)
-					this.path = preferences.path;
+					if (system.fileExists(preferences.path))
+						this.path = preferences.path;
 				if ("port" in preferences)
 					this.port = preferences.port;
 				if ("state" in preferences)
@@ -469,8 +504,12 @@ class ApplicationBehavior extends DebugBehavior {
 					this.automaticInstruments = preferences.automaticInstruments;
 				if ("test262Context" in preferences)
 					this.test262Context.fromJSON(preferences.test262Context);
-				if ("visibleTabs" in preferences)
+				if (("visibleTabs" in preferences) && (preferences.visibleTabs.length == 4))
 					this.visibleTabs = preferences.visibleTabs;
+				if ("serialDevicePath" in preferences)
+					this.serialDevicePath = preferences.serialDevicePath;
+				if ("serialBaudRates" in preferences)
+					this.serialBaudRates = preferences.serialBaudRates;
 			}
 		}
 		catch(e) {
@@ -499,6 +538,8 @@ class ApplicationBehavior extends DebugBehavior {
 				automaticInstruments: this.automaticInstruments,
 				test262Context: this.test262Context,
 				visibleTabs: this.visibleTabs,
+				serialDevicePath: this.serialDevicePath,
+				serialBaudRates: this.serialBaudRates,
 			};
 			let string = JSON.stringify(preferences, null, "\t");
 			system.writePreferenceString("main", string);

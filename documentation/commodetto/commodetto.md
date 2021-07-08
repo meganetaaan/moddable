@@ -1,7 +1,7 @@
 # Commodetto
 
-Copyright 2016-2018 Moddable Tech, Inc.<BR>
-Revised: November 26, 2018
+Copyright 2016-2021 Moddable Tech, Inc.<BR>
+Revised: May 4, 2021
 
 ## About This Document
 
@@ -729,7 +729,7 @@ The PNG decoder uses up to 45 KB of memory while decoding an image. This amount 
 <a id="bmfont"></a>
 ### BMFont
 
-[BMFont](http://www.angelcode.com/products/bmfont/) is a format for storing bitmap fonts. It is widely used to embed distinctive fonts in games in a format that is efficiently rendered using OpenGL. BMFont is well designed and straightforward to support. Commodetto uses BMFont to store both anti-aliased and multicolor fonts. In addition, BMFont has good tool support--in particular the excellent [Glyph Designer](https://71squared.com/glyphdesigner), which converts macOS fonts to a Commodetto-compatible BMFont.
+[BMFont](http://www.angelcode.com/products/bmfont/) is a format for storing bitmap fonts. It is widely used to embed distinctive fonts in games in a format that is efficiently rendered using OpenGL. BMFont is well designed and straightforward to support. Commodetto uses BMFont to store both anti-aliased and multicolor fonts. In addition, BMFont has good tool support--in particular the excellent [Glyph Designer](https://71squared.com/glyphdesigner), which converts macOS fonts to a Commodetto-compatible BMFont.  For Windows and Linux users, the command line [bmfont](https://github.com/vladimirgamalyan/fontbm) has been used  successfully. 
 
 BMFont stores a font's metrics data separately from the font's glyph atlas (bitmap). This means that loading a BMFont requires two steps: loading the metrics and loading the glyph atlas. BMFont allows the metrics data to be stored in a variety of formats, including text, XML, and binary. Commodetto supports the binary format for metrics.
 
@@ -745,9 +745,9 @@ palatino36.bitmap = parseBMP(new Resource("palatino36.bmp");
 
 After the metrics are prepared with `parseBMF`, the glyph atlas is prepared using `parseBMP` and is attached to the metrics as the `bitmap` property.
 
-The `BMFont` format allows multiple discontiguous ranges of characters, but `parseBMF` requires that the characters be a single contiguous range.
+ BMFont files with discontiguous ranges of characters are supported. Commodetto may be configured to use the kerning data that may be  prseent in a BMFont, though it is disabled by default. 
 
-For anti-aliased text, the BMP file containing the glyph atlas bitmap must be in 4-bit gray format. For multicolor text, the bitmap must be in Bitmap.default format (e.g. the pixel format Commodetto is configured to render to).
+For anti-aliased text, the BMP file containing the glyph atlas bitmap must be in 4-bit gray format. For multicolor text, the bitmap must be in `Bitmap.default` format (e.g. the pixel format Commodetto is configured to render to).
 
 Commodetto extends the BMFont format with RLE compressed glyphs. Glyphs are individually compressed using the `RLE4Out` class. The Moddable SDK tool `compressbmf` performs the compression.  The tool also appends the compressed glyphs to the `.fnt` metrics file, storing a single font's metrics and glyph data in a single file.
 
@@ -930,15 +930,15 @@ let converter = new Convert(Bitmap.RGB565LE, Bitmap.Gray256);
 
 ***
 
-#### `convert(src, dst)`
+#### `process(src, dst)`
 
-The convert function performs a pixel conversion. The `src` argument is the input pixels in the format specified in the constructor. The input pixels are stored either in an `ArrayBuffer` or a `HostBuffer`. The `dst` argument is where the output pixels will be returned. It must be an `ArrayBuffer`.
+The `process` function performs a pixel conversion. The `src` argument is the input pixels in the format specified in the constructor. The input pixels are stored either in an `ArrayBuffer` or a `HostBuffer`. The `dst` argument is where the output pixels will be returned. It must be an `ArrayBuffer`.
 
 ```js
-converter.convert(inputPixels, outputPixels);
+converter.process(inputPixels, outputPixels);
 ```
 
-The caller of convert is responsible for allocating a large enough output buffer. The `Bitmap.depth` function is useful for this calculation.
+The caller of process is responsible for allocating a large enough output buffer. The `Bitmap.depth` function is useful for this calculation.
 
 ```js
 let outputPixelFormat = Bitmap.Gray256;

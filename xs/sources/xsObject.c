@@ -42,10 +42,14 @@ void fxBuildObject(txMachine* the)
 	txSlot* slot;
 	fxNewHostFunction(the, mxCallback(fx_Object_assign), 2, XS_NO_ID);
 	mxAssignObjectFunction = *the->stack;
-	the->stack++;
+	mxPop();
 	fxNewHostFunction(the, mxCallback(fx_Object_copy), 2, XS_NO_ID);
 	mxCopyObjectFunction = *the->stack;
-	the->stack++;
+	mxPop();
+	fxNewHostFunction(the, mxCallback(fxOrdinaryToPrimitive), 2, XS_NO_ID);
+	mxOrdinaryToPrimitiveFunction = *the->stack;
+	mxPop();
+	
 	mxPush(mxObjectPrototype);
 	slot = fxLastProperty(the, the->stack->value.reference);
 	slot = fxNextHostAccessorProperty(the, slot, mxCallback(fx_Object_prototype___proto__get), mxCallback(fx_Object_prototype___proto__set), mxID(___proto__), XS_DONT_ENUM_FLAG | XS_DONT_SET_FLAG);
@@ -56,9 +60,7 @@ void fxBuildObject(txMachine* the)
 	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_Object_prototype___lookupSetter__), 1, mxID(___lookupSetter__), XS_DONT_ENUM_FLAG);
 	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_Object_prototype_isPrototypeOf), 1, mxID(_isPrototypeOf), XS_DONT_ENUM_FLAG);
 	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_Object_prototype_propertyIsEnumerable), 1, mxID(_propertyIsEnumerable), XS_DONT_ENUM_FLAG);
-	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_Object_prototype_propertyIsScriptable), 1, mxID(_propertyIsScriptable), XS_DONT_ENUM_FLAG);
 	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_Object_prototype_toLocaleString), 0, mxID(_toLocaleString), XS_DONT_ENUM_FLAG);
-	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_Object_prototype_toPrimitive), 1, mxID(_Symbol_toPrimitive), XS_DONT_ENUM_FLAG);
 	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_Object_prototype_toString), 0, mxID(_toString), XS_DONT_ENUM_FLAG);
 	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_Object_prototype_valueOf), 0, mxID(_valueOf), XS_DONT_ENUM_FLAG);
 	slot = fxBuildHostConstructor(the, mxCallback(fx_Object), 1, mxID(_Object));
@@ -85,7 +87,7 @@ void fxBuildObject(txMachine* the)
 	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_Object_seal), 1, mxID(_seal), XS_DONT_ENUM_FLAG);
 	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_Object_setPrototypeOf), 2, mxID(_setPrototypeOf), XS_DONT_ENUM_FLAG);
 	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_Object_values), 1, mxID(_values), XS_DONT_ENUM_FLAG);
-	the->stack++;
+	mxPop();
 }
 
 
@@ -148,8 +150,6 @@ void fx_Object_prototype___defineGetter__(txMachine* the)
 	txSlot* slot;
 	if ((mxArgc < 2) || (!fxIsCallable(the, mxArgv(1))))
 		mxTypeError("invalid getter");
-	if (mxArgc < 1)
-		mxTypeError("invalid key");
 	at = fxAt(the, mxArgv(0));
 	mxPushUndefined();
 	slot = the->stack;
@@ -169,8 +169,6 @@ void fx_Object_prototype___defineSetter__(txMachine* the)
 	txSlot* slot;
 	if ((mxArgc < 2) || (!fxIsCallable(the, mxArgv(1))))
 		mxTypeError("invalid setter");
-	if (mxArgc < 1)
-		mxTypeError("invalid key");
 	at = fxAt(the, mxArgv(0));
 	mxPushUndefined();
 	slot = the->stack;
@@ -189,8 +187,10 @@ void fx_Object_prototype___lookupGetter__(txMachine* the)
 	txSlot* at;
 	txSlot* slot;
 	if (mxArgc < 1)
-		mxTypeError("invalid key");
-	at = fxAt(the, mxArgv(0));
+		mxPushUndefined();
+	else
+		mxPushSlot(mxArgv(0));
+	at = fxAt(the, the->stack);
 	mxPushUndefined();
 	slot = the->stack;
 again:
@@ -209,6 +209,7 @@ again:
 		goto again;
 	}
 	mxPop();
+	mxPop();
 }
 
 void fx_Object_prototype___lookupSetter__(txMachine* the)
@@ -217,8 +218,10 @@ void fx_Object_prototype___lookupSetter__(txMachine* the)
 	txSlot* at;
 	txSlot* slot;
 	if (mxArgc < 1)
-		mxTypeError("invalid key");
-	at = fxAt(the, mxArgv(0));
+		mxPushUndefined();
+	else
+		mxPushSlot(mxArgv(0));
+	at = fxAt(the, the->stack);
 	mxPushUndefined();
 	slot = the->stack;
 again:
@@ -237,6 +240,7 @@ again:
 		goto again;
 	}
 	mxPop();
+	mxPop();
 }
 
 void fx_Object_prototype_hasOwnProperty(txMachine* the)
@@ -244,12 +248,15 @@ void fx_Object_prototype_hasOwnProperty(txMachine* the)
 	txSlot* at;
 	txSlot* instance;
 	if (mxArgc < 1)
-		mxTypeError("invalid key");
-	at = fxAt(the, mxArgv(0));
+		mxPushUndefined();
+	else
+		mxPushSlot(mxArgv(0));
+	at = fxAt(the, the->stack);
 	instance = fxToInstance(the, mxThis);
 	mxPushUndefined();
 	mxResult->value.boolean = mxBehaviorGetOwnProperty(the, instance, at->value.at.id, at->value.at.index, the->stack);
 	mxResult->kind = XS_BOOLEAN_KIND;
+	mxPop();
 	mxPop();
 }
 
@@ -276,85 +283,26 @@ void fx_Object_prototype_propertyIsEnumerable(txMachine* the)
 	txSlot* at;
 	txSlot* instance;
 	if (mxArgc < 1)
-		mxTypeError("invalid key");
-	at = fxAt(the, mxArgv(0));
+		mxPushUndefined();
+	else
+		mxPushSlot(mxArgv(0));
+	at = fxAt(the, the->stack);
 	instance = fxToInstance(the, mxThis);
 	mxPushUndefined();
 	mxResult->value.boolean = mxBehaviorGetOwnProperty(the, instance, at->value.at.id, at->value.at.index, the->stack) && ((the->stack->flag & XS_DONT_ENUM_FLAG) == 0);
 	mxResult->kind = XS_BOOLEAN_KIND;
 	mxPop();
-}
-
-void fx_Object_prototype_propertyIsScriptable(txMachine* the)
-{
-	mxResult->kind = XS_BOOLEAN_KIND;
-	mxResult->value.boolean = 1;
+	mxPop();
 }
 
 void fx_Object_prototype_toLocaleString(txMachine* the)
 {
 	mxPushSlot(mxThis);
 	mxDub();
-	fxGetID(the, mxID(_toString));
+	mxGetID(mxID(_toString));
 	mxCall();
 	mxRunCount(0);
 	mxPullSlot(mxResult);
-}
-
-void fx_Object_prototype_toPrimitive(txMachine* the)
-{
-	if (mxIsReference(mxThis)) {
-		txInteger hint = XS_NO_HINT;
-		txInteger ids[2], i;
-		if (mxArgc > 0) {
-			txSlot* slot = mxArgv(0);
-			if ((slot->kind == XS_STRING_KIND) || (slot->kind == XS_STRING_X_KIND)) {
-				if (!c_strcmp(slot->value.string, "default"))
-					hint = XS_NUMBER_HINT;
-				else if (!c_strcmp(slot->value.string, "number"))
-					hint = XS_NUMBER_HINT;
-				else if (!c_strcmp(slot->value.string, "string"))
-					hint = XS_STRING_HINT;
-			}
-		}
-		if (hint == XS_STRING_HINT) {
-		 	ids[0] = mxID(_toString);
-		 	ids[1] = mxID(_valueOf);
-		}
-		else if (hint == XS_NUMBER_HINT) {
-		 	ids[0] = mxID(_valueOf);
-		 	ids[1] = mxID(_toString);
-		}
- 		else
-     		mxTypeError("invalid hint");
-		for (i = 0; i < 2; i++) {
-			mxPushSlot(mxThis);
-			mxPushSlot(mxThis);
-			fxGetID(the, ids[i]);
-			if (fxIsCallable(the, the->stack)) {
-				mxCall();
-				mxRunCount(0);
-				if (mxIsReference(the->stack))
-					mxPop();
-				else {
-					mxPullSlot(mxResult);
-					return;
-      			}
-			}
-			else {
-				mxPop();
-				mxPop();
-			}
-		}
-		if (hint == XS_STRING_HINT)
-            mxTypeError("cannot coerce object to string");
-        else
-            mxTypeError("cannot coerce object to number");
-	}
-	else {
-		mxResult->kind = mxThis->kind;
-		mxResult->value = mxThis->value;
-	}
 }
 
 void fx_Object_prototype_toString(txMachine* the)
@@ -417,7 +365,6 @@ void fx_Object_prototype_toString(txMachine* the)
 						tag = "Date";
 						break;
 					case XS_ERROR_KIND:
-					case XS_ERRORS_KIND:
 						tag = "Error";
 						break;
 					case XS_GLOBAL_KIND:
@@ -475,7 +422,7 @@ void fx_Object_prototype_toString(txMachine* the)
 	fxStringX(the, mxResult, "[object ");
 	if (instance) {
 		mxPushReference(instance);
-		fxGetID(the, mxID(_Symbol_toStringTag));
+		mxGetID(mxID(_Symbol_toStringTag));
 		if ((the->stack->kind == XS_STRING_KIND) || (the->stack->kind == XS_STRING_X_KIND))
 			fxConcatString(the, mxResult, the->stack);
 		else
@@ -515,9 +462,9 @@ void fx_Object_assign(txMachine* the)
 		while ((at = at->next)) {
 			if (mxBehaviorGetOwnProperty(the, instance, at->value.at.id, at->value.at.index, property) && !(property->flag & XS_DONT_ENUM_FLAG)) {
 				mxPushReference(instance);
-				fxGetAll(the, at->value.at.id, at->value.at.index);
+				mxGetAll(at->value.at.id, at->value.at.index);
 				mxPushSlot(target);
-				fxSetAll(the, at->value.at.id, at->value.at.index);
+				mxSetAll(at->value.at.id, at->value.at.index);
 				mxPop();
 			}
 		}
@@ -554,7 +501,7 @@ void fx_Object_copy(txMachine* the)
 		if (i == c) {
 			if (mxBehaviorGetOwnProperty(the, source, at->value.at.id, at->value.at.index, property) && !(property->flag & XS_DONT_ENUM_FLAG)) {
 				mxPushReference(source);
-				fxGetAll(the, at->value.at.id, at->value.at.index);
+				mxGetAll(at->value.at.id, at->value.at.index);
 				the->stack->flag = 0;
 				mxBehaviorDefineOwnProperty(the, target, at->value.at.id, at->value.at.index, the->stack, XS_GET_ONLY);
 				mxPop();
@@ -591,7 +538,7 @@ void fx_Object_create(txMachine* the)
 		while ((at = at->next)) {
 			if (mxBehaviorGetOwnProperty(the, properties, at->value.at.id, at->value.at.index, property) && !(property->flag & XS_DONT_ENUM_FLAG)) {
 				mxPushReference(properties);
-				fxGetAll(the, at->value.at.id, at->value.at.index);
+				mxGetAll(at->value.at.id, at->value.at.index);
 				mask = fxDescriptorToSlot(the, the->stack);
 				if (!mxBehaviorDefineOwnProperty(the, instance, at->value.at.id, at->value.at.index, the->stack, mask))
 					mxTypeError("invalid descriptor");
@@ -623,7 +570,7 @@ void fx_Object_defineProperties(txMachine* the)
 	while ((at = at->next)) {
 		if (mxBehaviorGetOwnProperty(the, properties, at->value.at.id, at->value.at.index, property) && !(property->flag & XS_DONT_ENUM_FLAG)) {
 			mxPushReference(properties);
-			fxGetAll(the, at->value.at.id, at->value.at.index);
+			mxGetAll(at->value.at.id, at->value.at.index);
 			mask = fxDescriptorToSlot(the, the->stack);
 			if (!mxBehaviorDefineOwnProperty(the, instance, at->value.at.id, at->value.at.index, the->stack, mask))
 				mxTypeError("invalid descriptor");
@@ -677,7 +624,7 @@ void fx_Object_entries(txMachine* the)
 			mxPushUndefined();
 			fxKeyAt(the, item->value.at.id, item->value.at.index, the->stack);
 			mxPushReference(instance);
-			fxGetAll(the, item->value.at.id, item->value.at.index);
+			mxGetAll(item->value.at.id, item->value.at.index);
 			fxConstructArrayEntry(the, item);
 			address = &(item->next);
 		}
@@ -729,7 +676,7 @@ void fx_Object_freeze(txMachine* the)
 						if (property->kind == XS_REFERENCE_KIND) {
 							mxPushSlot(mxThis);
 							mxDub();
-							fxGetID(the, mxID(_isFrozen));
+							mxGetID(mxID(_isFrozen));
 							mxCall();
 							mxPushSlot(property);
 							mxRunCount(1);
@@ -747,7 +694,7 @@ void fx_Object_freeze(txMachine* the)
 							if (property->value.accessor.getter) {
 								mxPushSlot(mxThis);
 								mxDub();
-								fxGetID(the, mxID(_isFrozen));
+								mxGetID(mxID(_isFrozen));
 								mxCall();
 								mxPushReference(property->value.accessor.getter);
 								mxRunCount(1);
@@ -764,7 +711,7 @@ void fx_Object_freeze(txMachine* the)
 							if (property->value.accessor.setter) {
 								mxPushSlot(mxThis);
 								mxDub();
-								fxGetID(the, mxID(_isFrozen));
+								mxGetID(mxID(_isFrozen));
 								mxCall();
 								mxPushReference(property->value.accessor.setter);
 								mxRunCount(1);
@@ -805,8 +752,10 @@ void fx_Object_fromEntries(txMachine* the)
 		mxTry(the) {
 			if (value->kind != XS_REFERENCE_KIND)
 				mxTypeError("item is no object");
-			mxGetID(value, 0);
-			mxGetID(value, 1);
+			mxPushSlot(value);
+			mxGetIndex(0);
+			mxPushSlot(value);
+			mxGetIndex(1);
 			at = fxAt(the, the->stack + 1);
 			mxBehaviorDefineOwnProperty(the, instance, at->value.at.id, at->value.at.index, the->stack, XS_GET_ONLY);
 			mxPop();
@@ -817,7 +766,7 @@ void fx_Object_fromEntries(txMachine* the)
 			fxJump(the);
 		}
 	}
-	the->stack++;
+	mxPop();
 }
 
 void fx_Object_getOwnPropertyDescriptor(txMachine* the)
@@ -1127,7 +1076,7 @@ void fx_Object_values(txMachine* the)
 		if (mxBehaviorGetOwnProperty(the, instance, item->value.at.id, item->value.at.index, property) && !(property->flag & XS_DONT_ENUM_FLAG)) {
 			array->value.array.length++;
 			mxPushReference(instance);
-			fxGetAll(the, item->value.at.id, item->value.at.index);
+			mxGetAll(item->value.at.id, item->value.at.index);
 			mxPullSlot(item);
 			address = &(item->next);
 		}

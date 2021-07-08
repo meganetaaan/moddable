@@ -52,9 +52,6 @@
 #ifndef mxUseDefaultSlotAllocation
 	#define mxUseDefaultSlotAllocation 0
 #endif
-#ifndef mxUseDefaultHostCollection
-	#define mxUseDefaultHostCollection 0
-#endif
 #ifndef mxUseDefaultFindModule
 	#define mxUseDefaultFindModule 0
 #endif
@@ -146,19 +143,6 @@ void fxFreeSlots(txMachine* the, void* theSlots)
 #endif /* mxUseDefaultSlotAllocation */ 
 
 
-#if mxUseDefaultHostCollection
-
-void fxMarkHost(txMachine* the, txMarkRoot markRoot)
-{
-}
-
-void fxSweepHost(txMachine* the)
-{
-}
-
-#endif /* mxUseDefaultHostCollection */ 
-
-
 #if mxUseDefaultFindModule
 
 txID fxFindModule(txMachine* the, txSlot* realm, txID moduleID, txSlot* slot)
@@ -186,7 +170,7 @@ txID fxFindModule(txMachine* the, txSlot* realm, txID moduleID, txSlot* slot)
 		relative = 1;
 	}
 #if mxWindows
-	else if (('A' <= name[0]) && (name[0] <= 'Z') && (name[1] == ':') && (name[2] == '\\')) {
+	else if (((('A' <= name[0]) && (name[0] <= 'Z')) || (('a' <= name[0]) && (name[0] <= 'z'))) && (name[1] == ':') && (name[2] == '\\')) {
 		absolute = 1;
 	}	
 #endif
@@ -205,6 +189,12 @@ txID fxFindModule(txMachine* the, txSlot* realm, txID moduleID, txSlot* slot)
 		}
 	}
 #endif
+	slash = c_strrchr(name, mxSeparator);
+	if (!slash)
+		slash = name;
+	slash = c_strrchr(slash, '.');
+	if (slash && (!c_strcmp(slash, ".js") || !c_strcmp(slash, ".mjs")))
+		*slash = 0;
 	if (absolute) {
 		if (preparation) {
 			c_strcpy(path, preparation->base);
@@ -214,7 +204,13 @@ txID fxFindModule(txMachine* the, txSlot* realm, txID moduleID, txSlot* slot)
 				return id;
 		}
 #ifdef mxParse
-		if (fxFindScript(the, name, &id))
+		c_strcpy(path, name);
+		c_strcat(path, ".js");
+		if (fxFindScript(the, path, &id))
+			return id;
+		c_strcpy(path, name);
+		c_strcat(path, ".mjs");
+		if (fxFindScript(the, path, &id))
 			return id;
 #endif
 	}
@@ -243,6 +239,12 @@ txID fxFindModule(txMachine* the, txSlot* realm, txID moduleID, txSlot* slot)
 #ifdef mxParse
 		*slash = 0;
 		c_strcat(path, name + dot);
+		c_strcat(path, ".js");
+		if (fxFindScript(the, path, &id))
+			return id;
+		*slash = 0;
+		c_strcat(path, name + dot);
+		c_strcat(path, ".mjs");
 		if (fxFindScript(the, path, &id))
 			return id;
 #else
@@ -288,15 +290,7 @@ txBoolean fxFindPreparation(txMachine* the, txSlot* realm, txString path, txID* 
 #ifdef mxParse
 txBoolean fxFindScript(txMachine* the, txString path, txID* id)
 {
-	txString slash;
-	txString dot;
 	char real[C_PATH_MAX];
-	slash = c_strrchr(path, mxSeparator);
-	if (!slash)
-		slash = path;
-	dot = c_strrchr(slash, '.');
-	if (!dot)
-		c_strcat(path, ".js");
 	if (c_realpath(path, real)) {
 		*id = fxNewNameC(the, real);
 		return 1;
@@ -399,10 +393,12 @@ txScript* fxLoadScript(txMachine* the, txString path, txUnsigned flags)
 			fxParserSourceMap(parser, file, (txGetter)fgetc, flags, &name);
 			fclose(file);
 			file = NULL;
-			if (slash) *slash = 0;
-			c_strcat(path, name);
-			mxParserThrowElse(c_realpath(path, map));
-			parser->path = fxNewParserSymbol(parser, map);
+			if (parser->errorCount == 0) {
+				if (slash) *slash = 0;
+				c_strcat(path, name);
+				mxParserThrowElse(c_realpath(path, map));
+				parser->path = fxNewParserSymbol(parser, map);
+			}
 		}
 		fxParserHoist(parser);
 		fxParserBind(parser);
@@ -432,7 +428,16 @@ txScript* fxParseScript(txMachine* the, void* stream, txGetter getter, txUnsigne
 	fxInitializeParser(parser, the, the->parserBufferSize, the->parserTableModulo);
 	parser->firstJump = &jump;
 	if (c_setjmp(jump.jmp_buf) == 0) {
-		fxParserTree(parser, stream, getter, flags, NULL);
+#ifdef mxDebug
+		if (fxIsConnected(the)) {
+			char tag[16];
+			flags |= mxDebugFlag;
+			fxGenerateTag(the, tag, sizeof(tag), C_NULL);
+			fxFileEvalString(the, ((txStringStream*)stream)->slot->value.string, tag);
+			parser->path = fxNewParserSymbol(parser, tag);
+		}
+#endif
+		fxParserTree(parser, stream, getter, flags, C_NULL);
 		fxParserHoist(parser);
 		fxParserBind(parser);
 		script = fxParserCode(parser);
@@ -521,7 +526,7 @@ uint32_t modMilliseconds()
 {
 	c_timeval tv;
 	c_gettimeofday(&tv, NULL);
-#if (mxWasm || mxWindows)
+#if (mxWasm || mxWindows || mxMacOSX)
 	return (uint32_t)(uint64_t)(((double)(tv.tv_sec) * 1000.0) + ((double)(tv.tv_usec) / 1000.0));
 #else
 	return (uint32_t)(((double)(tv.tv_sec) * 1000.0) + ((double)(tv.tv_usec) / 1000.0));

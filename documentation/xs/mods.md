@@ -1,7 +1,7 @@
 # Mods - User Installed Extensions
 
-Copyright 2020 Moddable Tech, Inc.<BR>
-Revised: August 11, 2020	
+Copyright 2020-2021 Moddable Tech, Inc.<BR>
+Revised: June 1, 2021
 
 Mods are scripts that users can install on their IoT products to add new features and change existing behaviors. A mod is one or more JavaScript modules together with assets like images, audio, and certificates. A mod augments the software of a product without changing the factory installed firmware. To minimize safety, security, and privacy risks, products may sandbox mods using Secure EMCAScript. Mods are a new core feature of the Moddable SDK supported by the XS JavaScript engine.
 
@@ -34,14 +34,16 @@ Mods can contain data in addition to code. A mod that displays a user interface 
 The mod's data is accessed using the `Resource` constructor, which allows the data to be used directly from flash storage without having to be loaded into memory.
 
 ### Manifest
-A mod's manifest is a JSON file that describes the files used in the mod. The manifest is a subset of the full [manifest format](https://github.com/Moddable-OpenSource/moddable/blob/public/documentation/tools/manifest.md) used by the Moddable SDK, with only the `module`, `data`, `resource`, and `config` sections.
+A mod's manifest is a JSON file that describes the files used in the mod. The manifest is a subset of the full [manifest format](https://github.com/Moddable-OpenSource/moddable/blob/public/documentation/tools/manifest.md) used by the Moddable SDK, with only the `include`, `module`, `data`, `resource`, and `config` sections. The `build` and `platform` sections are also supported but rarely used.
+
+A mod's manifest usually includes the manifest at [`$MODDABLE/examples/manifest_mod.json`](../../examples/manifest_mod.json) which contains settings required for building and deploying the mod, such as the connection speed to use to transfer the mod to the device.
 
 ### Example Mod
 This section shows modules, data, and manifest of a simple mod.
 
 There is just one module, which imports data from a resource and traces its content to the console together with the version number of the mod.
 
-```
+```js
 import Resource from "Resource";
 import config from "mod/config";
 
@@ -58,8 +60,9 @@ Hello, mod.
 
 The manifest tells the build system to include these two files.
 
-```
+```json
 {
+	"include": "$(MODDABLE)/examples/manifest_mod.json",
 	"config": {
 		"version": 1.1
 	},
@@ -104,7 +107,7 @@ You can use `mcrun` to build and install the mod on a microcontroller by specify
 mcrun -d -m -p esp32/moddable_two
 ```
 
-For `mcrun` to install the mod, a mod host must already be installed on the device. The mod host must be a debug build because `mcrun` uses the xsbug debugger protocol to install the mod. (Note that mods can run on a release build but the installation method used by `mcrun` depends on capabilities only present in a debug build.)
+For `mcrun` to install the mod, a debug build of a mod host must first be installed on the device. The mod host must be a debug build because `mcrun` installs the mod using the xsbug debugger protocol. Mods can also run on a release build of a mod host but must be installed in some other way.
 
 Once the mod is installed, `mcrun` automatically restarts the microcontroller and connects to xsbug to debug the mod.
 
@@ -115,7 +118,7 @@ Adding support for mods to a project is straightforward. It requires some additi
 This section shows the essential steps for creating a mod host.
 
 #### Manifest
-The commonly used manifests in the Moddable SDK, such as `[manifest_base.json](https://github.com/Moddable-OpenSource/moddable/blob/public/examples/manifest_base.json)`, do not enable support for mods because supporting mods requires some additional code. Only projects that actually use mods should include that code. To enable mods, add `XS_MODS` to the `defines` section of the project's manifest.
+The commonly used manifests in the Moddable SDK, such as [`manifest_base.json`](https://github.com/Moddable-OpenSource/moddable/blob/public/examples/manifest_base.json), do not enable support for mods because supporting mods requires some additional code. Only projects that actually use mods should include that code. To enable mods, add `XS_MODS` to the `defines` section of the project's manifest.
 
 ```
 "defines": {
@@ -124,32 +127,42 @@ The commonly used manifests in the Moddable SDK, such as `[manifest_base.json](h
 ```
 
 #### Checking For Installed Mods
-A mod host may want to check if a mod is installed before attempting to load it. To do that use the `LoadMod` module, a utility module for working with mods. First, import the `LoadMod` module:
+A mod host may want to check if a mod is installed before attempting to load it. To do that use the `Modules` module, a utility module for working with mods. First, import the `Modules` module:
+
+```js
+import Modules from "modules";
+```
+
+Add the manifest for the `Modules` module to your project manifest:
 
 ```
-import LoadMod from "loadmod";
+"include": [
+	$(MODULES)/module/manifest.json
+]
 ```
 
 Then use the static `has` method to check if a given module is available. The following code determines if the module "mod" from the example above is installed:
 
-	if (LoadMod.has("mod"))
-		trace("mod installed\n");
+```js
+if (Modules.has("mod"))
+	trace("mod installed\n");
+```
 
 The `has` function does not load or execute the mod. It only checks for its presence.
 
-> **Note**: The `LoadMod` module works well for many mod hosts but is not sufficient for all scenarios. The API is likely to evolve or become deprecated.
-
 #### Running a Mod
-The `LoadMod` module can load and run a module within a mod.
+The `Modules` module can load and run a module within a mod.
 
-	if (LoadMod.has("mod"))
-		LoadMod.load("mod");
-
-The `load` function loads the module and executes the module's body, similar to  calling dynamic `import`, though `load` is synchronous. 
-
-The `load` function returns the module's default export. Consider the following mod that exports several functions through its default export.
-
+```js
+if (Modules.has("mod"))
+	Modules.importNow("mod");
 ```
+
+The `importNow` function loads the module and executes the module's body, similar to calling dynamic `import`, though `importNow` is synchronous. 
+
+The `importNow` function returns the module's default export. Consider the following mod that exports several functions through its default export.
+
+```js
 export default {
 	onLaunch() {
 	},
@@ -161,8 +174,8 @@ export default {
 ```
 The mod host loads the mod at start-up and calls `onLaunch` for the mod to initialize itself.
 
-```
-const mod = LoadMod.load("mod");
+```js
+const mod = Modules.importNow("mod");
 mod.onLaunch();
 ```
 
@@ -171,15 +184,17 @@ The mod host invokes the other functions at the appropriate time, `onLightOn` wh
 ### Checking Compatibility at Runtime
 Every mod has a module named `check` which contains a function to verify that the mod is compatible with the current host. By default the `check` module is created automatically by `mcrun` to verify that any graphics in the mod are compatible with the current host. It is a good practice to invoke the `check` module before any other. The `check` module exports a function that throws an exception if it finds an incompatibility.
 
-	if (LoadMod.has("check")) {
-		try {
-			const checkFunction = LoadMod.load("check");
-			checkFunction();
-		}
-		catch (e) {
-			trace(`Incompatible mod: ${e}\n`);
-		}
+```js
+if (Modules.has("check")) {
+	try {
+		const checkFunction = Modules.importNow("check");
+		checkFunction();
 	}
+	catch (e) {
+		trace(`Incompatible mod: ${e}\n`);
+	}
+}
+```
 
 ### Keys
 The dynamic nature of the JavaScript language means that the JavaScript engine needs to keep track of all properties names used by the virtual machine. XS does this using a key array. The [`preload`](https://github.com/Moddable-OpenSource/moddable/blob/public/documentation/xs/preload.md) feature used for building hosts for microcontrollers stores all the host's property names into a key array in flash storage.
@@ -189,12 +204,10 @@ At launch, XS creates a second array to store keys created at runtime. The lengt
 Mods, however, may create many more symbols because they can contain code with many property names that do not appear in the host. To accommodate this, a  project can adjust the length of the runtime key array by changing the number of available keys in the defines section of the manifest.
 
 ```
-"defines": {
-	"creation": {
-		"keys": {
-			"available": 128
-		}
-	},
+"creation": {
+	"keys": {
+		"available": 128
+	}
 }
 ```
 
@@ -248,7 +261,7 @@ The following sections show simple examples of how SES gives mod hosts the abili
 #### Restricting Module Access
 The following code creates a compartment and loads the mod's "mod' module into the compartment.
 
-```
+```js
 let c = new Compartment(
 	{},
 	{
@@ -266,7 +279,7 @@ The call to the `importNow` method loads the module "mod" inside of compartment 
 
 The compartment map below is changed to use remapping. 
 
-```
+```js
 let c = new Compartment(
 	{},
 	{
@@ -283,7 +296,7 @@ Projects often store important data and objects in global variables for convenie
 
 In the following code, the global variable "secret" is unavailable to the mod.
 
-```
+```js
 globalThis.secret = new Secret;
 let c = new Compartment(
 	{},
@@ -296,7 +309,7 @@ let exports = c.importNow("modExample");
 
 The first argument to the compartment constructor is a map of additional globals to add to the compartment when it is created. In the following code, the `secret` global is made available to the mod as a global variable with the name `sharedSecret`:
 
-```
+```js
 globalThis.secret = new Secret;
 let c = new Compartment(
 	{
@@ -311,7 +324,7 @@ let exports = c.importNow("modExample");
 
 The compartment instance `c` has a `globalThis` property which the mod host can use to access the globals of the compartment. The previous example may be rewritten using the compartment's `globalThis` property.
 
-```
+```js
 globalThis.secret = new Secret;
 let c = new Compartment(
 	{
@@ -327,7 +340,7 @@ The mod host can access and update the globals of the compartment at any time. T
 #### Mod Cannot Intercept Mod Host Calls
 Those with JavaScript experience might expect that a mod could interfere with the operation of the mod host through clever patching of the built-in primordial objects like `Object`, `Function`, and `Array`. For example, the following intercepts every call to push on `Array` instances.
 
-```
+```js
 const originalPush = Array.prototype.push;
 Array.prototype.push = function(...elements) {
 	// code here now has access to both the array and arguments to push
@@ -338,7 +351,7 @@ Array.prototype.push = function(...elements) {
 }
 ```
 
-This kind of global patch of built-in objects is called a [monkey patch](https://en.wikipedia.org/wiki/Monkey_patch). It is one technique used by one script to attack another. In SES, this kind of attack is not possible through the primordial objects because they are frozen, making it impossible to change existing properties. If a script running in a compartment attempts to replace the `push` function, an exception is thrown.
+This kind of global patch of built-in objects is called a [monkey patch](https://en.wikipedia.org/wiki/Monkey_patch). It is a technique that allows one script to attack another. In SES, this kind of attack is not possible through the primordial objects because they are frozen, making it impossible to change existing properties. If a script running in a compartment attempts to replace the `push` function, an exception is thrown.
 
 ## Behind the Scenes
 Mods are easy to use, which makes it easy to overlook the many complex details involved in making them work. This section describes implementation details that may be important when working with mods. 
@@ -378,7 +391,7 @@ This reserves 256 KB of space for storing the mod. Moddable SDK projects for the
 #### ESP8266
 Storing mods on ESP8266 is more complex than ESP32 for two reasons. First, there are no formally defined partitions so the Moddable SDK must manage flash layout entirely. Second, the mod archive must be memory mapped to allow in-place execution, but the ESP8266 can only memory map the first 1 MB of flash. This requires the mod archive be stored in the same 1 MB of space as the mod host.
 
-The Moddable SDK solves this problem by loading the mod starting at the first flash sector following the mod host image. This gives the largest possible space for mods on each host. However, it also means that the size available depends on the host.
+The Moddable SDK solves this problem by storing the mod starting at the first flash sector following the mod host image. This gives the largest possible space for mods on each host. However, it also means that address of the mod and the space available for the mod depends on the host.
 
 ### XS Archive Format
 

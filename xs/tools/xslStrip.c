@@ -55,7 +55,7 @@ txFlag fxIsCallbackStripped(txLinker* linker, txCallback which)
 
 txFlag fxIsLinkerSymbolUsed(txLinker* linker, txID id)
 {
-	txLinkerSymbol* linkerSymbol = linker->symbolArray[id & 0x7FFF];
+	txLinkerSymbol* linkerSymbol = linker->symbolArray[id];
 	return linkerSymbol->flag;
 }
 
@@ -75,7 +75,6 @@ void fxStripCallbacks(txLinker* linker, txMachine* the)
 	
 	if (linker->stripFlag == XS_STRIP_EXPLICIT_FLAG) {
 		fxUseCodes();
-		fxUnuseCode(XS_CODE_PROGRAM_ENVIRONMENT);
 		id = 0;
 		while (id < linker->symbolIndex) {
 			linker->symbolArray[id]->flag = 1;
@@ -86,7 +85,7 @@ void fxStripCallbacks(txLinker* linker, txMachine* the)
 	else {
 		linkerBuilder = linker->firstBuilder;
 		while (linkerBuilder) {
-			txID id = linkerBuilder->host.id & 0x7FFF;
+			txID id = linkerBuilder->host.id;
 			txLinkerSymbol* symbol = linker->symbolArray[id];
 			if (symbol->flag)
 				fxUnstripCallback(linker, linkerBuilder->host.callback);
@@ -191,6 +190,7 @@ void fxStripCallbacks(txLinker* linker, txMachine* the)
 				fxStripCallback(linker, fxOnRejectedPromise);
 				fxStripCallback(linker, fxOnResolvedPromise);
 				fxStripCallback(linker, fxOnThenable);
+				fxStripCallback(linker, fxOnUnhandledRejection);
 				fxUnuseCode(XS_CODE_ASYNC_FUNCTION);
 				fxUnuseCode(XS_CODE_ASYNC_GENERATOR_FUNCTION);
 				fxUnuseCode(XS_CODE_IMPORT);
@@ -241,6 +241,7 @@ void fxStripCallbacks(txLinker* linker, txMachine* the)
 				fxUnuseCode(XS_CODE_ARGUMENTS_SLOPPY);
 				fxUnuseCode(XS_CODE_EVAL);
 				fxUnuseCode(XS_CODE_EVAL_TAIL);
+				fxUnuseCode(XS_CODE_PROGRAM_ENVIRONMENT);
 			}
 		}
 		else {
@@ -281,7 +282,6 @@ void fxStripCallbacks(txLinker* linker, txMachine* the)
 	fxUnstripCallback(linker, fx_Number_prototype_valueOf);
 	fxUnstripCallback(linker, fx_Object_assign);
 	fxUnstripCallback(linker, fx_Object_copy);
-	fxUnstripCallback(linker, fx_Object_prototype_toPrimitive);
 	fxUnstripCallback(linker, fx_Object_prototype_toString);
 	fxUnstripCallback(linker, fx_Object_prototype_valueOf);
 	fxUnstripCallback(linker, fx_String_prototype_iterator);
@@ -292,6 +292,8 @@ void fxStripCallbacks(txLinker* linker, txMachine* the)
 	fxUnstripCallback(linker, fx_Symbol_prototype_valueOf);
 	fxUnstripCallback(linker, fx_TypedArray_prototype_join);
 	fxUnstripCallback(linker, fx_TypedArray_prototype_values);
+	
+	fxUnstripCallback(linker, fxOrdinaryToPrimitive);
 	
 	fxUnstripCallback(linker, fxArrayLengthGetter);
 	fxUnstripCallback(linker, fxArrayLengthSetter);
@@ -355,6 +357,7 @@ void fxStripCallbacks(txLinker* linker, txMachine* the)
 		fxUnstripCallback(linker, fxOnRejectedPromise);
 		fxUnstripCallback(linker, fxOnResolvedPromise);
 		fxUnstripCallback(linker, fxOnThenable);
+		fxUnstripCallback(linker, fxOnUnhandledRejection);
 	}
 	if (!fxIsLinkerSymbolUsed(linker, mxID(_Reflect)))
 		fxStripObject(linker, the, &mxReflectObject);
@@ -446,7 +449,7 @@ void fxStripClass(txLinker* linker, txMachine* the, txSlot* slot)
 {
 	mxPushSlot(slot);
 	fxStripInstance(linker, the, the->stack->value.reference);
-	fxGetID(the, mxID(_prototype));
+	mxGetID(mxID(_prototype));
 	fxStripInstance(linker, the, the->stack->value.reference);
 	mxPop();
 }
@@ -454,25 +457,25 @@ void fxStripClass(txLinker* linker, txMachine* the, txSlot* slot)
 void fxStripDefaults(txLinker* linker, FILE* file)
 {
 	if (!fxIsCodeUsed(XS_CODE_START_ASYNC)) {
-		fprintf(file, "static txSlot* fxNewAsyncInstanceDeadStrip(txMachine* the) { mxUnknownError(\"dead strip\"); }\n");
+		fprintf(file, "static txSlot* fxNewAsyncInstanceDeadStrip(txMachine* the) { mxUnknownError(\"dead strip\"); return NULL; }\n");
 		fprintf(file, "static void fxRunAsyncDeadStrip(txMachine* the, txSlot* slot) { mxUnknownError(\"dead strip\"); }\n");
 	}
 	if (!fxIsCodeUsed(XS_CODE_START_GENERATOR))
-		fprintf(file, "static txSlot* fxNewGeneratorInstanceDeadStrip(txMachine* the) { mxUnknownError(\"dead strip\"); }\n");
+		fprintf(file, "static txSlot* fxNewGeneratorInstanceDeadStrip(txMachine* the) { mxUnknownError(\"dead strip\"); return NULL; }\n");
 	if (!fxIsCodeUsed(XS_CODE_GENERATOR_FUNCTION))
-		fprintf(file, "static txSlot* fxNewGeneratorFunctionInstanceDeadStrip(txMachine* the, txID name) { mxUnknownError(\"dead strip\"); }\n");
+		fprintf(file, "static txSlot* fxNewGeneratorFunctionInstanceDeadStrip(txMachine* the, txID name) { mxUnknownError(\"dead strip\"); return NULL; }\n");
 	if (!fxIsCodeUsed(XS_CODE_START_ASYNC_GENERATOR))
-		fprintf(file, "static txSlot* fxNewAsyncGeneratorInstanceDeadStrip(txMachine* the) { mxUnknownError(\"dead strip\"); }\n");
+		fprintf(file, "static txSlot* fxNewAsyncGeneratorInstanceDeadStrip(txMachine* the) { mxUnknownError(\"dead strip\"); return NULL; }\n");
 	if (!fxIsCodeUsed(XS_CODE_ASYNC_GENERATOR_FUNCTION))
-		fprintf(file, "static txSlot* fxNewAsyncGeneratorFunctionInstanceDeadStrip(txMachine* the, txID name) { mxUnknownError(\"dead strip\"); }\n");
+		fprintf(file, "static txSlot* fxNewAsyncGeneratorFunctionInstanceDeadStrip(txMachine* the, txID name) { mxUnknownError(\"dead strip\"); return NULL; }\n");
 	if (!fxIsCodeUsed(XS_CODE_IMPORT) && fxIsCallbackStripped(linker, fx_Compartment_prototype_import))
 		fprintf(file, "static void fxRunImportDeadStrip(txMachine* the, txSlot* realm, txID id) { mxUnknownError(\"dead strip\"); }\n");
 	if (!fxIsCodeUsed(XS_CODE_NEW_PRIVATE_1) && !fxIsCodeUsed(XS_CODE_NEW_PRIVATE_2))
-		fprintf(file, "static txBoolean fxDefinePrivatePropertyDeadStrip(txMachine* the, txSlot* instance, txSlot* check, txID id, txSlot* slot, txFlag mask) { mxUnknownError(\"dead strip\"); }\n");
+		fprintf(file, "static txBoolean fxDefinePrivatePropertyDeadStrip(txMachine* the, txSlot* instance, txSlot* check, txID id, txSlot* slot, txFlag mask) { mxUnknownError(\"dead strip\"); return 0; }\n");
 	if (!fxIsCodeUsed(XS_CODE_GET_PRIVATE_1) && !fxIsCodeUsed(XS_CODE_GET_PRIVATE_2))
-		fprintf(file, "static txSlot* fxGetPrivatePropertyDeadStrip(txMachine* the, txSlot* instance, txSlot* check, txID id) { mxUnknownError(\"dead strip\"); }\n");
+		fprintf(file, "static txSlot* fxGetPrivatePropertyDeadStrip(txMachine* the, txSlot* instance, txSlot* check, txID id) { mxUnknownError(\"dead strip\"); return NULL; }\n");
 	if (!fxIsCodeUsed(XS_CODE_SET_PRIVATE_1) && !fxIsCodeUsed(XS_CODE_SET_PRIVATE_2))
-		fprintf(file, "static txSlot* fxSetPrivatePropertyDeadStrip(txMachine* the, txSlot* instance, txSlot* check, txID id) { mxUnknownError(\"dead strip\"); }\n");
+		fprintf(file, "static txSlot* fxSetPrivatePropertyDeadStrip(txMachine* the, txSlot* instance, txSlot* check, txID id) { mxUnknownError(\"dead strip\"); return NULL; }\n");
 		
 	if (fxIsCallbackStripped(linker, fx_BigInt))
 		fprintf(file, "static void fxBigIntDecodeDeadStrip(txMachine* the, txSize size) { mxUnknownError(\"dead strip\"); }\n");
@@ -521,11 +524,11 @@ void fxStripDefaults(txLinker* linker, FILE* file)
 	if (fxIsCodeUsed(XS_CODE_EVAL) || fxIsCodeUsed(XS_CODE_EVAL_TAIL) || !fxIsCallbackStripped(linker, fx_eval) || !fxIsCallbackStripped(linker, fx_Compartment_prototype_evaluate))
 		fprintf(file, "\tfxRunEvalEnvironment,\n");
 	else
-		fprintf(file, "\tC_NULL,\n");
+		fprintf(file, "\tfxDeadStrip,\n");
 	if (fxIsCodeUsed(XS_CODE_PROGRAM_ENVIRONMENT))
 		fprintf(file, "\tfxRunProgramEnvironment,\n");
 	else
-		fprintf(file, "\tC_NULL,\n");
+		fprintf(file, "\tfxDeadStrip,\n");
 	if (fxIsLinkerSymbolUsed(linker, mxID(_Atomics))) {
 		fprintf(file, "\tfxInitializeSharedCluster,\n");
 		fprintf(file, "\tfxTerminateSharedCluster,\n");
@@ -560,6 +563,10 @@ void fxStripDefaults(txLinker* linker, FILE* file)
 		fprintf(file, "\tC_NULL,\n");
 	else
 		fprintf(file, "\tfxCleanupFinalizationRegistries,\n");
+	if (fxIsCallbackStripped(linker, fx_Error_prototype_get_stack))
+		fprintf(file, "\tC_NULL,\n");
+	else
+		fprintf(file, "\tfxCaptureErrorStack,\n");
 	fprintf(file, "};\n\n");
 
 	fprintf(file, "const txBehavior* ICACHE_RAM_ATTR gxBehaviors[XS_BEHAVIOR_COUNT]  = {\n");
@@ -626,9 +633,9 @@ void fxStripDefaults(txLinker* linker, FILE* file)
 	else
 		fprintf(file, "\t{ 4, 2, C_NULL, C_NULL, C_NULL, C_NULL, _getUint32, _setUint32, _Uint32Array },\n");
 	if (fxIsLinkerSymbolUsed(linker, mxID(_Uint8ClampedArray)))
-		fprintf(file, "\t{ 1, 0, fxUint8Getter, fxUint8ClampedSetter, fxNumberCoerce, fxUint8Compare, _getUint8Clamped, _setUint8Clamped, _Uint8ClampedArray }\n");
+		fprintf(file, "\t{ 1, 0, fxUint8Getter, fxUint8ClampedSetter, fxNumberCoerce, fxUint8Compare, _getUint8, _setUint8, _Uint8ClampedArray }\n");
 	else
-		fprintf(file, "\t{ 1, 0, C_NULL, C_NULL, C_NULL, C_NULL, _getUint8Clamped, _setUint8Clamped, _Uint8ClampedArray }\n");
+		fprintf(file, "\t{ 1, 0, C_NULL, C_NULL, C_NULL, C_NULL, _getUint8, _setUint8, _Uint8ClampedArray }\n");
 	fprintf(file, "};\n\n");
 	
 	fprintf(file, "const txTypeAtomics ICACHE_FLASH_ATTR gxTypeAtomics[mxTypeArrayCount] = {\n");
@@ -771,6 +778,6 @@ void fxUnstripCallbacks(txLinker* linker)
 
 void fxUnuseSymbol(txLinker* linker, txID id)
 {
-	txLinkerSymbol* linkerSymbol = linker->symbolArray[id & 0x7FFF];
+	txLinkerSymbol* linkerSymbol = linker->symbolArray[id];
 	linkerSymbol->flag = 0;
 }

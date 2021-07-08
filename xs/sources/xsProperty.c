@@ -52,13 +52,13 @@ txSlot* fxNextHostAccessorProperty(txMachine* the, txSlot* property, txCallback 
 		getter = fxBuildHostFunction(the, get, 0, id);
 		slot = mxFunctionInstanceHome(getter);
 		slot->value.home.object = home->value.reference;
-		fxRenameFunction(the, getter, id, XS_NO_ID, id, "get ");
+		fxRenameFunction(the, getter, id, 0, id, "get ");
 	}
 	if (set) {
 		setter = fxBuildHostFunction(the, set, 1, id);
 		slot = mxFunctionInstanceHome(setter);
 		slot->value.home.object = home->value.reference;
-		fxRenameFunction(the, setter, id, XS_NO_ID, id, "set ");
+		fxRenameFunction(the, setter, id, 0, id, "set ");
 	}
 	property = property->next = fxNewSlot(the);
 	property->flag = flag;
@@ -67,9 +67,9 @@ txSlot* fxNextHostAccessorProperty(txMachine* the, txSlot* property, txCallback 
 	property->value.accessor.getter = getter;
 	property->value.accessor.setter = setter;
 	if (set)
-		the->stack++;
+		mxPop();
 	if (get)
-		the->stack++;
+		mxPop();
 	return property;
 }
 
@@ -85,7 +85,7 @@ txSlot* fxNextHostFunctionProperty(txMachine* the, txSlot* property, txCallback 
 	property->ID = id;
 	property->kind = the->stack->kind;
 	property->value = the->stack->value;
-	the->stack++;
+	mxPop();
 	return property;
 }
 #endif
@@ -217,16 +217,16 @@ txSlot* fxQueueIDKeys(txMachine* the, txSlot* first, txFlag flag, txSlot* keys)
 	if (flag & XS_EACH_NAME_FLAG) {
 		txSlot* property = first;
 		while (property) {
-			if (fxIsKeyName(the, property->ID))
-				keys = fxQueueKey(the, property->ID, XS_NO_ID, keys);
+			if (!(property->flag & XS_INTERNAL_FLAG) && fxIsKeyName(the, property->ID))
+				keys = fxQueueKey(the, property->ID, 0, keys);
 			property = property->next;
 		}
 	}
 	if (flag & XS_EACH_SYMBOL_FLAG) {
 		txSlot* property = first;
 		while (property) {
-			if (fxIsKeySymbol(the, property->ID))
-				keys = fxQueueKey(the, property->ID, XS_NO_ID, keys);
+			if (!(property->flag & XS_INTERNAL_FLAG) && fxIsKeySymbol(the, property->ID))
+				keys = fxQueueKey(the, property->ID, 0, keys);
 			property = property->next;
 		}
 	}
@@ -332,23 +332,25 @@ txSlot* fxSetIndexProperty(txMachine* the, txSlot* instance, txSlot* array, txIn
 	txSlot* address = array->value.array.address;
 	txSlot* chunk = address;
 	txIndex length = array->value.array.length;
-	txIndex size;
+	txIndex current;
+	txSize size;
 	txSlot* result;
 	txSlot* limit;
 	txIndex at;
 	if (address) {
-		size = (((txChunk*)(((txByte*)chunk) - sizeof(txChunk)))->size) / sizeof(txSlot);
-		if (length == size) {
+		current = (((txChunk*)(((txByte*)chunk) - sizeof(txChunk)))->size) / sizeof(txSlot);
+		if (length == current) {
 			if (index < length) 
 				return address + index;
 			if (instance->flag & XS_DONT_PATCH_FLAG)
 				return C_NULL;
 			if (array->flag & XS_DONT_SET_FLAG)
 				return C_NULL;
-			size++;
-			chunk = (txSlot*)fxRenewChunk(the, address, size * sizeof(txSlot));
+			current++;
+			size = fxMultiplyChunkSizes(the, current, sizeof(txSlot));
+			chunk = (txSlot*)fxRenewChunk(the, address, size);
 			if (!chunk) {
-				chunk = (txSlot*)fxNewChunk(the, size * sizeof(txSlot));
+				chunk = (txSlot*)fxNewChunk(the, size);
 				address = array->value.array.address;
 				c_memcpy(chunk, address, length * sizeof(txSlot));
 			}
@@ -356,7 +358,7 @@ txSlot* fxSetIndexProperty(txMachine* the, txSlot* instance, txSlot* array, txIn
 		}
 		else {
 			result = address;
-			limit = result + size;
+			limit = result + current;
 			while (result < limit) {
 				at = *((txIndex*)result);
 				if (at == index)
@@ -369,12 +371,13 @@ txSlot* fxSetIndexProperty(txMachine* the, txSlot* instance, txSlot* array, txIn
 				return C_NULL;
 			if ((array->flag & XS_DONT_SET_FLAG) && (index >= length))
 				return C_NULL;
-			size++;
-			at = result - address;
-			chunk = (txSlot*)fxNewChunk(the, size * sizeof(txSlot));
+			at = mxPtrDiff(result - address);
+			current++;
+			size = fxMultiplyChunkSizes(the, current, sizeof(txSlot));
+			chunk = (txSlot*)fxNewChunk(the, size);
 			address = array->value.array.address;
 			result = address + at;
-			limit = address + size - 1;
+			limit = address + current - 1;
 			if (result > address)
 				c_memcpy(chunk, address, (result - address) * sizeof(txSlot));
 			if (result < limit)
@@ -387,7 +390,7 @@ txSlot* fxSetIndexProperty(txMachine* the, txSlot* instance, txSlot* array, txIn
             return C_NULL;
 		if ((array->flag & XS_DONT_SET_FLAG) && (index >= length))
 			return C_NULL;
-		size = 1;
+		current = 1;
 		chunk = (txSlot*)fxNewChunk(the, sizeof(txSlot));
 		result = chunk;
 	}
@@ -407,32 +410,30 @@ void fxSetIndexSize(txMachine* the, txSlot* array, txIndex target)
 {
 	txSlot* address = array->value.array.address;
 	txSlot* chunk = C_NULL;
-	txIndex size = (address) ? (((txChunk*)(((txByte*)address) - sizeof(txChunk)))->size) / sizeof(txSlot) : 0;
-	if (target > (0x7FFFFFFF / sizeof(txSlot))) {
-		fxReport(the, "# too big array\n");
-		fxJump(the);
-	}
-	if (size != target) {
+	txIndex current = (address) ? (((txChunk*)(((txByte*)address) - sizeof(txChunk)))->size) / sizeof(txSlot) : 0;
+	txSize size;
+	if (current != target) {
 		if (array->flag & XS_DONT_SET_FLAG)
 			mxTypeError("set length: not writable");
+		size = fxMultiplyChunkSizes(the, target, sizeof(txSlot));
 		if (address) {
 			if (target) {
-				chunk = (txSlot*)fxRenewChunk(the, address, target * sizeof(txSlot));
+				chunk = (txSlot*)fxRenewChunk(the, address, size);
 				if (!chunk) {
-					chunk = (txSlot*)fxNewChunk(the, target * sizeof(txSlot));
+					chunk = (txSlot*)fxNewChunk(the, size);
 					address = array->value.array.address;
-					if (size < target)
-						c_memcpy(chunk, address, size * sizeof(txSlot));
+					if (current < target)
+						c_memcpy(chunk, address, current * sizeof(txSlot));
 					else
-						c_memcpy(chunk, address, target * sizeof(txSlot));
+						c_memcpy(chunk, address, size);
 				}
 			}
 		}
 		else {
-			chunk = (txSlot*)fxNewChunk(the, target * sizeof(txSlot));
+			chunk = (txSlot*)fxNewChunk(the, size);
 		}
-		if (size < target)
-			c_memset(chunk + size, 0, (target - size) * sizeof(txSlot));
+		if (current < target)
+			c_memset(chunk + current, 0, (target - current) * sizeof(txSlot));
 		array->value.array.length = target;
 		array->value.array.address = chunk;
 	}
@@ -440,8 +441,8 @@ void fxSetIndexSize(txMachine* the, txSlot* array, txIndex target)
 
 txBoolean fxDefinePrivateProperty(txMachine* the, txSlot* instance, txSlot* check, txID id, txSlot* slot, txFlag mask) 
 {
-    txSlot** address;
-    txSlot* property;
+	txSlot** address;
+	txSlot* property;
 	mxCheck(the, instance->kind == XS_INSTANCE_KIND);
 	address = &(instance->next);
 	while ((property = *address)) {
@@ -454,9 +455,9 @@ txBoolean fxDefinePrivateProperty(txMachine* the, txSlot* instance, txSlot* chec
 	}
 	if (!property) {
 		*address = property = fxNewSlot(the);
-        property->flag = XS_INTERNAL_FLAG | XS_DONT_DELETE_FLAG | XS_DONT_ENUM_FLAG | XS_DONT_SET_FLAG;
-        property->kind = XS_PRIVATE_KIND;
-        property->value.private.check = check;
+		property->flag = XS_INTERNAL_FLAG | XS_DONT_DELETE_FLAG | XS_DONT_ENUM_FLAG;
+		property->kind = XS_PRIVATE_KIND;
+		property->value.private.check = check;
 		property->value.private.first = C_NULL;
 	}
 	address = &(property->value.private.first);
@@ -479,26 +480,30 @@ txBoolean fxDefinePrivateProperty(txMachine* the, txSlot* instance, txSlot* chec
 		}
 		if (mask & XS_GETTER_FLAG) {
 			txSlot* function = property->value.accessor.getter = slot->value.accessor.getter;
-			txSlot* home = mxFunctionInstanceHome(function);
-			home->value.home.object = instance;
-			fxRenameFunction(the, function, id, XS_NO_ID, mxID(_get), "get ");
+			if ((function->flag & XS_MARK_FLAG) == 0) {
+				txSlot* home = mxFunctionInstanceHome(function);
+				home->value.home.object = instance;
+			}
+			fxRenameFunction(the, function, id, 0, mxID(_get), "get ");
 		}
 		else {
-			txSlot* function = property->value.accessor.setter = slot->value.accessor.setter;
-			txSlot* home = mxFunctionInstanceHome(function);
-			home->value.home.object = instance;
-			fxRenameFunction(the, function, id, XS_NO_ID, mxID(_set), "set ");
+			txSlot*  function = property->value.accessor.setter = slot->value.accessor.setter;
+			if ((function->flag & XS_MARK_FLAG) == 0) {
+				txSlot* home = mxFunctionInstanceHome(function);
+				home->value.home.object = instance;
+			}
+			fxRenameFunction(the, function, id, 0, mxID(_set), "set ");
 		}
 	}
 	else {
 		if (property)
 			return 0;
 		*address = property = fxNewSlot(the);
- 		property->flag = (mask & XS_METHOD_FLAG) ? XS_DONT_SET_FLAG : XS_NO_FLAG;
-       	property->ID = id;
-       	property->kind = slot->kind;
+		property->flag = (mask & XS_METHOD_FLAG) ? XS_DONT_SET_FLAG : XS_NO_FLAG;
+		property->ID = id;
+		property->kind = slot->kind;
 		property->value = slot->value;
-        if (property->kind == XS_REFERENCE_KIND) {
+		if (property->kind == XS_REFERENCE_KIND) {
 			txSlot* function = slot->value.reference;
 			if (mxIsFunction(function)) {
 				if ((mask & XS_METHOD_FLAG) && ((function->flag & XS_MARK_FLAG) == 0)) {
@@ -506,7 +511,7 @@ txBoolean fxDefinePrivateProperty(txMachine* the, txSlot* instance, txSlot* chec
 					home->value.home.object = instance;
 				}
 				if (id)
-					fxRenameFunction(the, function, id, XS_NO_ID, mxID(_value), C_NULL);
+					fxRenameFunction(the, function, id, 0, mxID(_value), C_NULL);
 			}
 		}
 	}
@@ -517,7 +522,7 @@ txSlot* fxGetPrivateProperty(txMachine* the, txSlot* instance, txSlot* check, tx
 {
     txSlot* result;
 	mxCheck(the, instance->kind == XS_INSTANCE_KIND);
-	if (instance->ID >= 0) {
+	if (instance->ID) {
 		txSlot* alias = the->aliasArray[instance->ID];
 		if (alias)
 			instance = alias;
@@ -549,7 +554,7 @@ txSlot* fxSetPrivateProperty(txMachine* the, txSlot* instance, txSlot* check, tx
 {
     txSlot* result;
 	mxCheck(the, instance->kind == XS_INSTANCE_KIND);
-	if (instance->ID >= 0) {
+	if (instance->ID) {
 		txSlot* alias = the->aliasArray[instance->ID];
 		if (alias)
 			instance = alias;

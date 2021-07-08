@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019  Moddable Tech, Inc.
+ * Copyright (c) 2019-2020 Moddable Tech, Inc.
  *
  *   This file is part of the Moddable SDK Runtime.
  *
@@ -21,24 +21,52 @@
 #ifndef __BUILTINCOMMON_H__
 #define __BUILTINCOMMON_H__
 
-uint8_t builtinArePinsFree(uint32_t pin);
-uint8_t builtinUsePins(uint32_t pin);
-void builtinFreePins(uint32_t pin);
+#define builtinIsPinFree(pin) builtinArePinsFree(pin >> 5, 1 << (pin & 0x1F))
+#define builtinUsePin(pin) builtinUsePins(pin >> 5, 1 << (pin & 0x1F))
+#define builtinFreePin(pin) builtinFreePins(pin >> 5, 1 << (pin & 0x1F))
 
-uint8_t builtinHasCallback(xsMachine *the, xsSlot *target, xsIndex id);
-uint8_t builtinGetCallback(xsMachine *the, xsSlot *target, xsIndex id, xsSlot *slot);
+uint8_t builtinArePinsFree(uint32_t bank, uint32_t pin);
+uint8_t builtinUsePins(uint32_t bank, uint32_t pin);
+void builtinFreePins(uint32_t bank, uint32_t pin);
 
-#define builtinCriticalSectionBegin() xt_rsil(0)
-#define builtinCriticalSectionEnd() xt_rsil(15)
+uint8_t builtinHasCallback(xsMachine *the, xsIdentifier id);
+uint8_t builtinGetCallback(xsMachine *the, xsIdentifier id, xsSlot *slot);
+
+#if ESP32
+	#define kPinBanks (2)
+
+	extern portMUX_TYPE gCommonCriticalMux;
+	#define builtinCriticalSectionBegin() vPortEnterCritical(&gCommonCriticalMux)
+	#define builtinCriticalSectionEnd() vPortExitCritical(&gCommonCriticalMux)
+
+#elif defined(__ets__)
+	#include "Arduino.h"	// mostly to get xs_rsil
+
+	#define kPinBanks (1)
+
+	#define builtinCriticalSectionBegin() xt_rsil(0)
+	#define builtinCriticalSectionEnd() xt_rsil(15)
+#else
+	#error - unsupported platform
+#endif
 
 enum {
-	kIOFormatByte = 1,
+	kIOFormatNumber = 1,
 	kIOFormatBuffer = 2,
+	kIOFormatStringASCII = 3,
+	kIOFormatStringUTF8 = 4,
+	kIOFormatSocketTCP = 5,
 
 	kIOFormatNext,
+	kIOFormatInvalid = 0xFF,
 };
 
 void builtinGetFormat(xsMachine *the, uint8_t format);
 uint8_t builtinSetFormat(xsMachine *the);
+
+void builtinInitializeTarget(xsMachine *the);
+uint8_t builtinInitializeFormat(xsMachine *the, uint8_t format);
+
+void *builtinGetBufferPointer(xsMachine *the, xsSlot *slot, uint32_t *byteLength);
 
 #endif

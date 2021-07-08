@@ -24,14 +24,20 @@ export default function (done) {
 		c: new M5Button(37)
 	};
 
-	if (config.speaker) {
-		globalThis.speaker = new AudioOut({streams: 4});
-		if (config.startupSound) {
-			speaker.callback = function() {this.stop()};
-			speaker.enqueue(0, AudioOut.Samples, new Resource(config.startupSound));
-			speaker.enqueue(0, AudioOut.Callback, 0);
-			speaker.start();
-		}
+	// start-up sound
+	if (config.startupSound) {
+		const speaker = new AudioOut({streams: 1});
+		speaker.callback = function () {
+			this.stop();
+			this.close();
+			this.done();
+		};
+		speaker.done = done;
+		done = undefined;
+
+		speaker.enqueue(0, AudioOut.Samples, new Resource(config.startupSound));
+		speaker.enqueue(0, AudioOut.Callback, 0);
+		speaker.start();
 	}
 
 	try {
@@ -114,6 +120,8 @@ export default function (done) {
 
 	if (config.autorotate && globalThis.Application && globalThis.accelerometer) {
 		state.handleRotation = function (reading) {
+			if (globalThis.application === undefined) return;
+
 			if (Math.abs(reading.y) > Math.abs(reading.x)) {
 				if (reading.y < -0.7 && application.rotation != 90) {
 					application.rotation = 90;
@@ -131,7 +139,7 @@ export default function (done) {
 		accelerometer.start(300);
 	}
 
-	done();
+	done?.();
 }
 
 function nop() {

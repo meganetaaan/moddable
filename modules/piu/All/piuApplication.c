@@ -140,7 +140,8 @@ void PiuApplicationDeferContents(xsMachine* the, PiuApplication* self)
 				fxCall(the);
 				fxPush(xsVar(1));
 				for (i = 0; i < c; i++) {
-					fxPush((*link)->argv[i]);
+					xsVar(0) = xsAccess((*link)->argv[i]);
+					fxPush(xsVar(0));
 				}
 				fxRunCount(the, 1 + c);
 				the->stack++;
@@ -542,7 +543,7 @@ xsIntegerValue PiuApplicationCanMenu(PiuApplication* self, xsIntegerValue id)
 	xsIntegerValue result = 0;
 	PiuApplicationFindMenu(self, id);
 	if (xsTest(xsVar(2))) {
-		xsIndex canID = (xsIndex)xsToInteger(xsGet(xsVar(2), xsID_canID));
+		xsIdentifier canID = (xsIdentifier)xsToInteger(xsGet(xsVar(2), xsID_canID));
 		PiuContent* content = (*self)->focus;
 		while (content) {
 			if ((*content)->behavior) {
@@ -577,13 +578,18 @@ void PiuApplicationDoMenu(PiuApplication* self, xsIntegerValue id)
 	xsMachine* the = (*self)->the;
 	PiuApplicationFindMenu(self, id);
 	if (xsTest(xsVar(2))) {
-		xsIndex doID = (xsIndex)xsToInteger(xsGet(xsVar(2), xsID_doID));
+		xsIdentifier doID = (xsIdentifier)xsToInteger(xsGet(xsVar(2), xsID_doID));
 		PiuContent* content = (*self)->focus;
 		while (content) {
 			if ((*content)->behavior) {
 				xsVar(0) = xsReference((*content)->behavior);
 				if (xsFindResult(xsVar(0), doID)) {
+					xsIntegerValue value;
 					xsVar(1) = xsReference((*content)->reference);
+					if (xsFindInteger(xsVar(2), xsID_value, &value))
+						xsVar(2) = xsInteger(value);
+					else
+						xsVar(2) = xsUndefined;
 					(void)xsCallFunction2(xsResult, xsVar(0), xsVar(1), xsVar(2));
 					PiuApplicationAdjust(self);
 					break;
@@ -755,7 +761,7 @@ const void *fxGetResource(xsMachine* the, const char* path, size_t* size)
 	return data;
 }
 
-xsBooleanValue fxFindBoolean(xsMachine* the, xsSlot* slot, xsIndex id, xsBooleanValue* value)
+xsBooleanValue fxFindBoolean(xsMachine* the, xsSlot* slot, xsIdentifier id, xsBooleanValue* value)
 {
 	xsBooleanValue result;
 	xsOverflow(-1);
@@ -771,7 +777,7 @@ xsBooleanValue fxFindBoolean(xsMachine* the, xsSlot* slot, xsIndex id, xsBoolean
 	return result;
 }
 
-xsBooleanValue fxFindInteger(xsMachine* the, xsSlot* slot, xsIndex id, xsIntegerValue* value)
+xsBooleanValue fxFindInteger(xsMachine* the, xsSlot* slot, xsIdentifier id, xsIntegerValue* value)
 {
 	xsBooleanValue result;
 	xsOverflow(-1);
@@ -787,7 +793,7 @@ xsBooleanValue fxFindInteger(xsMachine* the, xsSlot* slot, xsIndex id, xsInteger
 	return result;
 }
 
-xsBooleanValue fxFindNumber(xsMachine* the, xsSlot* slot, xsIndex id, xsNumberValue* value)
+xsBooleanValue fxFindNumber(xsMachine* the, xsSlot* slot, xsIdentifier id, xsNumberValue* value)
 {
 	xsBooleanValue result;
 	xsOverflow(-1);
@@ -803,7 +809,7 @@ xsBooleanValue fxFindNumber(xsMachine* the, xsSlot* slot, xsIndex id, xsNumberVa
 	return result;
 }
 
-xsBooleanValue fxFindString(xsMachine* the, xsSlot* slot, xsIndex id, xsStringValue* value)
+xsBooleanValue fxFindString(xsMachine* the, xsSlot* slot, xsIdentifier id, xsStringValue* value)
 {
 	xsBooleanValue result;
 	xsOverflow(-1);
@@ -819,7 +825,7 @@ xsBooleanValue fxFindString(xsMachine* the, xsSlot* slot, xsIndex id, xsStringVa
 	return result;
 }
 
-xsBooleanValue fxFindResult(xsMachine* the, xsSlot* slot, xsIndex id)
+xsBooleanValue fxFindResult(xsMachine* the, xsSlot* slot, xsIdentifier id)
 {
 	xsBooleanValue result;
 	xsOverflow(-1);

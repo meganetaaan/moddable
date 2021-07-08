@@ -131,6 +131,20 @@ int fxArguments(txSerialTool self, int argc, char* argv[])
 				fprintf(stderr, "### can't open '%s'\n", argv[argi]);
 				return 1;
 			}
+
+			// validate archive header
+			uint32_t header[4];
+			fread(header, 1, sizeof(header), gInstallFD);
+			fseek(gInstallFD, gInstallOffset, SEEK_END);
+
+			if ((ftell(gInstallFD) != ntohl(header[0])) ||
+				strncmp((char *)&header[1], "XS_A", 4) ||
+				(12 != ntohl(header[2])) ||
+				strncmp((char *)&header[3], "VERS", 4)) {
+				fprintf(stderr, "### invalid archive '%s'\n", argv[argi]);
+				return 1;
+			}
+			fseek(gInstallFD, 0, SEEK_SET);
 		}
 		else if (!strcmp(argv[argi], "-pref") && ((argi + 1) < argc)) {
 			PrefRecord pr;
@@ -245,6 +259,8 @@ int fxInitializeTarget(txSerialTool self)
 	else if (!strcmp("install", gCmd)) {
 #if mxTraceCommands
 		fprintf(stderr, "### install\n");
+#else
+		fprintf(stderr, "Installing mod.");
 #endif
 		gInstallOffset = 0;
 		fxInstallFragment(self);
@@ -280,8 +296,13 @@ void fxCommandReceived(txSerialTool self, void *bufferIn, int size)
 	uint16_t resultId = (buffer[1] << 8) | buffer[2];
 	uint16_t resultCode = (buffer[3] << 8) | buffer[4];
 
+	if (resultCode) {
+		fprintf(stderr, "### fxCommandReceived: remote operation failed with resultCode %d\n", resultCode);
+		exit(-1);
+	}
 #if mxTraceCommands
-	fprintf(stderr, "### fxCommandReceived\n");
+	else
+		fprintf(stderr, "### fxCommandReceived: remote operation SUCCESS with resultCode %d\n", resultCode);
 #endif
 
 	if (0xff02 == resultId) {	// uninstall
@@ -294,6 +315,8 @@ void fxCommandReceived(txSerialTool self, void *bufferIn, int size)
 	}
 
 	if (0xe0e0 == resultId) {	// installed fragment
+		if ((gInstallOffset / 4096) != ((gInstallOffset - kInstallFragmentSize) / 4096))
+			fprintf(stderr, ".");
 		fxInstallFragment(self);
 		return;
 	}
@@ -301,6 +324,7 @@ void fxCommandReceived(txSerialTool self, void *bufferIn, int size)
 #if mxTraceCommands
 		fprintf(stderr, "### install complete\n");
 #endif
+		fprintf(stderr, "..complete\n");
 		fclose(gInstallFD);
 		gInstallFD = NULL;
 		fxRestart(self);
@@ -317,13 +341,6 @@ void fxCommandReceived(txSerialTool self, void *bufferIn, int size)
 		}
 		return;
 	}
-
-	if (resultCode)
-		fprintf(stderr, "### remote operation failed with resultCode %d\n", resultCode);
-#if mxTraceCommands
-	else
-		fprintf(stderr, "### remote operation SUCCESS with resultCode %d\n", resultCode);
-#endif
 }
 
 uint8_t fxMatchProcessingInstruction(char* p, uint8_t* flag, uint32_t* value)
@@ -646,10 +663,9 @@ void fxSetTime(txSerialTool self, txSerialMachine machine)
 		struct _timeb tb;
 		_ftime(&tb);
 		time = (long)tb.time;
-		gmt = tb.timezone * 60;
+		gmt = -tb.timezone * 60;
 		if (tb.dstflag) {
 			dst = 60 * 60;
-			gmt -= dst;
 		}
 	}
 #else

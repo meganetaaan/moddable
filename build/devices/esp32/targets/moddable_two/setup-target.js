@@ -21,6 +21,16 @@ class Backlight extends PWM {
 	}
 }
 
+class Flash {
+	constructor(options) {
+		return new Button({
+			...options,
+			pin: 0,
+			invert: true
+		});
+	}
+}
+
 globalThis.Host = Object.freeze({
 	Backlight,
 	LED: {
@@ -34,21 +44,16 @@ globalThis.Host = Object.freeze({
 		}
 	},
 	Button: {
-		Default: class {
-			constructor(options) {
-				return new Button({
-					...options,
-					pin: 0,
-					invert: true
-				});
-			}
-		}
+		Default: Flash,
+		Flash
 	}
 }, true);
 
 export default function (done) {
 	if ((undefined === config.brightness) || ("none" === config.brightness))
 		Digital.write(config.backlight, 0);
+	else if ("off" === config.brightness)
+		Digital.write(config.backlight, 1);
 	else
 		globalThis.backlight = new Backlight(parseInt(config.brightness));
 

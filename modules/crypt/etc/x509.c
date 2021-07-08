@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017  Moddable Tech, Inc.
+ * Copyright (c) 2016-2021  Moddable Tech, Inc.
  *
  *   This file is part of the Moddable SDK Runtime.
  * 
@@ -197,7 +197,7 @@ xs_x509_decodeExtension(xsMachine *the)
 	int i;
 
 	for (i = 0; i < idlen; i++)
-		extid[i] = xsToInteger(xsGet(xsArg(1), i));
+		extid[i] = xsToInteger(xsGetIndex(xsArg(1), i));
 	resolveBuffer(the, &xsArg(0), &p, &count);
 	sz = count;
 	savep = p;

@@ -45,6 +45,13 @@ extern "C" {
 #endif
 
 //#define mxFrequency 1
+#ifndef mxBoundsCheck
+	#ifdef mxDebug
+		#define mxBoundsCheck 1
+	#else
+		#define mxBoundsCheck 0
+	#endif
+#endif
 #ifndef mxRegExp
 	#define mxRegExp 1
 #endif
@@ -114,13 +121,14 @@ typedef struct {
 	void (*initializeSharedCluster)();
 	void (*terminateSharedCluster)();
 	txSlot* (*newFunctionLength)(txMachine* the, txSlot* instance, txNumber length);
-	txSlot* (*newFunctionName)(txMachine* the, txSlot* instance, txInteger id, txIndex index, txInteger former, txString prefix);
+	txSlot* (*newFunctionName)(txMachine* the, txSlot* instance, txID id, txIndex index, txID former, txString prefix);
     void (*executeModules)(txMachine* the, txSlot* realm, txFlag flag);
     void (*runImport)(txMachine* the, txSlot* realm, txID id);
 	txBoolean (*definePrivateProperty)(txMachine* the, txSlot* instance, txSlot* check, txID id, txSlot* slot, txFlag mask);
 	txSlot* (*getPrivateProperty)(txMachine* the, txSlot* instance, txSlot* check, txID id);
 	txSlot* (*setPrivateProperty)(txMachine* the, txSlot* instance, txSlot* check, txID id);
 	void (*cleanupFinalizationRegistries)(txMachine*);
+	void (*captureErrorStack)(txMachine* the, txSlot* internal, txSlot* frame);
 } txDefaults;
 
 enum {
@@ -252,12 +260,15 @@ typedef union {
 	struct { txCallback address; txID* IDs; } callback;
 	struct { txByte* address; txSlot* closures; } code;
 	struct { txInteger offset; txInteger size; } dataView;
+	struct { txSlot* info; txError which; } error;
 	struct { void* data; union { txDestructor destructor; txHostHooks* hooks; } variant; } host;
 	struct { txSlot* handler; txSlot* target; } proxy;
 	struct { txInteger* code; txInteger* data; } regexp;
 	struct { txSlot* address; txIndex length; } stack;
 	struct { txSlot** address; txSize length; } table;
 	struct { txTypeDispatch* dispatch; txTypeAtomics* atomics; } typedArray;
+	struct { txSlot* check; txSlot* value; } weakEntry;
+	struct { txSlot* first; txSlot* link; } weakList;
 	struct { txSlot* target; txSlot* link; } weakRef;
 	struct { txSlot* callback; txUnsigned flags; } finalizationRegistry;
 	struct { txSlot* target; txSlot* token; } finalizationCell;
@@ -304,28 +315,51 @@ struct sxJump {
 
 struct sxSlot {
 	txSlot* next;
-#if mxBigEndian
-	union {
-		struct {
-			txID ID;
-			txFlag flag;
-			txKind kind;
+#if mx32bitID
+	#if mxBigEndian
+		union {
+			struct {
+				txID ID;
+				txS2 dummy;
+				txFlag flag;
+				txKind kind;
+			};
+			txS8 ID_FLAG_KIND;
 		};
-		txInteger ID_FLAG_KIND;
-	};
+	#else
+		union {
+			struct {
+				txKind kind;
+				txFlag flag;
+				txS2 dummy;
+				txID ID;
+			};
+			txS8 KIND_FLAG_ID;
+		};
+	#endif
 #else
-	union {
-		struct {
-			txKind kind;
-			txFlag flag;
-			txID ID;
+	#if mxBigEndian
+		union {
+			struct {
+				txID ID;
+				txFlag flag;
+				txKind kind;
+			};
+			txS4 ID_FLAG_KIND;
 		};
-		txInteger KIND_FLAG_ID;
-	};
-#endif
-#if (!defined(linux)) && ((defined(__GNUC__) && defined(__LP64__)) || (defined(_MSC_VER) && defined(_M_X64)))
-	// Made it aligned and consistent on all platforms
-	txInteger dummy;
+	#else
+		union {
+			struct {
+				txKind kind;
+				txFlag flag;
+				txID ID;
+			};
+			txS4 KIND_FLAG_ID;
+		};
+	#endif
+	#if INTPTR_MAX == INT64_MAX
+		txS4 dummy;
+	#endif
 #endif
 	txValue value;
 };
@@ -377,17 +411,18 @@ struct sxMachine {
 	txSlot** keyArray;
 	txID keyCount;
 	txID keyIndex;
-	int	keyOffset;
+	txID keyOffset;
 	txSlot** keyArrayHost;
 
 	txID aliasCount;
 	txID aliasIndex;
 	txSlot** aliasArray;
 	
-	txSlot* firstWeakMapTable;
-	txSlot* firstWeakSetTable;
+	char* stackLimit;
+	
+	txSlot* firstWeakListLink;
 	txSlot* firstWeakRefLink;
-
+	
 	txSize currentChunksSize;
 	txSize peakChunksSize;
 	txSize maximumChunksSize;
@@ -421,12 +456,12 @@ struct sxMachine {
 	txFlag debugTag;
 	txFlag nameIndex;
 	txFlag pathIndex;
-	unsigned long idValue;
+	size_t idValue;
 	txInteger lineValue;
 	char pathValue[256];
-	txInteger debugOffset;
+	txSize debugOffset;
 	char debugBuffer[256];
-	txInteger echoOffset;
+	txSize echoOffset;
 	char echoBuffer[256];
 #endif
 #ifdef mxFrequency
@@ -440,6 +475,12 @@ struct sxMachine {
 	txSlot* stackPeak;
 	txSize floatingPointOps;
 	void (*onBreak)(txMachine*, txU1 stop);
+#endif
+#ifdef mxMetering
+	txBoolean (*meterCallback)(txMachine*, txU4);
+	txU4 meterCount;
+	txU4 meterIndex;
+	txU4 meterInterval;
 #endif
 #ifdef mxProfile
 	txString profileDirectory;
@@ -501,7 +542,7 @@ struct sxPreparation {
 
 struct sxHostFunctionBuilder {
 	txCallback callback;
-	txID length;
+	txInteger length;
 	txID id;
 };
 
@@ -575,29 +616,30 @@ mxExport txID fxToID(txMachine* the, txSlot* theSlot);
 mxExport txString fxName(txMachine*, txID);
 
 mxExport void fxEnumerate(txMachine* the);
+mxExport txBoolean fxHasAll(txMachine* the, txID id, txIndex index);
 mxExport txBoolean fxHasAt(txMachine* the);
-mxExport txBoolean fxHasID(txMachine*, txInteger);
+mxExport txBoolean fxHasID(txMachine*, txID);
 mxExport txBoolean fxHasIndex(txMachine* the, txIndex index);
-mxExport void fxGetAll(txMachine* the, txInteger id, txIndex index);
+mxExport void fxGetAll(txMachine* the, txID id, txIndex index);
 mxExport void fxGetAt(txMachine*);
-mxExport void fxGetID(txMachine*, txInteger);
+mxExport void fxGetID(txMachine*, txID);
 mxExport void fxGetIndex(txMachine*, txIndex);
-mxExport void fxSetAll(txMachine* the, txInteger id, txIndex index);
+mxExport void fxSetAll(txMachine* the, txID id, txIndex index);
 mxExport void fxSetAt(txMachine*);
-mxExport void fxSetID(txMachine*, txInteger);
+mxExport void fxSetID(txMachine*, txID);
 mxExport void fxSetIndex(txMachine*, txIndex);
 mxExport void fxDefineAll(txMachine* the, txID id, txIndex index, txFlag flag, txFlag mask);
 mxExport void fxDefineAt(txMachine* the, txFlag flag, txFlag mask);
 mxExport void fxDefineID(txMachine* the, txID id, txFlag flag, txFlag mask);
 mxExport void fxDefineIndex(txMachine* the, txIndex index, txFlag flag, txFlag mask);
-mxExport void fxDeleteAll(txMachine*, txInteger, txIndex);
+mxExport void fxDeleteAll(txMachine*, txID, txIndex);
 mxExport void fxDeleteAt(txMachine*);
-mxExport void fxDeleteID(txMachine*, txInteger);
+mxExport void fxDeleteID(txMachine*, txID);
 mxExport void fxDeleteIndex(txMachine*, txIndex);
 mxExport void fxCall(txMachine*);
-mxExport void fxCallID(txMachine*, txInteger);
+mxExport void fxCallID(txMachine*, txID);
 mxExport void fxNew(txMachine*);
-mxExport void fxNewID(txMachine*, txInteger);
+mxExport void fxNewID(txMachine*, txID);
 mxExport void fxRunCount(txMachine*, txInteger);
 mxExport txBoolean fxRunTest(txMachine* the);
 
@@ -622,6 +664,7 @@ mxExport void fxShareMachine(txMachine* the);
 mxExport txMachine* fxBeginHost(txMachine*);
 mxExport void fxEndHost(txMachine*);
 mxExport void fxEndJob(txMachine* the);
+mxExport void fxExitToHost(txMachine*) XS_FUNCTION_NORETURN;
 
 mxExport void fxCollectGarbage(txMachine*);
 mxExport void fxEnableGarbageCollection(txMachine* the, txBoolean enableIt);
@@ -639,20 +682,29 @@ mxExport void* fxMapArchive(txPreparation* preparation, void* archive, void* sta
 
 mxExport void fxAwaitImport(txMachine*, txBoolean defaultFlag);
 
+#ifdef mxMetering
+mxExport void fxBeginMetering(txMachine* the, txBoolean (*callback)(txMachine*, txU4), txU4 interval);
+mxExport void fxCheckMetering(txMachine* the);
+mxExport void fxEndMetering(txMachine* the);
+#endif
+
 /* xsmc.c */
 mxExport void _xsNewArray(txMachine *the, txSlot *res, txInteger length);
 mxExport void _xsNewObject(txMachine *the, txSlot *res);
 mxExport void _xsNewHostInstance(txMachine*, txSlot*, txSlot*);
 mxExport txBoolean _xsIsInstanceOf(txMachine*, txSlot*, txSlot*);
-mxExport txBoolean _xsHas(txMachine*, txSlot*, txInteger);
-mxExport void _xsGet(txMachine*, txSlot*, txSlot*, txInteger);
+mxExport txBoolean _xsHas(txMachine*, txSlot*, txID);
+mxExport txBoolean _xsHasIndex(txMachine*, txSlot*, txIndex);
+mxExport void _xsGet(txMachine*, txSlot*, txSlot*, txID);
 mxExport void _xsGetAt(txMachine*, txSlot*, txSlot*, txSlot*);
-mxExport void _xsSet(txMachine*, txSlot*, txInteger, txSlot*);
+mxExport void _xsGetIndex(txMachine*, txSlot*, txSlot*, txIndex);
+mxExport void _xsSet(txMachine*, txSlot*, txID, txSlot*);
 mxExport void _xsSetAt(txMachine*, txSlot*, txSlot*, txSlot*);
-mxExport void _xsDelete(txMachine*, txSlot*, txInteger);
+mxExport void _xsSetIndex(txMachine*, txSlot*, txIndex, txSlot*);
+mxExport void _xsDelete(txMachine*, txSlot*, txID);
 mxExport void _xsDeleteAt(txMachine*, txSlot*, txSlot*);
-mxExport void _xsCall(txMachine*, txSlot*, txSlot*, txInteger, ...);
-mxExport void _xsNew(txMachine*, txSlot*, txSlot*, txInteger, ...);
+mxExport void _xsCall(txMachine*, txSlot*, txSlot*, txUnsigned, ...);
+mxExport void _xsNew(txMachine*, txSlot*, txSlot*, txUnsigned, ...);
 mxExport txBoolean _xsTest(txMachine*, txSlot*);
 mxExport txInteger fxIncrementalVars(txMachine*, txInteger);
 
@@ -666,10 +718,8 @@ extern txID fxFindModule(txMachine* the, txSlot* realm, txID moduleID, txSlot* n
 extern void fxFreeChunks(txMachine* the, void* theChunks);
 extern void fxFreeSlots(txMachine* the, void* theSlots);
 extern void fxLoadModule(txMachine* the, txSlot* realm, txID moduleID);
-extern void fxMarkHost(txMachine* the, txMarkRoot markRoot);
 extern txScript* fxParseScript(txMachine* the, void* stream, txGetter getter, txUnsigned flags);
 extern void fxQueuePromiseJobs(txMachine* the);
-extern void fxSweepHost(txMachine* the);
 extern void fxInitializeSharedCluster();
 extern void fxTerminateSharedCluster();
 extern void* fxCreateSharedChunk(txInteger byteLength);
@@ -727,11 +777,13 @@ extern txBoolean fxIsSameSlot(txMachine* the, txSlot* a, txSlot* b);
 extern txBoolean fxIsSameValue(txMachine* the, txSlot* a, txSlot* b, txBoolean zero);
 
 /* xsMemory.c */
-extern void fxCheckStack(txMachine* the, txSlot* slot);
+extern txSize fxAddChunkSizes(txMachine* the, txSize a, txSize b);
+extern void fxCheckCStack(txMachine* the);
 extern void fxAllocate(txMachine* the, txCreation* theCreation);
 extern void fxCollect(txMachine* the, txBoolean theFlag);
 mxExport txSlot* fxDuplicateSlot(txMachine* the, txSlot* theSlot);
 extern void fxFree(txMachine* the);
+extern txSize fxMultiplyChunkSizes(txMachine* the, txSize a, txSize b);
 mxExport void* fxNewChunk(txMachine* the, txSize theSize);
 extern txSlot* fxNewSlot(txMachine* the);
 mxExport void* fxRenewChunk(txMachine* the, void* theData, txSize theSize);
@@ -748,6 +800,7 @@ mxExport void fxLogin(txMachine* the);
 mxExport void fxLogout(txMachine* the);
 #endif
 mxExport void fxBubble(txMachine* the, txInteger flags, void* message, txInteger length, txString conversation);
+mxExport void fxFileEvalString(txMachine* the, txString string, txString tag);
 mxExport void fxReport(txMachine* the, txString theFormat, ...);
 mxExport void fxReportError(txMachine* the, txString thePath, txInteger theLine, txString theFormat, ...);
 mxExport void fxReportWarning(txMachine* the, txString thePath, txInteger theLine, txString theFormat, ...);
@@ -793,6 +846,7 @@ extern txBoolean fxOrdinaryIsExtensible(txMachine* the, txSlot* instance);
 extern void fxOrdinaryOwnKeys(txMachine* the, txSlot* target, txFlag flag, txSlot* keys);
 extern txBoolean fxOrdinaryPreventExtensions(txMachine* the, txSlot* instance);
 extern txBoolean fxOrdinarySetPrototype(txMachine* the, txSlot* instance, txSlot* prototype);
+mxExport void fxOrdinaryToPrimitive(txMachine* the);
 
 extern const txBehavior gxEnvironmentBehavior;
 extern txSlot* fxNewEnvironmentInstance(txMachine* the, txSlot* environment);
@@ -876,9 +930,7 @@ mxExport void fx_Object_prototype___lookupSetter__(txMachine* the);
 mxExport void fx_Object_prototype_hasOwnProperty(txMachine* the);
 mxExport void fx_Object_prototype_isPrototypeOf(txMachine* the);
 mxExport void fx_Object_prototype_propertyIsEnumerable(txMachine* the);
-mxExport void fx_Object_prototype_propertyIsScriptable(txMachine* the);
 mxExport void fx_Object_prototype_toLocaleString(txMachine* the);
-mxExport void fx_Object_prototype_toPrimitive(txMachine* the);
 mxExport void fx_Object_prototype_toString(txMachine* the);
 mxExport void fx_Object_prototype_valueOf(txMachine* the);
 mxExport void fx_Object_assign(txMachine* the);
@@ -925,8 +977,8 @@ extern txBoolean fxIsCallable(txMachine* the, txSlot* slot);
 extern txBoolean fxIsFunction(txMachine* the, txSlot* slot);
 extern txSlot* fxNewFunctionInstance(txMachine* the, txID name);
 extern txSlot* fxNewFunctionLength(txMachine* the, txSlot* instance, txNumber length);
-extern txSlot* fxNewFunctionName(txMachine* the, txSlot* instance, txInteger id, txIndex index, txInteger former, txString prefix);
-extern void fxRenameFunction(txMachine* the, txSlot* function, txInteger id, txIndex index, txInteger former, txString prefix);
+extern txSlot* fxNewFunctionName(txMachine* the, txSlot* instance, txID id, txIndex index, txID former, txString prefix);
+extern void fxRenameFunction(txMachine* the, txSlot* function, txID id, txIndex index, txID former, txString prefix);
 
 mxExport void fx_AsyncFunction(txMachine* the);
 
@@ -965,7 +1017,7 @@ extern txID fxNewNameC(txMachine* the, txString theString);
 extern txID fxNewNameX(txMachine* the, txString theString);
 extern txSlot* fxAt(txMachine* the, txSlot* slot);
 extern void fxKeyAt(txMachine* the, txID id, txIndex index, txSlot* slot);
-extern void fxIDToString(txMachine* the, txInteger id, txString theBuffer, txSize theSize);
+extern void fxIDToString(txMachine* the, txID id, txString theBuffer, txSize theSize);
 
 /* xsError.c */
 mxExport void fx_Error(txMachine* the);
@@ -977,8 +1029,10 @@ mxExport void fx_ReferenceError(txMachine* the);
 mxExport void fx_SyntaxError(txMachine* the);
 mxExport void fx_TypeError(txMachine* the);
 mxExport void fx_URIError(txMachine* the);
+mxExport void fx_Error_prototype_get_stack(txMachine* the);
 
 extern void fxBuildError(txMachine* the);
+extern void fxCaptureErrorStack(txMachine* the, txSlot* internal, txSlot* frame);
 
 /* xsNumber.c */
 mxExport void fx_isFinite(txMachine* the);
@@ -1093,7 +1147,7 @@ mxExport txBigInt* fxBigInt_rem(txMachine* the, txBigInt* r, txBigInt* a, txBigI
 mxExport txBigInt* fxBigInt_sub(txMachine* the, txBigInt* r, txBigInt* a, txBigInt* b);
 mxExport txBigInt* fxBigInt_xor(txMachine* the, txBigInt* r, txBigInt* a, txBigInt* b);
 
-mxExport txBigInt *fxBigInt_alloc(txMachine* the, txU2 size);
+mxExport txBigInt *fxBigInt_alloc(txMachine* the, txU4 size);
 mxExport void fxBigInt_free(txMachine* the, txBigInt*);
 
 mxExport int fxBigInt_comp(txBigInt* a, txBigInt* b);
@@ -1194,6 +1248,7 @@ mxExport void fx_String_prototype_endsWith(txMachine* the);
 mxExport void fx_String_prototype_includes(txMachine* the);
 mxExport void fx_String_prototype_indexOf(txMachine* the);
 mxExport void fx_String_prototype_lastIndexOf(txMachine* the);
+mxExport void fx_String_prototype_localeCompare(txMachine* the);
 mxExport void fx_String_prototype_match(txMachine* the);
 mxExport void fx_String_prototype_matchAll(txMachine* the);
 mxExport void fx_String_prototype_normalize(txMachine* the);
@@ -1392,7 +1447,6 @@ mxExport void fx_DataView_prototype_setInt32(txMachine* the);
 mxExport void fx_DataView_prototype_setUint8(txMachine* the);
 mxExport void fx_DataView_prototype_setUint16(txMachine* the);
 mxExport void fx_DataView_prototype_setUint32(txMachine* the);
-mxExport void fx_DataView_prototype_setUint8Clamped(txMachine* the);
 
 mxExport const txTypeDispatch gxTypeDispatches[];
 mxExport const txBehavior gxTypedArrayBehavior;
@@ -1435,6 +1489,9 @@ mxExport void fx_TypedArray_prototype_values(txMachine* the);
 
 extern void fxBuildDataView(txMachine* the);
 extern void fxConstructArrayBufferResult(txMachine* the, txSlot* constructor, txInteger length);
+
+extern txInteger fxArgToByteOffset(txMachine* the, txInteger argi, txInteger offset);
+extern txInteger fxArgToByteLength(txMachine* the, txInteger argi, txInteger length);
 
 /* xsAtomics.c */
 extern void fxInt8Add(txMachine* the, txSlot* host, txInteger offset, txSlot* slot, int endian);
@@ -1640,6 +1697,7 @@ mxExport void fx_Promise_prototype_then(txMachine* the);
 mxExport void fxOnRejectedPromise(txMachine* the);
 mxExport void fxOnResolvedPromise(txMachine* the);
 mxExport void fxOnThenable(txMachine* the);
+mxExport void fxOnUnhandledRejection(txMachine* the);
 
 extern void fx_Promise_prototype_finallyAux(txMachine* the);
 extern void fx_Promise_prototype_finallyReturn(txMachine* the);
@@ -1652,7 +1710,7 @@ extern void fxNewPromiseCapabilityCallback(txMachine* the);
 extern txSlot* fxNewPromiseInstance(txMachine* the);
 extern void fxPromiseThen(txMachine* the, txSlot* promise, txSlot* onFullfilled, txSlot* onRejected, txSlot* resolveFunction, txSlot* rejectFunction);
 extern void fxPushPromiseFunctions(txMachine* the, txSlot* promise);
-extern void fxQueueJob(txMachine* the, txInteger count, txID id);
+extern void fxQueueJob(txMachine* the, txInteger count, txSlot* promise);
 extern void fxRejectException(txMachine* the, txSlot* rejectFunction);
 extern void fxRejectPromise(txMachine* the);
 extern void fxResolvePromise(txMachine* the);
@@ -1726,6 +1784,7 @@ enum {
 	XS_SYNTAX_ERROR,
 	XS_TYPE_ERROR,
 	XS_URI_ERROR,
+	XS_AGGREGATE_ERROR,
 	XS_ERROR_COUNT
 };
 
@@ -1862,7 +1921,6 @@ enum {
 	XS_AT_KIND,
 	XS_ENTRY_KIND, //40
 	XS_ERROR_KIND,
-	XS_ERRORS_KIND,
 	XS_HOME_KIND,
 	XS_KEY_KIND,
 	XS_KEY_X_KIND,
@@ -1877,6 +1935,7 @@ enum {
 	XS_HOST_INSPECTOR_KIND,
 	XS_INSTANCE_INSPECTOR_KIND,
 	XS_EXPORT_KIND,
+	XS_WEAK_ENTRY_KIND,
 };
 enum {
 	XS_DEBUGGER_EXIT = 0,
@@ -1886,6 +1945,8 @@ enum {
 	XS_DEAD_STRIP_EXIT,
 	XS_UNHANDLED_EXCEPTION_EXIT,
 	XS_NO_MORE_KEYS_EXIT,
+	XS_TOO_MUCH_COMPUTATION_EXIT,
+	XS_UNHANDLED_REJECTION_EXIT,
 };
 
 #if mxBigEndian
@@ -1989,105 +2050,184 @@ enum {
 
 #define mxIsStringPrimitive(THE_SLOT) \
 	(((THE_SLOT)->kind == XS_STRING_KIND) || ((THE_SLOT)->kind == XS_STRING_X_KIND))
+	
+#ifdef mxMetering
+#define mxMeterOne() \
+	(the->meterIndex++)
+#define mxMeterSome(_COUNT) \
+	(the->meterIndex += _COUNT)
+#else
+#define mxMeterOne() \
+	((void)0)
+#define mxMeterSome(_COUNT) \
+	((void)0)
+#endif
 
-#ifdef mxDebug
+#if mxBoundsCheck
+#define mxCheckCStack() \
+	(fxCheckCStack(the))
+#define mxOverflow(_COUNT) \
+	(mxMeterOne(), fxOverflow(the,_COUNT,C_NULL, 0))
+#else
+#define mxCheckCStack() \
+	((void)0)
+#define mxOverflow(_COUNT) \
+	((void)0)
+#endif
+
 #define mxCall() \
-	(fxOverflow(the, -4, C_NULL, 0), \
+	(mxOverflow(-4), \
 	fxCall(the))
+	
+#define mxDefineAll(ID, INDEX, FLAG, MASK) \
+	(mxMeterOne(), fxDefineAll(the, ID, INDEX, FLAG, MASK))
+#define mxDefineAt(FLAG, MASK) \
+	(mxMeterOne(), fxDefineAt(the, FLAG, MASK))
+#define mxDefineID(ID, FLAG, MASK) \
+	(mxMeterOne(), fxDefineAll(the, ID, 0, FLAG, MASK))
+#define mxDefineIndex(INDEX, FLAG, MASK) \
+	(mxMeterOne(), fxDefineAll(the, XS_NO_ID, INDEX, FLAG, MASK))
+	
+#define mxDeleteAll(ID, INDEX) \
+	(mxMeterOne(), fxDeleteAll(the, ID, INDEX))
+#define mxDeleteAt() \
+	(mxMeterOne(), fxDeleteAt(the))
+#define mxDeleteID(ID) \
+	(mxMeterOne(), fxDeleteAll(the, ID, 0))
+#define mxDeleteIndex(INDEX) \
+	(mxMeterOne(), fxDeleteAll(the, XS_NO_ID, INDEX))
+	
 #define mxDub() \
-	(fxOverflow(the, -1, C_NULL, 0), \
+	(mxOverflow(-1), \
 	((--the->stack)->next = C_NULL, \
 	the->stack->flag = XS_NO_FLAG, \
 	mxInitSlotKind(the->stack, (the->stack + 1)->kind), \
 	the->stack->value = (the->stack + 1)->value))
+	
+#define mxGetAll(ID, INDEX) \
+	(mxMeterOne(), fxGetAll(the, ID, INDEX))
+#define mxGetAt() \
+	(mxMeterOne(), fxGetAt(the))
+#define mxGetID(ID) \
+	(mxMeterOne(), fxGetAll(the, ID, 0))
+#define mxGetIndex(INDEX) \
+	(mxMeterOne(), fxGetAll(the, XS_NO_ID, INDEX))
+	
+#define mxHasAll(ID, INDEX) \
+	(mxMeterOne(), fxHasAll(the, ID, INDEX))
+#define mxHasAt() \
+	(mxMeterOne(), fxHasAt(the))
+#define mxHasID(ID) \
+	(mxMeterOne(), fxHasAll(the, ID, 0))
+#define mxHasIndex(INDEX) \
+	(mxMeterOne(), fxHasAll(the, XS_NO_ID, INDEX))
+	
 #define mxNew() \
-	(fxOverflow(the, -5, C_NULL, 0), \
+	(mxOverflow(-5), \
 	fxNew(the))
+	
+#define mxRunCount(_COUNT) \
+	(mxMeterOne(), fxRunID(the, C_NULL, _COUNT))
+	
+#define mxSetAll(ID, INDEX) \
+	(mxMeterOne(), fxSetAll(the, ID, INDEX))
+#define mxSetAt() \
+	(mxMeterOne(), fxSetAt(the))
+#define mxSetID(ID) \
+	(mxMeterOne(), fxSetAll(the, ID, 0))
+#define mxSetIndex(INDEX) \
+	(mxMeterOne(), fxSetAll(the, XS_NO_ID, INDEX))
 
 #define mxPush(THE_SLOT) \
-	(fxOverflow(the, -1, C_NULL, 0), \
+	(mxOverflow(-1), \
 	(--the->stack)->next = C_NULL, \
 	mxInitSlotKind(the->stack, (THE_SLOT).kind), \
 	the->stack->value = (THE_SLOT).value)
 #define mxPushSlot(THE_SLOT) \
-	(fxOverflow(the, -1, C_NULL, 0), \
+	(mxOverflow(-1), \
 	(--the->stack)->next = C_NULL, \
 	mxInitSlotKind(the->stack, (THE_SLOT)->kind), \
 	the->stack->value = (THE_SLOT)->value)
 
+#define mxPushAt(ID,INDEX) \
+	(mxOverflow(-1), \
+	(--the->stack)->next = C_NULL, \
+	mxInitSlotKind(the->stack, XS_AT_KIND), \
+	the->stack->value.at.index = (INDEX), \
+	the->stack->value.at.id = (ID))
 #define mxPushBigInt(THE_BIGINT) \
-	(fxOverflow(the, -1, C_NULL, 0), \
+	(mxOverflow(-1), \
 	(--the->stack)->next = C_NULL, \
 	mxInitSlotKind(the->stack, XS_BIGINT_KIND), \
 	the->stack->value.bigint = (THE_BIGINT))
 #define mxPushBoolean(THE_BOOLEAN) \
-	(fxOverflow(the, -1, C_NULL, 0), \
+	(mxOverflow(-1), \
 	(--the->stack)->next = C_NULL, \
 	mxInitSlotKind(the->stack, XS_BOOLEAN_KIND), \
 	the->stack->value.boolean = (THE_BOOLEAN))
 #define mxPushClosure(THE_SLOT) \
-	(fxOverflow(the, -1, C_NULL, 0), \
+	(mxOverflow(-1), \
 	(--the->stack)->next = C_NULL, \
 	mxInitSlotKind(the->stack, XS_CLOSURE_KIND), \
 	the->stack->value.closure = (THE_SLOT))
 #define mxPushInteger(THE_NUMBER) \
-	(fxOverflow(the, -1, C_NULL, 0), \
+	(mxOverflow(-1), \
 	(--the->stack)->next = C_NULL, \
 	mxInitSlotKind(the->stack, XS_INTEGER_KIND), \
 	the->stack->value.integer = (THE_NUMBER))
 #define mxPushList() \
-	(fxOverflow(the, -1, C_NULL, 0), \
+	(mxOverflow(-1), \
 	(--the->stack)->next = C_NULL, \
 	mxInitSlotKind(the->stack, XS_LIST_KIND), \
 	the->stack->value.list.first = C_NULL, \
 	the->stack->value.list.last = C_NULL)
 #define mxPushNull() \
-	(fxOverflow(the, -1, C_NULL, 0), \
+	(mxOverflow(-1), \
 	(--the->stack)->next = C_NULL, \
 	mxInitSlotKind(the->stack, XS_NULL_KIND))
 #define mxPushNumber(THE_NUMBER) \
-	(fxOverflow(the, -1, C_NULL, 0), \
+	(mxOverflow(-1), \
 	(--the->stack)->next = C_NULL, \
 	mxInitSlotKind(the->stack, XS_NUMBER_KIND), \
 	the->stack->value.number = (THE_NUMBER))
 #define mxPushReference(THE_SLOT) \
-	(fxOverflow(the, -1, C_NULL, 0), \
+	(mxOverflow(-1), \
 	(--the->stack)->next = C_NULL, \
 	mxInitSlotKind(the->stack, XS_REFERENCE_KIND), \
 	the->stack->value.reference = (THE_SLOT))
 #define mxPushString(THE_STRING) \
-	(fxOverflow(the, -1, C_NULL, 0), \
+	(mxOverflow(-1), \
 	(--the->stack)->next = C_NULL, \
 	mxInitSlotKind(the->stack, XS_STRING_KIND), \
 	the->stack->value.string = (THE_STRING))
 #define mxPushStringC(THE_STRING) \
-	(fxOverflow(the, -1, C_NULL, 0), \
+	(mxOverflow(-1), \
 	(--the->stack)->next = C_NULL, \
 	mxInitSlotKind(the->stack, XS_UNDEFINED_KIND), \
 	fxCopyStringC(the, the->stack, THE_STRING))
 #ifdef mxSnapshot
 #define mxPushStringX(THE_STRING) \
-	(fxOverflow(the, -1, C_NULL, 0), \
+	(mxOverflow(-1), \
 	(--the->stack)->next = C_NULL, \
 	mxInitSlotKind(the->stack, XS_UNDEFINED_KIND), \
 	fxCopyStringC(the, the->stack, THE_STRING))
 #else
 #define mxPushStringX(THE_STRING) \
-	(fxOverflow(the, -1, C_NULL, 0), \
+	(mxOverflow(-1), \
 	(--the->stack)->next = C_NULL, \
 	mxInitSlotKind(the->stack, XS_STRING_X_KIND), \
 	the->stack->value.string = (THE_STRING))
 #endif
 #define mxPushUndefined() \
-	(fxOverflow(the, -1, C_NULL, 0), \
+	(mxOverflow(-1), \
 	(--the->stack)->next = C_NULL, \
 	mxInitSlotKind(the->stack, XS_UNDEFINED_KIND))
 #define mxPushUninitialized() \
-	(fxOverflow(the, -1, C_NULL, 0), \
+	(mxOverflow(-1), \
 	(--the->stack)->next = C_NULL, \
 	mxInitSlotKind(the->stack, XS_UNINITIALIZED_KIND))
 #define mxPushUnsigned(THE_NUMBER) \
-	(fxOverflow(the, -1, C_NULL, 0), \
+	(mxOverflow(-1), \
 	(--the->stack)->next = C_NULL, \
 	(THE_NUMBER < 0x7FFFFFFF) ? \
 		(mxInitSlotKind(the->stack, XS_INTEGER_KIND), \
@@ -2097,100 +2237,18 @@ enum {
 		the->stack->value.number = (txNumber)(THE_NUMBER)) \
 	)
 #define mxTemporary(_SLOT) \
-	(fxOverflow(the, -1, C_NULL, 0), \
+	(mxOverflow(-1), \
 	_SLOT = --the->stack)
-#else
-#define mxCall() \
-	(fxCall(the))
-#define mxDub() \
-	((--the->stack)->next = C_NULL, \
-	the->stack->flag = XS_NO_FLAG, \
-	mxInitSlotKind(the->stack, (the->stack + 1)->kind), \
-	the->stack->value = (the->stack + 1)->value)
-#define mxNew() \
-	(fxNew(the))
-#define mxPush(THE_SLOT) \
-	((--the->stack)->next = C_NULL, \
-	the->stack->flag = XS_NO_FLAG, \
-	mxInitSlotKind(the->stack, (THE_SLOT).kind), \
-	the->stack->value = (THE_SLOT).value)
-#define mxPushSlot(THE_SLOT) \
-	((--the->stack)->next = C_NULL, \
-	mxInitSlotKind(the->stack, (THE_SLOT)->kind), \
-	the->stack->value = (THE_SLOT)->value)
 
-#define mxPushBoolean(THE_BOOLEAN) \
-	((--the->stack)->next = C_NULL, \
-	mxInitSlotKind(the->stack, XS_BOOLEAN_KIND), \
-	the->stack->value.boolean = (THE_BOOLEAN))
-#define mxPushClosure(THE_SLOT) \
-	((--the->stack)->next = C_NULL, \
-	mxInitSlotKind(the->stack, XS_CLOSURE_KIND), \
-	the->stack->value.closure = (THE_SLOT))
-#define mxPushInteger(THE_NUMBER) \
-	((--the->stack)->next = C_NULL, \
-	mxInitSlotKind(the->stack, XS_INTEGER_KIND), \
-	the->stack->value.integer = (THE_NUMBER))
-#define mxPushList() \
-	((--the->stack)->next = C_NULL, \
-	mxInitSlotKind(the->stack, XS_LIST_KIND), \
-	the->stack->value.list.first = C_NULL, \
-	the->stack->value.list.last = C_NULL)
-#define mxPushNull() \
-	((--the->stack)->next = C_NULL, \
-	mxInitSlotKind(the->stack, XS_NULL_KIND))
-#define mxPushNumber(THE_NUMBER) \
-	((--the->stack)->next = C_NULL, \
-	mxInitSlotKind(the->stack, XS_NUMBER_KIND), \
-	the->stack->value.number = (THE_NUMBER))
-#define mxPushReference(THE_SLOT) \
-	((--the->stack)->next = C_NULL, \
-	mxInitSlotKind(the->stack, XS_REFERENCE_KIND), \
-	the->stack->value.reference = (THE_SLOT))
-#define mxPushString(THE_STRING) \
-	((--the->stack)->next = C_NULL, \
-	mxInitSlotKind(the->stack, XS_STRING_KIND), \
-	the->stack->value.string = (THE_STRING))
-#define mxPushStringC(THE_STRING) \
-	(--the->stack)->next = C_NULL, \
-	mxInitSlotKind(the->stack, XS_UNDEFINED_KIND), \
-	(fxCopyStringC(the, the->stack, THE_STRING))
-#ifdef mxSnapshot
-#define mxPushStringX(THE_STRING) \
-	(--the->stack)->next = C_NULL, \
-	mxInitSlotKind(the->stack, XS_UNDEFINED_KIND), \
-	(fxCopyStringC(the, the->stack, THE_STRING))
-#else
-#define mxPushStringX(THE_STRING) \
-	((--the->stack)->next = C_NULL, \
-	mxInitSlotKind(the->stack, XS_STRING_X_KIND), \
-	the->stack->value.string = (THE_STRING))
-#endif
-#define mxPushUndefined() \
-	((--the->stack)->next = C_NULL, \
-	mxInitSlotKind(the->stack, XS_UNDEFINED_KIND))
-#define mxPushUninitialized() \
-	((--the->stack)->next = C_NULL, \
-	mxInitSlotKind(the->stack, XS_UNINITIALIZED_KIND))
-#define mxPushUnsigned(THE_NUMBER) \
-	((--the->stack)->next = C_NULL, \
-	(THE_NUMBER < 0x7FFFFFFF) ? \
-		(mxInitSlotKind(the->stack, XS_INTEGER_KIND), \
-		the->stack->value.integer = (txInteger)(THE_NUMBER)) \
-	: \
-		(mxInitSlotKind(the->stack, XS_NUMBER_KIND), \
-		the->stack->value.number = (txNumber)(THE_NUMBER)) \
-	)
-#define mxTemporary(_SLOT) \
-	(_SLOT = --the->stack)
-#endif
 #define mxPop() \
-	(the->stack++)
+	(mxMeterOne(), the->stack++)
 #define mxPull(THE_SLOT) \
-	((THE_SLOT).value = the->stack->value, \
+	(mxMeterOne(), \
+	(THE_SLOT).value = the->stack->value, \
 	(THE_SLOT).kind = (the->stack++)->kind)
 #define mxPullSlot(THE_SLOT) \
-	((THE_SLOT)->value = the->stack->value, \
+	(mxMeterOne(), \
+	(THE_SLOT)->value = the->stack->value, \
 	(THE_SLOT)->kind = (the->stack++)->kind)
 
 
@@ -2235,6 +2293,7 @@ enum {
 #define mxPromiseStatus(INSTANCE) ((INSTANCE)->next)
 #define mxPromiseThens(INSTANCE) ((INSTANCE)->next->next)
 #define mxPromiseResult(INSTANCE) ((INSTANCE)->next->next->next)
+#define mxPromiseEnvironment(INSTANCE) ((INSTANCE)->next->next->next->next)
 
 #define mxRealmGlobal(REALM)			((REALM)->next)
 #define mxRealmClosures(REALM)			((REALM)->next->next)
@@ -2291,13 +2350,6 @@ enum {
 	(*mxBehavior(INSTANCE)->setPropertyValue)(THE, INSTANCE, ID, INDEX, VALUE, RECEIVER)
 #define mxBehaviorSetPrototype(THE, INSTANCE, PROTOTYPE) \
 	(*mxBehavior(INSTANCE)->setPrototype)(THE, INSTANCE, PROTOTYPE)
-	
-#define mxGetID(_THIS,_ID) \
-	mxPushSlot(_THIS); \
-	fxGetID(the, _ID)
-
-#define mxRunCount(_COUNT) \
-	fxRunID(the, C_NULL, _COUNT)
 
 enum {
 	mxGlobalStackIndex,
@@ -2360,6 +2412,7 @@ enum {
 	mxOnRejectedPromiseFunctionStackIndex,
 	mxOnResolvedPromiseFunctionStackIndex,
 	mxOnThenableFunctionStackIndex,
+	mxOnUnhandledRejectionFunctionStackIndex,
 	mxArrayLengthAccessorStackIndex,
 	mxProxyAccessorStackIndex,
 	mxStringAccessorStackIndex,
@@ -2390,6 +2443,8 @@ enum {
 	mxExecuteRegExpFunctionIndex,
 	mxInitializeRegExpFunctionIndex,
 	mxArrayIteratorFunctionIndex,
+	mxOrdinaryToPrimitiveFunctionStackIndex,
+	mxCompartmentGlobalStackIndex,
 
 	mxEmptyCodeStackIndex,
 	mxEmptyStringStackIndex,
@@ -2542,6 +2597,7 @@ enum {
 #define mxOnRejectedPromiseFunction the->stackPrototypes[-1 - mxOnRejectedPromiseFunctionStackIndex]
 #define mxOnResolvedPromiseFunction the->stackPrototypes[-1 - mxOnResolvedPromiseFunctionStackIndex]
 #define mxOnThenableFunction the->stackPrototypes[-1 - mxOnThenableFunctionStackIndex]
+#define mxOnUnhandledRejectionFunction the->stackPrototypes[-1 - mxOnUnhandledRejectionFunctionStackIndex]
 #define mxArrayLengthAccessor the->stackPrototypes[-1 - mxArrayLengthAccessorStackIndex]
 #define mxProxyAccessor the->stackPrototypes[-1 - mxProxyAccessorStackIndex]
 #define mxStringAccessor the->stackPrototypes[-1 - mxStringAccessorStackIndex]
@@ -2571,9 +2627,10 @@ enum {
 #define  mxExecuteRegExpFunction the->stackPrototypes[-1 - mxExecuteRegExpFunctionIndex]
 #define  mxInitializeRegExpFunction the->stackPrototypes[-1 - mxInitializeRegExpFunctionIndex]
 #define  mxArrayIteratorFunction the->stackPrototypes[-1 - mxArrayIteratorFunctionIndex]
+#define mxOrdinaryToPrimitiveFunction the->stackPrototypes[-1 - mxOrdinaryToPrimitiveFunctionStackIndex]
+#define mxCompartmentGlobal the->stackPrototypes[-1 - mxCompartmentGlobalStackIndex]
 
-
-#define mxID(ID) ((ID) - 32768)
+#define mxID(ID) ((txID)(ID))
 
 #ifdef mxLink
 extern txCallback fxNewLinkerCallback(txMachine*, txCallback, txString);

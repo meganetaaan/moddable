@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019  Moddable Tech, Inc.
+ * Copyright (c) 2016-2021  Moddable Tech, Inc.
  *
  *   This file is part of the Moddable SDK Runtime.
  * 
@@ -110,6 +110,7 @@ static const char_name_table *handleToCharName(uint16_t handle);
 static const ble_uuid16_t *handleToUUID(uint16_t handle);
 
 static void bleServerCloseEvent(void *the, void *refcon, uint8_t *message, uint16_t messageLength);
+static void bondingRemovedEvent(void *the, void *refcon, uint8_t *message, uint16_t messageLength);
 
 static void logGAPEvent(struct ble_gap_event *event);
 static void logGATTEvent(uint8_t op);
@@ -369,6 +370,17 @@ static void deployServices(xsMachine *the)
 		xsUnknownError("failed to start services");
 }
 
+void modBLEServerBondingRemoved(char *address, uint8_t addressType)
+{
+	ble_addr_t addr;
+	
+	if (!gBLE) return;
+	
+	addr.type = addressType;
+	c_memmove(addr.val, address, 6);
+	modMessagePostToMachine(gBLE->the, (void*)&addr, sizeof(addr), bondingRemovedEvent, NULL);
+}
+
 static void readyEvent(void *the, void *refcon, uint8_t *message, uint16_t messageLength)
 {
 	if (!gBLE) return;
@@ -381,7 +393,7 @@ static void readyEvent(void *the, void *refcon, uint8_t *message, uint16_t messa
 		deployServices(the);
 
 	xsBeginHost(gBLE->the);
-	xsCall1(gBLE->obj, xsID_callback, xsString("onReady"));
+	xsCall1(gBLE->obj, xsID_callback, xsStringX("onReady"));
 	xsEndHost(gBLE->the);
 }
 
@@ -409,21 +421,20 @@ static void connectEvent(void *the, void *refcon, uint8_t *message, uint16_t mes
 		connection->addressType = gBLE->remote_bda.type;
 		c_memmove(connection->address, gBLE->remote_bda.val, 6);
 		modBLEConnectionAdd(connection);
-		
-		xsmcVars(2);
-		xsVar(0) = xsmcNewObject();
-		xsmcSetInteger(xsVar(1), desc->conn_handle);
-		xsmcSet(xsVar(0), xsID_connection, xsVar(1));
-		xsmcSetArrayBuffer(xsVar(1), desc->peer_id_addr.val, 6);
-		xsmcSet(xsVar(0), xsID_address, xsVar(1));
-		xsmcSetInteger(xsVar(1), desc->peer_id_addr.type);
-		xsmcSet(xsVar(0), xsID_addressType, xsVar(1));
-		xsCall2(gBLE->obj, xsID_callback, xsString("onConnected"), xsVar(0));
 	}
 	else {
 		LOG_GAP_MSG("BLE_GAP_EVENT_CONNECT failed");
-		xsCall1(gBLE->obj, xsID_callback, xsString("onDisconnected"));
 	}
+	xsmcVars(2);
+	xsmcSetNewObject(xsVar(0));
+	xsmcSetInteger(xsVar(1), desc->conn_handle);
+	xsmcSet(xsVar(0), xsID_connection, xsVar(1));
+	xsmcSetArrayBuffer(xsVar(1), desc->peer_id_addr.val, 6);
+	xsmcSet(xsVar(0), xsID_address, xsVar(1));
+	xsmcSetInteger(xsVar(1), desc->peer_id_addr.type);
+	xsmcSet(xsVar(0), xsID_addressType, xsVar(1));
+	xsCall2(gBLE->obj, xsID_callback, -1 != desc->conn_handle ? xsStringX("onConnected") : xsStringX("onDisconnected"), xsVar(0));
+	
 bail:
 	xsEndHost(gBLE->the);
 }
@@ -448,12 +459,14 @@ static void disconnectEvent(void *the, void *refcon, uint8_t *message, uint16_t 
 
 	gBLE->conn_id = -1;
 	xsmcVars(2);
-	xsVar(0) = xsmcNewObject();
+	xsmcSetNewObject(xsVar(0));
 	xsmcSetInteger(xsVar(1), desc->conn_handle);
 	xsmcSet(xsVar(0), xsID_connection, xsVar(1));
 	xsmcSetArrayBuffer(xsVar(1), desc->peer_id_addr.val, 6);
 	xsmcSet(xsVar(0), xsID_address, xsVar(1));
-	xsCall2(gBLE->obj, xsID_callback, xsString("onDisconnected"), xsVar(0));
+	xsmcSetInteger(xsVar(1), desc->peer_id_addr.type);
+	xsmcSet(xsVar(0), xsID_addressType, xsVar(1));
+	xsCall2(gBLE->obj, xsID_callback, xsStringX("onDisconnected"), xsVar(0));
 bail:
 	xsEndHost(gBLE->the);
 }
@@ -472,7 +485,7 @@ static void writeEvent(void *the, void *refcon, uint8_t *message, uint16_t messa
 	xsBeginHost(gBLE->the);
 
 	xsmcVars(4);
-	xsVar(0) = xsmcNewObject();
+	xsmcSetNewObject(xsVar(0));
 	uuidToBuffer(buffer, &value->uuid, &length);
 	xsmcSetArrayBuffer(xsVar(1), buffer, length);
 	xsmcSet(xsVar(0), xsID_uuid, xsVar(1));
@@ -486,7 +499,7 @@ static void writeEvent(void *the, void *refcon, uint8_t *message, uint16_t messa
 	xsmcSet(xsVar(0), xsID_handle, xsVar(2));
 	xsmcSetArrayBuffer(xsVar(3), value->data, value->length);
 	xsmcSet(xsVar(0), xsID_value, xsVar(3));
-	xsCall2(gBLE->obj, xsID_callback, xsString("onCharacteristicWritten"), xsVar(0));
+	xsCall2(gBLE->obj, xsID_callback, xsStringX("onCharacteristicWritten"), xsVar(0));
 
 	xsEndHost(gBLE->the);
 	
@@ -511,7 +524,7 @@ static void readEvent(void *the, void *refcon, uint8_t *message, uint16_t messag
 	xsBeginHost(gBLE->the);
 	xsmcVars(5);
 
-	xsVar(0) = xsmcNewObject();
+	xsmcSetNewObject(xsVar(0));
 	xsmcSetArrayBuffer(xsVar(1), buffer, uuid_length);
 	xsmcSetInteger(xsVar(2), *chr->val_handle);
 	xsmcSet(xsVar(0), xsID_uuid, xsVar(1));
@@ -522,7 +535,7 @@ static void readEvent(void *the, void *refcon, uint8_t *message, uint16_t messag
 		xsmcSetString(xsVar(4), (char*)char_name->type);
 		xsmcSet(xsVar(0), xsID_type, xsVar(4));
 	}
-	xsResult = xsCall2(gBLE->obj, xsID_callback, xsString("onCharacteristicRead"), xsVar(0));
+	xsResult = xsCall2(gBLE->obj, xsID_callback, xsStringX("onCharacteristicRead"), xsVar(0));
 	if (xsUndefinedType != xsmcTypeOf(xsResult)) {
 		readDataRequest data = c_malloc(sizeof(readDataRequestRecord) + xsmcGetArrayBufferLength(xsResult));
 		if (NULL != data) {
@@ -552,7 +565,7 @@ static void notificationStateEvent(void *the, void *refcon, uint8_t *message, ui
 	const ble_uuid16_t *uuid = handleToUUID(state->handle);
 	
 	xsmcVars(6);
-	xsVar(0) = xsmcNewObject();
+	xsmcSetNewObject(xsVar(0));
 	uuidToBuffer(buffer, (ble_uuid_any_t *)uuid, &uuid_length);
 	xsmcSetArrayBuffer(xsVar(1), buffer, uuid_length);
 	xsmcSet(xsVar(0), xsID_uuid, xsVar(1));
@@ -566,7 +579,7 @@ static void notificationStateEvent(void *the, void *refcon, uint8_t *message, ui
 	xsmcSetInteger(xsVar(5), state->notify);
 	xsmcSet(xsVar(0), xsID_handle, xsVar(4));
 	xsmcSet(xsVar(0), xsID_notify, xsVar(5));
-	xsCall2(gBLE->obj, xsID_callback, xsString(state->notify ? "onCharacteristicNotifyEnabled" : "onCharacteristicNotifyDisabled"), xsVar(0));
+	xsCall2(gBLE->obj, xsID_callback, xsStringX(state->notify ? "onCharacteristicNotifyEnabled" : "onCharacteristicNotifyDisabled"), xsVar(0));
 	xsEndHost(gBLE->the);
 
 bail:
@@ -587,7 +600,7 @@ static void passkeyEvent(void *the, void *refcon, uint8_t *message, uint16_t mes
 		
 	xsBeginHost(gBLE->the);
 	xsmcVars(3);
-	xsVar(0) = xsmcNewObject();
+	xsmcSetNewObject(xsVar(0));
 
     if (event->passkey.params.action == BLE_SM_IOACT_DISP) {
     	pkey.passkey = (c_rand() % 999999) + 1;
@@ -595,16 +608,16 @@ static void passkeyEvent(void *the, void *refcon, uint8_t *message, uint16_t mes
 		xsmcSetInteger(xsVar(2), pkey.passkey);
 		xsmcSet(xsVar(0), xsID_address, xsVar(1));
 		xsmcSet(xsVar(0), xsID_passkey, xsVar(2));
-		xsCall2(gBLE->obj, xsID_callback, xsString("onPasskeyDisplay"), xsVar(0));
+		xsCall2(gBLE->obj, xsID_callback, xsStringX("onPasskeyDisplay"), xsVar(0));
 		ble_sm_inject_io(event->passkey.conn_handle, &pkey);
 	}
     else if (event->passkey.params.action == BLE_SM_IOACT_INPUT) {
 		xsmcSetArrayBuffer(xsVar(1), gBLE->remote_bda.val, 6);
 		xsmcSet(xsVar(0), xsID_address, xsVar(1));
 		if (gBLE->iocap == KeyboardOnly)
-			xsCall2(gBLE->obj, xsID_callback, xsString("onPasskeyInput"), xsVar(0));
+			xsCall2(gBLE->obj, xsID_callback, xsStringX("onPasskeyInput"), xsVar(0));
 		else {
-			xsResult = xsCall2(gBLE->obj, xsID_callback, xsString("onPasskeyRequested"), xsVar(0));
+			xsResult = xsCall2(gBLE->obj, xsID_callback, xsStringX("onPasskeyRequested"), xsVar(0));
 			pkey.passkey = xsmcToInteger(xsResult);
 			ble_sm_inject_io(event->passkey.conn_handle, &pkey);
 		}
@@ -614,7 +627,7 @@ static void passkeyEvent(void *the, void *refcon, uint8_t *message, uint16_t mes
 		xsmcSetInteger(xsVar(2), event->passkey.params.numcmp);
 		xsmcSet(xsVar(0), xsID_address, xsVar(1));
 		xsmcSet(xsVar(0), xsID_passkey, xsVar(2));
-		xsCall2(gBLE->obj, xsID_callback, xsString("onPasskeyConfirm"), xsVar(0));
+		xsCall2(gBLE->obj, xsID_callback, xsStringX("onPasskeyConfirm"), xsVar(0));
 	}
 	
 bail:
@@ -645,7 +658,11 @@ static void encryptionChangeEvent(void *the, void *refcon, uint8_t *message, uin
         if (0 == rc) {
         	if (desc.sec_state.encrypted) {
 				xsBeginHost(gBLE->the);
-				xsCall1(gBLE->obj, xsID_callback, xsString("onAuthenticated"));
+				xsmcVars(2);
+				xsmcSetNewObject(xsVar(0));
+				xsmcSetBoolean(xsVar(1), desc.sec_state.bonded);
+				xsmcSet(xsVar(0), xsID_bonded, xsVar(1));
+				xsCall2(gBLE->obj, xsID_callback, xsStringX("onAuthenticated"), xsVar(0));
 				xsEndHost(gBLE->the);
         	}
         }
@@ -663,9 +680,24 @@ static void mtuExchangedEvent(void *the, void *refcon, uint8_t *message, uint16_
 		return;
 		
 	xsBeginHost(gBLE->the);
-	xsmcVars(1);
-	xsmcSetInteger(xsVar(0), event->mtu.value);
-	xsCall2(gBLE->obj, xsID_callback, xsString("onMTUExchanged"), xsVar(0));
+	xsmcSetInteger(xsResult, event->mtu.value);
+	xsCall2(gBLE->obj, xsID_callback, xsStringX("onMTUExchanged"), xsResult);
+	xsEndHost(gBLE->the);
+}
+
+void bondingRemovedEvent(void *the, void *refcon, uint8_t *message, uint16_t messageLength)
+{
+	ble_addr_t *addr = (ble_addr_t *)message;
+
+	if (!gBLE) return;
+
+	xsBeginHost(gBLE->the);
+	xsmcSetNewObject(xsVar(0));
+	xsmcSetArrayBuffer(xsResult, addr->val, 6);
+	xsmcSet(xsVar(0), xsID_address, xsResult);
+	xsmcSetInteger(xsResult, addr->type);
+	xsmcSet(xsVar(0), xsID_addressType, xsResult);
+	xsCall2(gBLE->obj, xsID_callback, xsStringX("onBondingDeleted"), xsVar(0));
 	xsEndHost(gBLE->the);
 }
 

@@ -35,7 +35,11 @@
  *       limitations under the License.
  */
 
+#define _GNU_SOURCE
 #include "xsCommon.h"
+#ifndef mxUseDefaultCStackLimit
+	#define mxUseDefaultCStackLimit 1
+#endif
 
 const txString gxCodeNames[XS_CODE_COUNT] = {
 	"",
@@ -356,7 +360,7 @@ const txS1 gxCodeSizes[XS_CODE_COUNT] ICACHE_FLASH_ATTR = {
 	1 /* XS_CODE_EXPONENTIATION */,
 	1 /* XS_CODE_EXTEND */,
 	1 /* XS_CODE_FALSE */,
-	1 /* XS_CODE_FIELD_FUNCTION */,
+	0 /* XS_CODE_FIELD_FUNCTION */,
 	0 /* XS_CODE_FILE */,
 	1 /* XS_CODE_FOR_AWAIT_OF */,
 	1 /* XS_CODE_FOR_IN */,
@@ -508,6 +512,36 @@ const txS1 gxCodeSizes[XS_CODE_COUNT] ICACHE_FLASH_ATTR = {
 	1 /* XS_CODE_WITHOUT */,
 	1 /* XS_CODE_YIELD */
 };
+
+#if mxUseDefaultCStackLimit
+
+char* fxCStackLimit()
+{
+	#if mxWindows
+		ULONG_PTR low, high;
+		GetCurrentThreadStackLimits(&low, &high);
+		return (char*)low + (32 * 1024);
+	#elif mxMacOSX
+		pthread_t self = pthread_self();
+    	void* stackAddr = pthread_get_stackaddr_np(self);
+   		size_t stackSize = pthread_get_stacksize_np(self);
+		return (char*)stackAddr - stackSize + (8 * 1024);
+	#elif mxLinux
+		pthread_attr_t attrs;
+		if (pthread_getattr_np(pthread_self(), &attrs) == 0) {
+    		void* stackAddr;
+   			size_t stackSize;
+			if (pthread_attr_getstack(&attrs, &stackAddr, &stackSize) == 0) {
+				return (char*)stackAddr + (4 * 1024);
+			}
+		}
+		return C_NULL;
+	#else
+		return C_NULL;
+	#endif
+}
+
+#endif
 
 void fxDeleteScript(txScript* script)
 {
@@ -974,9 +1008,9 @@ txString fxUTF8Encode(txString string, txInteger character)
 	return (txString)p;
 }
 
-txInteger fxUTF8Length(txInteger character)
+txSize fxUTF8Length(txInteger character)
 {
-	txInteger length;
+	txSize length;
 	if (character < 0)
 		length = 0;
 	else if (character == 0)
@@ -994,12 +1028,12 @@ txInteger fxUTF8Length(txInteger character)
 	return length;
 }
 
-txInteger fxUTF8ToUnicodeOffset(txString theString, txInteger theOffset)
+txSize fxUTF8ToUnicodeOffset(txString theString, txSize theOffset)
 {
 	txU1* p = (txU1*)theString;
 	txU1 c;
-	txInteger unicodeOffset = 0;
-	txInteger utf8Offset = 0;
+	txSize unicodeOffset = 0;
+	txSize utf8Offset = 0;
 	
 	while ((c = c_read8(p++))) {
 		if ((c & 0xC0) != 0x80) {
@@ -1015,11 +1049,11 @@ txInteger fxUTF8ToUnicodeOffset(txString theString, txInteger theOffset)
 		return -1;
 }
 
-txInteger fxUnicodeLength(txString theString)
+txSize fxUnicodeLength(txString theString)
 {
 	txU1* p = (txU1*)theString;
 	txU1 c;
-	txInteger anIndex = 0;
+	txSize anIndex = 0;
 	
 	while ((c = c_read8(p++))) {
 		if ((c & 0xC0) != 0x80)
@@ -1028,12 +1062,12 @@ txInteger fxUnicodeLength(txString theString)
 	return anIndex;
 }
 
-txInteger fxUnicodeToUTF8Offset(txString theString, txInteger theOffset)
+txSize fxUnicodeToUTF8Offset(txString theString, txSize theOffset)
 {
 	txU1* p = (txU1*)theString;
 	txU1 c;
-	txInteger unicodeOffset = 0;
-	txInteger utf8Offset = 0;
+	txSize unicodeOffset = 0;
+	txSize utf8Offset = 0;
 	
 	while ((c = c_read8(p++))) {
 		if ((c & 0xC0) != 0x80) {
@@ -1333,7 +1367,6 @@ const txString gxIDStrings[XS_ID_COUNT] = {
 	"getUint16",
 	"getUint32",
 	"getUint8",
-	"getUint8Clamped",
 	"getYear",
 	"global",
 	"globalThis",
@@ -1412,7 +1445,6 @@ const txString gxIDStrings[XS_ID_COUNT] = {
 	"pow",
 	"preventExtensions",
 	"propertyIsEnumerable",
-	"propertyIsScriptable",
 	"prototype",
 	"proxy",
 	"push",
@@ -1464,7 +1496,6 @@ const txString gxIDStrings[XS_ID_COUNT] = {
 	"setUint16",
 	"setUint32",
 	"setUint8",
-	"setUint8Clamped",
 	"setYear",
 	"shift",
 	"sign",
@@ -1479,6 +1510,7 @@ const txString gxIDStrings[XS_ID_COUNT] = {
 	"splice",
 	"split",
 	"sqrt",
+	"stack",
 	"startsWith",
 	"status",
 	"sticky",

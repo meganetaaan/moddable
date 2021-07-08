@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017  Moddable Tech, Inc.
+ * Copyright (c) 2016-2021 Moddable Tech, Inc.
  *
  *   This file is part of the Moddable SDK Runtime.
  * 
@@ -60,9 +60,11 @@
 #endif
 #if !ESP32
 	#define mxMisalignedSettersCrash 1
-#else
+#elif ESP32 == 1
 	#define mxUseFreeRTOSTasks 1
 	#define mxUseGCCAtomics 1
+#elif ESP32 == 2
+	#define mxUseFreeRTOSTasks 1
 #endif
 
 #ifndef __XS6PLATFORMMINIMAL__
@@ -113,6 +115,7 @@ extern "C" {
 	#undef PATH_MAX
 #endif
 #define PATH_MAX (256)
+#define C_PATH_MAX PATH_MAX
 
 #define mxGetKeySlotID(SLOT) (SLOT)->ID
 #define mxGetKeySlotKind(SLOT) (SLOT)->kind

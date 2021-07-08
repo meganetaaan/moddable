@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2019  Moddable Tech, Inc.
+ * Copyright (c) 2018-2021 Moddable Tech, Inc.
  *
  *   This file is part of the Moddable SDK Runtime.
  *
@@ -21,6 +21,7 @@
 #include "xsmc.h"
 #include "mc.xs.h"			// for xsID_ values
 #include "mc.defines.h"
+#include "xsHost.h"
 
 #include "driver/ledc.h"
 #include "stdlib.h"
@@ -33,11 +34,26 @@
 	#define MODDEF_PWM_LEDC_TIMER LEDC_TIMER_0
 #endif
 
+#if kCPUESP32S2
+	#define ESP_SPEED_MODE LEDC_LOW_SPEED_MODE
+#else
+	#define ESP_SPEED_MODE LEDC_HIGH_SPEED_MODE
+#endif
+
+#ifndef MODDEF_PWM_LEDC_FREQUENCY
+	#define MODDEF_PWM_LEDC_FREQUENCY 1024
+#endif
+
+#ifndef MODDEF_PWM_LEDC_OFFVALUE
+	#define MODDEF_PWM_LEDC_OFFVALUE 0
+#endif
+
 static const ledc_timer_config_t gTimer = {
 	.duty_resolution = LEDC_TIMER_10_BIT,
-	.freq_hz = 1024,
-	.speed_mode = LEDC_HIGH_SPEED_MODE,
-	.timer_num = MODDEF_PWM_LEDC_TIMER
+	.freq_hz = MODDEF_PWM_LEDC_FREQUENCY,
+	.speed_mode = ESP_SPEED_MODE,
+	.timer_num = MODDEF_PWM_LEDC_TIMER,
+	.clk_cfg = LEDC_AUTO_CLK
 };
 
 static uint8_t gLEDC = MODDEF_PWM_LEDC_CHANNEL_MAP;
@@ -52,11 +68,9 @@ typedef struct PWMRecord *PWM;
 void xs_pwm_destructor(void *data)
 {
 	PWM pwm = data;
-	if (pwm) return;
+	if (!pwm) return;
 
-	ledc_set_duty(LEDC_HIGH_SPEED_MODE, pwm->ledc, pwm->gpio);
-	ledc_update_duty(LEDC_HIGH_SPEED_MODE, pwm->ledc);
-
+	ledc_stop(ESP_SPEED_MODE, pwm->ledc, MODDEF_PWM_LEDC_OFFVALUE);
 	gLEDC |= 1 << pwm->ledc;
 
 	free(pwm);
@@ -91,10 +105,12 @@ void xs_pwm(xsMachine *the)
 		xsUnknownError("no ledc channel free");
 
 	ledcConfig.channel    = ledc;
-	ledcConfig.duty       = 0;
+	ledcConfig.duty       = MODDEF_PWM_LEDC_OFFVALUE ? 1024 : 0;
 	ledcConfig.gpio_num   = gpio;
-	ledcConfig.speed_mode = LEDC_HIGH_SPEED_MODE;
+	ledcConfig.speed_mode = ESP_SPEED_MODE;
+	ledcConfig.hpoint 	  = 0;
 	ledcConfig.timer_sel  = MODDEF_PWM_LEDC_TIMER;
+	ledcConfig.intr_type  = LEDC_INTR_DISABLE;
 
 	if (ESP_OK != ledc_channel_config(&ledcConfig))
 		xsUnknownError("configure ledc channel failed");
@@ -125,9 +141,15 @@ void xs_pwm_write(xsMachine *the)
 
 	if (!pwm) return;
 
-	if ((value < 0) || (value >= gTimer.freq_hz))
+	if ((value < 0) || (value > 1023))
 		xsRangeError("bad value");
 
-	ledc_set_duty(LEDC_HIGH_SPEED_MODE, pwm->ledc, value);
-	ledc_update_duty(LEDC_HIGH_SPEED_MODE, pwm->ledc);
+	if (value == 1023)
+		value = 1024;
+
+	if (ESP_OK != ledc_set_duty(ESP_SPEED_MODE, pwm->ledc, value))
+		xsUnknownError("set ledc duty cycle failed");
+
+	if (ESP_OK != ledc_update_duty(ESP_SPEED_MODE, pwm->ledc))
+		xsUnknownError("update ledc duty cycle failed");
 }

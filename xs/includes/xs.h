@@ -41,11 +41,14 @@
 #ifdef INCLUDE_XSPLATFORM
 	#include "xsPlatform.h"
 	#define xsMachinePlatform mxMachinePlatform
+
+	#include <stdint.h>
 #else
 	#define xsMachinePlatform
 	#ifndef __XSPLATFORM__
 
 	#include <setjmp.h>
+	#include <stdint.h>
 
 	#define mxBigEndian 0
 	#define mxLittleEndian 0
@@ -110,17 +113,12 @@
 		#error unknown compiler
 	#endif
 
-	typedef signed char txS1;
-	typedef unsigned char txU1;
-	typedef short txS2;
-	typedef unsigned short txU2;
-	#if __LP64__
-	typedef int txS4;
-	typedef unsigned int txU4;
-	#else
-	typedef long txS4;
-	typedef unsigned long txU4;
-	#endif
+	typedef int8_t txS1;
+	typedef uint8_t txU1;
+	typedef int16_t txS2;
+	typedef uint16_t txU2;
+	typedef int32_t txS4;
+	typedef uint32_t txU4;
 
 	#if mxWindows
 		#undef _setjmp
@@ -149,6 +147,13 @@
 	#endif /* !__XSPLATFORM__ */
 #endif /* !INCLUDE_XSPLATFORM */
 
+#ifndef mxBoundsCheck
+	#ifdef mxDebug
+		#define mxBoundsCheck 1
+	#else
+		#define mxBoundsCheck 0
+	#endif
+#endif
 #ifndef NULL
 	#define NULL 0
 #endif
@@ -156,12 +161,17 @@
 #define fxPop() (*(the->stack++))
 #define fxPush(_SLOT) (*(--the->stack) = (_SLOT))
 
-#ifdef mxDebug
-#define xsOverflow(_COUNT) \
-	(fxOverflow(the,_COUNT,(char *)__FILE__,__LINE__))
+#if mxBoundsCheck
+	#ifdef mxDebug
+		#define xsOverflow(_COUNT) \
+			(fxOverflow(the,_COUNT,(char *)__FILE__,__LINE__))
+	#else
+		#define xsOverflow(_COUNT) \
+			(fxOverflow(the,_COUNT,NULL,0))
+	#endif
 #else
-#define xsOverflow(_COUNT) \
-	(fxOverflow(the,_COUNT,NULL,0))
+	#define xsOverflow(_COUNT) \
+		((void)0)
 #endif
 
 #ifndef __XSALL__
@@ -342,9 +352,16 @@ typedef txU4 xsUnsignedValue;
 
 /* Identifiers */
 
+typedef txS1 xsByte;
 typedef unsigned char xsFlag;
-typedef short xsIndex;
-#define XS_NO_ID -1
+#ifdef mx32bitID
+typedef txU4 xsIdentifier;
+#else
+typedef txU2 xsIdentifier;
+#endif
+typedef txU4 xsIndex;
+
+#define XS_NO_ID 0
 
 #define xsID(_NAME) \
 	fxID(the, _NAME)
@@ -376,6 +393,11 @@ typedef short xsIndex;
 	fxPush(_THIS), \
 	fxPush(_AT), \
 	fxHasAt(the))
+	
+#define xsHasIndex(_THIS,_INDEX) \
+	(xsOverflow(-1), \
+	fxPush(_THIS), \
+	fxHasIndex(the, _INDEX))
 
 #define xsGet(_THIS,_ID) \
 	(xsOverflow(-1), \
@@ -388,6 +410,12 @@ typedef short xsIndex;
 	fxPush(_THIS), \
 	fxPush(_AT), \
 	fxGetAt(the), \
+	fxPop())
+
+#define xsGetIndex(_THIS,_INDEX) \
+	(xsOverflow(-1), \
+	fxPush(_THIS), \
+	fxGetIndex(the, _INDEX), \
 	fxPop())
 
 #define xsSet(_THIS,_ID,_SLOT) \
@@ -403,6 +431,13 @@ typedef short xsIndex;
 	fxPush(_THIS), \
 	fxPush(_AT), \
 	fxSetAt(the), \
+	the->stack++)
+
+#define xsSetIndex(_THIS,_INDEX,_SLOT) \
+	(xsOverflow(-2), \
+	fxPush(_SLOT), \
+	fxPush(_THIS), \
+	fxSetIndex(the, _INDEX), \
 	the->stack++)
 
 #define xsDefine(_THIS,_ID,_SLOT,_ATTRIBUTES) \
@@ -855,8 +890,8 @@ typedef void (*xsCallback)(xsMachine*);
 
 struct xsHostBuilderRecord {
 	xsCallback callback;
-	xsIndex length;
-	xsIndex id;
+	xsIntegerValue length;
+	xsIdentifier id;
 };
 	
 #define xsNewHostConstructor(_CALLBACK,_LENGTH,_PROTOTYPE) \
@@ -946,9 +981,17 @@ struct xsHostHooksStruct {
 #define xsTarget (the->frame[2])
 #define xsResult (the->frame[1])
 #define xsArgc (the->frame[-1])
+#if mxBoundsCheck
 #define xsArg(_INDEX) (the->frame[-2 - fxCheckArg(the, _INDEX)])
+#else
+#define xsArg(_INDEX) (the->frame[-2 - (_INDEX)])
+#endif
 #define xsVarc (the->scope[0])
+#if mxBoundsCheck
 #define xsVar(_INDEX) (the->scope[-1 - fxCheckVar(the, _INDEX)])
+#else
+#define xsVar(_INDEX) (the->scope[-1 - (_INDEX)])
+#endif
 	
 /* Garbage Collector */
 
@@ -972,7 +1015,7 @@ struct xsJumpRecord {
 	xsSlot* scope;
 	xsSlot* frame;
 	xsSlot* environment;
-	xsIndex* code;
+	xsByte* code;
 	xsBooleanValue flag;
 };
 
@@ -1103,7 +1146,7 @@ struct xsMachineRecord {
 	xsSlot* stack;
 	xsSlot* scope;
 	xsSlot* frame;
-	xsIndex* code;
+	xsByte* code;
 	xsSlot* stackBottom;
 	xsSlot* stackTop;
 	xsSlot* stackPrototypes;
@@ -1255,6 +1298,8 @@ enum {
 	xsDeadStripExit,
 	xsUnhandledExceptionExit,
 	xsNoMoreKeysExit,
+	xsTooMuchComputationExit,
+	xsUnhandledRejectionExit,
 };
 
 #ifndef __XSALL__
@@ -1316,29 +1361,30 @@ mxImport void* fxGetHostHandle(xsMachine*, xsSlot*);
 mxImport xsHostHooks* fxGetHostHooks(xsMachine*, xsSlot*);
 mxImport void fxSetHostHooks(xsMachine*, xsSlot*, const xsHostHooks*);
 
-mxImport xsIndex fxID(xsMachine*, const char*);
-mxImport xsIndex fxFindID(xsMachine*, char*);
+mxImport xsIdentifier fxID(xsMachine*, const char*);
+mxImport xsIdentifier fxFindID(xsMachine*, char*);
 mxImport xsBooleanValue fxIsID(xsMachine*, char*);
-mxImport xsIndex fxToID(xsMachine*, xsSlot*);
-mxImport char* fxName(xsMachine*, xsIndex);
+mxImport xsIdentifier fxToID(xsMachine*, xsSlot*);
+mxImport char* fxName(xsMachine*, xsIdentifier);
 
 mxImport void fxEnumerate(xsMachine* the);
-mxImport xsBooleanValue fxHasAt(xsMachine*);
-mxImport xsBooleanValue fxHasID(xsMachine*, xsIntegerValue);
-mxImport void fxGet(xsMachine*, xsSlot*, xsIntegerValue);
 mxImport void fxGetAt(xsMachine*);
-mxImport void fxGetID(xsMachine*, xsIntegerValue);
-mxImport void fxSet(xsMachine*, xsSlot*, xsIntegerValue);
+mxImport void fxGetID(xsMachine*, xsIdentifier);
+mxImport void fxGetIndex(xsMachine*, xsIndex);
+mxImport xsBooleanValue fxHasAt(xsMachine*);
+mxImport xsBooleanValue fxHasID(xsMachine*, xsIdentifier);
+mxImport xsBooleanValue fxHasIndex(xsMachine*, xsIndex);
 mxImport void fxSetAt(xsMachine*);
-mxImport void fxSetID(xsMachine*, xsIntegerValue);
+mxImport void fxSetID(xsMachine*, xsIdentifier);
+mxImport void fxSetIndex(xsMachine*, xsIndex);
 mxImport void fxDefineAt(xsMachine*, xsAttribute, xsAttribute);
-mxImport void fxDefineID(xsMachine*, xsIntegerValue, xsAttribute, xsAttribute);
+mxImport void fxDefineID(xsMachine*, xsIdentifier, xsAttribute, xsAttribute);
 mxImport void fxDeleteAt(xsMachine*);
-mxImport void fxDeleteID(xsMachine*, xsIntegerValue);
+mxImport void fxDeleteID(xsMachine*, xsIdentifier);
 mxImport void fxCall(xsMachine*);
-mxImport void fxCallID(xsMachine*, xsIntegerValue);
+mxImport void fxCallID(xsMachine*, xsIdentifier);
 mxImport void fxNew(xsMachine*);
-mxImport void fxNewID(xsMachine*, xsIntegerValue);
+mxImport void fxNewID(xsMachine*, xsIdentifier);
 mxImport void fxRunCount(xsMachine*, xsIntegerValue);
 mxImport xsBooleanValue fxRunTest(xsMachine* the);
 
@@ -1396,7 +1442,6 @@ mxImport void fxStartProfiling(xsMachine*);
 mxImport void fxStopProfiling(xsMachine*);
 	
 mxImport void* fxMapArchive(const unsigned char *, unsigned long, xsStringValue, xsCallbackAt);
-mxImport void fxUnmapArchive(void*);
 mxImport void fxAwaitImport(xsMachine*, xsBooleanValue);
 
 mxImport xsBooleanValue fxCompileRegExp(xsMachine* the, xsStringValue pattern, xsStringValue modifier, xsIntegerValue** code, xsIntegerValue** data, xsStringValue errorBuffer, xsIntegerValue errorSize);
