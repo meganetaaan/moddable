@@ -54,6 +54,7 @@ class SBCStreamer {
 			o.port = options.port; 
 		this.#http = new options.http.io(o);
 		this.#request = this.#http.request({
+			...options.request,
 			path: options.path,
 			onHeaders: (status, headers) => {
 				if (2 !== Math.idiv(status, 100)) {
