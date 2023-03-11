@@ -53,7 +53,7 @@ class WavStreamer {
 
 	constructor(options) {
 		const waveHeaderBytes = options.waveHeaderBytes ?? 512;
-		this.#targetBytesQueued = options.audio.out.sampleRate * this.#bytesPerSample;
+		this.#targetBytesQueued = options.audio.out.sampleRate * this.#bytesPerSample / 2;
 		this.#bytesPerBlock = Math.idiv(this.#targetBytesQueued, 8);
 		if (this.#bytesPerBlock % this.#bytesPerSample)
 			throw new Error("invalid bytesPerBlock")
