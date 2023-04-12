@@ -297,7 +297,7 @@ $(MOD_DIR)/commodetto/%.xsb: $(COMMODETTO)/commodetto%.js
 
 $(MOD_DIR)/%.xsb: $(DATA)/wavreader/%.js
 	@echo "#" $(NAME) $(GOAL) ": xsc" $(<F)
-	$(BIN_DIR)/xsc $< -c -d -e -o $(MOD_DIR) -r $*
+	$(XSC) $< -c -d -e -o $(MOD_DIR) -r $*
 
 $(MOD_DIR)/%.xsb: $(TOOLS)/%.js
 	@echo "#" $(NAME) $(GOAL) ": xsc" $(<F)
