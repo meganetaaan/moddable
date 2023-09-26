@@ -110,6 +110,17 @@ else
 endif
 endif
 
+ARCHIVES = /your/archive/path
+EXTRACT_DIR = $(TMP_DIR)/archives
+EXTRACTED_OBJECTS_FILE := $(EXTRACT_DIR)/extracted_objects.txt
+extractArchives:
+	@mkdir -p $(EXTRACT_DIR)
+	@for archive in $(ARCHIVES); do \
+		dir=$(EXTRACT_DIR)/`basename $$archive .a`; \
+		mkdir -p $$dir; \
+		cd $$dir && ar -x `realpath $$archive`; \
+	done
+	@find $(EXTRACT_DIR) -name "*.o" > $(EXTRACTED_OBJECTS_FILE)
 
 INC_DIRS = \
 	$(IDF_PATH)/components \
@@ -464,7 +475,7 @@ DUMP_VARS:
 	echo "# IDF_RECONFIGURE_CMD is $(IDF_RECONFIGURE_CMD)"
 	echo "# SDKCONFIG_H_DIR is $(SDKCONFIG_H_DIR)"
 
-precursor: idfVersionCheck prepareOutput $(PROJ_DIR_FILES) bootloaderCheck $(BLE) $(SDKCONFIG_H) $(LIB_DIR) $(BIN_DIR)/xs_$(ESP32_SUBCLASS).a
+precursor: idfVersionCheck prepareOutput $(PROJ_DIR_FILES) bootloaderCheck $(BLE) $(SDKCONFIG_H) $(LIB_DIR) extractArchives $(BIN_DIR)/xs_$(ESP32_SUBCLASS).a
 	cp $(BIN_DIR)/xs_$(ESP32_SUBCLASS).a $(BLD_DIR)/.
 	touch $(PROJ_DIR)/main/main.c
 
@@ -499,7 +510,7 @@ $(BIN_DIR)/xs_$(ESP32_SUBCLASS).a: $(SDK_OBJ) $(XS_OBJ) $(TMP_DIR)/xsPlatform.c.
 	echo '#include "buildinfo.h"' > $(TMP_DIR)/buildinfo.c
 	echo '_tBuildInfo _BuildInfo = {"$(BUILD_DATE)","$(BUILD_TIME)","$(SRC_GIT_VERSION)","$(ESP_GIT_VERSION)"};' >> $(TMP_DIR)/buildinfo.c
 	$(CC) $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) $(TMP_DIR)/buildinfo.c -o $(TMP_DIR)/buildinfo.c.o
-	$(AR) $(AR_FLAGS) $(BIN_DIR)/xs_$(ESP32_SUBCLASS).a $^ $(TMP_DIR)/buildinfo.c.o
+	$(AR) $(AR_FLAGS) $(BIN_DIR)/xs_$(ESP32_SUBCLASS).a $^ $(TMP_DIR)/buildinfo.c.o  $(shell cat $(EXTRACTED_OBJECTS_FILE))
 
 bootloaderCheck:
 ifneq ($(BOOTLOADERPATH),)
