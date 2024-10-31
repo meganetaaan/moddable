@@ -18,7 +18,7 @@
 		"screen": "ili9341",
 		"virtualButton": false,
 		"touch": "M5StackCoreS3Touch",
-		"startupSound": "bflatmajor.maud"
+		"startupSound": false
 	},
 	"modules": {
 		"setup/target": "./setup-target",
@@ -117,11 +117,13 @@
 		"audioIn": {
 			"sampleRate": 11025,
 			"bitsPerSample": 16,
+			"numChannels": 2,
 			"i2s": {
+				"num": 1,
 				"bck_pin": 34,
 				"lr_pin": 33,
 				"datain": 14,
-				"pdm": 1
+				"pdm": 0
 			}
 		}
 	}

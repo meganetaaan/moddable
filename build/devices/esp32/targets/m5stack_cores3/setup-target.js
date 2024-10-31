@@ -73,6 +73,7 @@ export default function (done) {
   // power
   globalThis.power = new Power();
   globalThis.amp = new AW88298();
+  globalThis.mic = new ES7210();
 
   // start-up sound
   if (config.startupSound) {
@@ -91,6 +92,58 @@ export default function (done) {
   }
 
   done?.();
+}
+
+class ES7210 extends SMBus {
+  constructor() {
+    super({ address: 0x40, ...INTERNAL_I2C });
+    this.initialize();
+  }
+
+  initialize() {
+    trace('ES7210#initialize\n')
+    this.writeRegister(0x00, 0xFF); // RESET_CTL
+
+    const initSequence = [
+      [0x00, 0x41], // RESET_CTL
+      [0x01, 0x1F], // CLK_ON_OFF
+      [0x06, 0x00], // DIGITAL_PDN
+      [0x07, 0x20], // ADC_OSR
+      [0x08, 0x10], // MODE_CFG
+      [0x09, 0x30], // TCT0_CHPINI
+      [0x0A, 0x30], // TCT1_CHPINI
+      [0x20, 0x0A], // ADC34_HPF2
+      [0x21, 0x2A], // ADC34_HPF1
+      [0x22, 0x0A], // ADC12_HPF2
+      [0x23, 0x2A], // ADC12_HPF1
+      [0x02, 0xC1],
+      [0x04, 0x01],
+      [0x05, 0x00],
+      [0x11, 0x60],
+      [0x40, 0x42], // ANALOG_SYS
+      [0x41, 0x70], // MICBIAS12
+      [0x42, 0x70], // MICBIAS34
+      [0x43, 0x1B], // MIC1_GAIN
+      [0x44, 0x1B], // MIC2_GAIN
+      [0x45, 0x00], // MIC3_GAIN
+      [0x46, 0x00], // MIC4_GAIN
+      [0x47, 0x00], // MIC1_LP
+      [0x48, 0x00], // MIC2_LP
+      [0x49, 0x00], // MIC3_LP
+      [0x4A, 0x00], // MIC4_LP
+      [0x4B, 0x00], // MIC12_PDN
+      [0x4C, 0xFF], // MIC34_PDN
+      [0x01, 0x14], // CLK_ON_OFF
+    ];
+
+    for (const [reg, value] of initSequence) {
+      this.writeRegister(reg, value);
+    }
+  }
+
+  writeRegister(register, value) {
+    this.writeByte(register, value);
+  }
 }
 
 /**
