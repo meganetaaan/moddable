@@ -1,0 +1,40 @@
+{
+	"include": [
+		"$(MODULES)/drivers/hub75/manifest.json",
+		"$(MODULES)/commodetto/commodetto.json"
+	],
+	"modules": {
+		"*": "./main.js"
+	},
+	"defines": {
+		"hub75": {
+			"width": 64,
+			"height": 32,
+			"chains": 1,
+			"brightness": 128
+		}
+	},
+	"platforms": {
+		"esp32": {
+			"defines": {
+				"hub75": {
+					"pins": {
+						"r1": 25,
+						"g1": 26,
+						"b1": 27,
+						"r2": 14,
+						"g2": 12,
+						"b2": 13,
+						"a": 23,
+						"b": 19,
+						"c": 5,
+						"d": 17,
+						"clk": 16,
+						"latch": 4,
+						"oe": 15
+					}
+				}
+			}
+		}
+	}
+}

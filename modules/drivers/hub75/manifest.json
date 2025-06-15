@@ -1,0 +1,119 @@
+{
+	"include": [
+		"$(MODULES)/pins/digital/manifest.json",
+		"$(COMMODETTO)/commodettoPixelsOut.json"
+	],
+	"modules": {
+		"*": "$(MODULES)/drivers/hub75/*",
+		"commodetto/Bitmap": "$(COMMODETTO)/commodettoBitmap",
+		"commodetto/Poco": "$(COMMODETTO)/commodettoPoco"
+	},
+	"preload": [
+		"hub75"
+	],
+	"defines": {
+		"hub75": {
+			"width": 64,
+			"height": 32,
+			"chains": 1,
+			"brightness": 128,
+			"refreshHz": 120
+		}
+	},
+	"config": {
+		"screen": "$(MODULES)/drivers/hub75/manifest.json"
+	},
+	"platforms": {
+		"esp32": {
+			"defines": {
+				"hub75": {
+					"pins": {
+						"r1": 25,
+						"g1": 26,
+						"b1": 27,
+						"r2": 14,
+						"g2": 12,
+						"b2": 13,
+						"a": 23,
+						"b": 19,
+						"c": 5,
+						"d": 17,
+						"e": 18,
+						"clk": 16,
+						"latch": 4,
+						"oe": 15
+					}
+				}
+			},
+			"build": {
+				"BUILD_CLK_FREQ": 240
+			}
+		},
+		"esp32s2": {
+			"defines": {
+				"hub75": {
+					"pins": {
+						"r1": 1,
+						"g1": 2,
+						"b1": 3,
+						"r2": 4,
+						"g2": 5,
+						"b2": 6,
+						"a": 7,
+						"b": 8,
+						"c": 9,
+						"d": 10,
+						"e": 11,
+						"clk": 12,
+						"latch": 13,
+						"oe": 14
+					}
+				}
+			}
+		},
+		"esp32s3": {
+			"defines": {
+				"hub75": {
+					"pins": {
+						"r1": 1,
+						"g1": 2,
+						"b1": 42,
+						"r2": 41,
+						"g2": 40,
+						"b2": 39,
+						"a": 38,
+						"b": 37,
+						"c": 36,
+						"d": 35,
+						"e": 0,
+						"clk": 45,
+						"latch": 48,
+						"oe": 47
+					}
+				}
+			}
+		},
+		"esp32c3": {
+			"defines": {
+				"hub75": {
+					"pins": {
+						"r1": 0,
+						"g1": 1,
+						"b1": 2,
+						"r2": 3,
+						"g2": 4,
+						"b2": 5,
+						"a": 6,
+						"b": 7,
+						"c": 8,
+						"d": 9,
+						"e": 10,
+						"clk": 18,
+						"latch": 19,
+						"oe": 20
+					}
+				}
+			}
+		}
+	}
+}
