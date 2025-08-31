@@ -1,5 +1,5 @@
 import {} from "piu/MC";
-import {} from "piu/shape";
+import {} from "piu/multiShape";
 import {Outline} from "commodetto/outline";
 
 class BallBehavior extends Behavior {
@@ -46,7 +46,7 @@ class Shape1Behavior extends BallBehavior {
 let ShapeApplication = Application.template($ => ({
 	skin:new Skin({ fill:"black" }),
 	contents: [
-		Shape(1, { left:0, top:0, width:100, height:100, Behavior: Shape1Behavior, skin:new Skin({ fill:rgba(255,0,0,0.75), stroke:rgb(255,0,0) }) } ),
+		MultiShape(1, { left:0, top:0, width:100, height:100, Behavior: Shape1Behavior, skin:new Skin({ fill:rgba(255,0,0,0.75), stroke:rgb(255,0,0) }) } ),
 	]
 }));
 
