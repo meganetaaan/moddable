@@ -6,6 +6,8 @@ class BallBehavior extends Behavior {
 	onCreate(ball, delta) {
 		this.dx = delta;
 		this.dy = delta;
+		this.open = 1;
+		this.angle = 0;
 	}
 	onDisplaying(ball) {
 		this.x = ball.x;
@@ -31,15 +33,26 @@ class BallBehavior extends Behavior {
 
 class Shape1Behavior extends BallBehavior {
 	onCreate(shape, delta) {
-		super.onCreate(shape, delta);
-		const path = new Outline.FreeTypePath;
-		path.beginSubpath(50, 90);
-		path.lineTo(18, 42);
-		path.cubicTo(10, 30, 30, 10, 50, 40);
-		path.cubicTo(70, 10, 90, 30, 82, 42);
-		path.endSubpath();
-		shape.fillOutline = Outline.fill(path);
-		shape.strokeOutline = Outline.stroke(path, 5, Outline.LINECAP_BUTT, Outline.LINEJOIN_MITER);
+		super.onCreate(shape, delta)
+		this.open = 1;
+		this.angle = 0;
+		const path = new Outline.CanvasPath;
+		path.rect(0, 50, 100, 50 + 50 * this.open);
+		shape.fillOutline = Outline.fill(path)
+		shape.strokeOutline = undefined;
+	}
+	onTimeChanged(ball) {
+		super.onTimeChanged(ball)
+		this.angle += 5;
+		if (this.angle > 360) {
+			this.angle = this.angle % 360;
+		}
+		this.open = Math.sin(Math.PI * 2 * this.angle / 360)
+		const path = new Outline.CanvasPath;
+		path.rect(0, 50, 100, 50 + 50 * this.open);
+		ball.fillOutline = Outline.fill(path)
+		ball.strokeOutline = undefined;
+		trace(`${this.open}\n`)
 	}
 }
 
