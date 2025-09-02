@@ -1,5 +1,6 @@
 import {} from "piu/MC";
 import {} from "piu/multiShape";
+import {} from "piu/shape";
 import {Outline} from "commodetto/outline";
 
 class BallBehavior extends Behavior {
@@ -31,36 +32,74 @@ class BallBehavior extends Behavior {
 	}
 };
 
-class Shape1Behavior extends BallBehavior {
-	onCreate(shape, delta) {
-		super.onCreate(shape, delta)
-		this.open = 1;
-		this.angle = 0;
-		const path = new Outline.CanvasPath;
-		path.rect(0, 50, 100, 50 + 50 * this.open);
-		shape.fillOutline = Outline.fill(path)
-		shape.strokeOutline = undefined;
-	}
-	onTimeChanged(ball) {
-		super.onTimeChanged(ball)
-		this.angle += 5;
-		if (this.angle > 360) {
-			this.angle = this.angle % 360;
-		}
-		this.open = Math.sin(Math.PI * 2 * this.angle / 360)
-		const path = new Outline.CanvasPath;
-		path.rect(0, 50, 100, 50 + 50 * this.open);
-		ball.fillOutline = Outline.fill(path)
-		ball.strokeOutline = undefined;
-		trace(`${this.open}\n`)
-	}
+class LeftMultiBehavior extends BallBehavior {
+    onCreate(ms, delta) {
+        super.onCreate(ms, delta);
+        this.angle = 0;
+        this.updateItems(ms);
+    }
+    updateItems(ms) {
+        const open = 0.5 + 0.5 * Math.sin(Math.PI * 2 * this.angle / 360);
+        // item0: fill rect that grows/shrinks vertically
+        const p0 = new Outline.CanvasPath;
+        p0.rect(0, 50, 100, 50 + 50 * open);
+        // item1: stroke rect inset that grows/shrinks horizontally
+        const p1 = new Outline.CanvasPath;
+        p1.rect(10, 10, 90 + 0 * open, 90);
+        ms.items = [
+            { fill: Outline.fill(p0), skin: new Skin({ fill: rgba(255,0,0,0.75) }) },
+            { stroke: Outline.stroke(p1, 5, Outline.LINECAP_BUTT, Outline.LINEJOIN_MITER), skin: new Skin({ stroke: rgb(255,0,0) }) },
+        ];
+    }
+    onTimeChanged(ms) {
+        super.onTimeChanged(ms);
+        this.angle = (this.angle + 5) % 360;
+        this.updateItems(ms);
+    }
+}
+
+class RightContainerBehavior extends BallBehavior {
+    onCreate(container, delta) {
+        super.onCreate(container, delta);
+        this.angle = 0;
+        this.updateChildren(container);
+        container.start();
+    }
+    updateChildren(container) {
+        const open = 0.5 + 0.5 * Math.sin(Math.PI * 2 * this.angle / 360);
+        const p0 = new Outline.CanvasPath;
+        p0.rect(0, 50, 100, 50 + 50 * open);
+        const p1 = new Outline.CanvasPath;
+        p1.rect(10, 10, 90 + 0 * open, 90);
+				const s0 = container.content(0);
+				const s1 = container.content(1);
+        s0.fillOutline = Outline.fill(p0);
+        s0.strokeOutline = undefined;
+        s1.fillOutline = undefined;
+        s1.strokeOutline = Outline.stroke(p1, 5, Outline.LINECAP_BUTT, Outline.LINEJOIN_MITER);
+    }
+    onTimeChanged(container) {
+        super.onTimeChanged(container);
+        this.angle = (this.angle + 5) % 360;
+        this.updateChildren(container);
+    }
 }
 
 let ShapeApplication = Application.template($ => ({
-	skin:new Skin({ fill:"black" }),
-	contents: [
-		MultiShape(1, { left:0, top:0, width:100, height:100, Behavior: Shape1Behavior, skin:new Skin({ fill:rgba(255,0,0,0.75), stroke:rgb(255,0,0) }) } ),
-	]
+    skin:new Skin({ fill:"black" }),
+    contents: [
+        // Left: MultiShape using items
+        MultiShape(1, { left:10, top:10, width:100, height:100, Behavior: LeftMultiBehavior, skin:new Skin({ fill:rgba(255,255,255,1), stroke:rgb(255,255,255) }) } ),
+        // Right: Container with two Shape children drawing in the same order
+        Container($, {
+            left:130, top:10, width:100, height:100, clip:true,
+            Behavior: RightContainerBehavior,
+            contents: [
+                Shape(1, { left:0, top:0, width:100, height:100, skin:new Skin({ fill:rgba(255,0,0,0.75) }) }),
+                Shape(1, { left:0, top:0, width:100, height:100, skin:new Skin({ stroke:rgb(255,0,0) }) }),
+            ],
+        }),
+    ]
 }));
 
 export default new ShapeApplication(null, { displayListLength:4096, touchCount:1, pixels: 240 * 64 });
