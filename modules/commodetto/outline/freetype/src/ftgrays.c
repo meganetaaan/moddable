@@ -1646,6 +1646,9 @@ typedef ptrdiff_t  FT_PtrDist;
 
 #if ESP32 && kCPUESP32
     static ICACHE_RAM_ATTR TCell    buffer[FT_MAX_GRAY_POOL];		//@@ not thread safe, but avoids having to allocate a big stack
+#elif ESP32 && kCPUESP32S3
+    // ESP32S3では内部DRAMに配置（PSRAMを避ける）
+    static __attribute__((section(".dram1.mod"))) TCell    buffer[FT_MAX_GRAY_POOL];		//@@ not thread safe, but avoids having to allocate a big stack
 #elif nrf52
     static TCell    *buffer;		//@@ not thread safe, but avoids having to allocate a big stack
 #else

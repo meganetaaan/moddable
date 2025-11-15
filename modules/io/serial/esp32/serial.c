@@ -39,6 +39,7 @@
 //#include "soc/uart_caps.h"
 #include "soc/uart_struct.h"
 #include "soc/interrupts.h"
+#include "esp_heap_caps.h"
 
 // local versions of UART register management to avoid issues with uart.c
 #define uart_disable_intr_mask(dev, disable_mask) _uart_disable_intr_mask(dev, disable_mask)
@@ -160,7 +161,11 @@ void xs_serial_constructor(xsMachine *the)
 	if (err)
 		xsUnknownError("uart failed");
 
-	serial = c_malloc((hasReadable || hasWritable) ? sizeof(SerialRecord) : offsetof(SerialRecord, the));
+	// ISRから頻繁にアクセスされるため、内部メモリに配置（PSRAMを避ける）
+	serial = heap_caps_malloc(
+		(hasReadable || hasWritable) ? sizeof(SerialRecord) : offsetof(SerialRecord, the),
+		MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT
+	);
 	if (!serial)
 		xsRangeError("no memory");
 
@@ -250,7 +255,7 @@ void xs_serial_destructor(void *data)
 #else
 	if (0 == __atomic_sub_fetch(&serial->useCount, 1, __ATOMIC_SEQ_CST))
 #endif
-		c_free(serial);
+		heap_caps_free(serial);
 }
 
 void xs_serial_close(xsMachine *the)
@@ -408,7 +413,7 @@ void serialDeliver(void *theIn, void *refcon, uint8_t *message, uint16_t message
 	if (0 == __atomic_sub_fetch(&serial->useCount, 1, __ATOMIC_SEQ_CST))
 #endif
 	{
-		c_free(serial);
+		heap_caps_free(serial);
 		return;
 	}
 
