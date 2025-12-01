@@ -6,7 +6,19 @@
 	],
 	"modules": {
 		"*": [
-			"./main"
+			"./*"
 		]
+	},
+	"resources": {
+		"*-mask": [
+			"$(MODDABLE)/examples/assets/fonts/OpenSans-Regular-20"
+		]
+	},
+	"platforms": {
+		"esp32/moddable_six": {
+			"config": {
+				"rotation": 90
+			}
+		}
 	}
 }
