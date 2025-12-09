@@ -9,6 +9,7 @@ import Timeline from "piu/Timeline";
 import { Outline } from "commodetto/outline";
 import { createFaceContext, copyFaceContext, defaultFaceContext, toColorString } from "faceContext";
 import { createBlinkModifier, createBreathModifier, createSaccadeModifier } from "modifiers";
+import { Drawer } from "drawer";
 
 const mainSkin = new Skin({ fill: "#e7f7ff" });
 const backgroundSkin = new Skin({ fill: "#0d1017" });;
@@ -175,11 +176,16 @@ class FaceBehavior extends Behavior {
 		this.baseY = null; // set after layout
 		container.interval = 33;
 	}
-	onDisplaying(container) {
-		if (this.baseY === null)
-			this.baseY = container.y; // layout settled
-		container.start();
-	}
+		onDisplaying(container) {
+			if (this.baseY === null)
+				this.baseY = container.y; // layout settled
+			container.start();
+		}
+		onFaceUpdate(_container, face) {
+			if (!face)
+				return;
+			copyFaceContext(face, this.desired);
+		}
 	onTimeChanged(container) {
 		const interval = container.interval;
 		copyFaceContext(this.desired, this.current);
@@ -188,9 +194,31 @@ class FaceBehavior extends Behavior {
 		if (this.baseY === null)
 			this.baseY = container.y;
 		container.y = this.baseY + this.current.breath * 8;
-		trace(`container.y=${container.y}\n`)
 		application.distribute("onFaceContext", this.current);
 		// Theme更新を行うならここで skin の色を差し替える
+	}
+}
+
+class AppBehavior extends Behavior {
+	onCreate(application) {
+		this.face = null;
+		this.drawer = null;
+		this.faceContext = createFaceContext();
+		copyFaceContext(defaultFaceContext, this.faceContext);
+	}
+	onDisplaying(application) {
+		this.face = application.first; // Face container is added first
+		this.drawer = application.content("drawer");
+	}
+	toggleDrawer() {
+		if (this.drawer?.behavior?.toggle)
+			this.drawer.behavior.toggle(this.drawer);
+	}
+	toggleMouth() {
+		const ctx = this.faceContext;
+		ctx.mouth.open = ctx.mouth.open ? 0 : 1;
+		if (this.face?.behavior?.onFaceUpdate)
+			this.face.behavior.onFaceUpdate(this.face, ctx);
 	}
 }
 
@@ -293,7 +321,12 @@ const Eyelid = Content.template($ => ({
 const Face = Container.template($ => ({
 	left: 0, right: 0, top: 0, height: 240,
 	skin: faceSkin,
-	Behavior: FaceBehavior,
+	active: true,
+	Behavior: class extends FaceBehavior {
+		onTouchEnded(container) {
+			application.delegate("toggleDrawer");
+		}
+	},
 	contents: [
 		new Eye({ cx: 90, cy: 93, radius: 8, side: "left" }),
 		new Eye({ cx: 230, cy: 96, radius: 8, side: "right" }),
@@ -306,8 +339,10 @@ const Face = Container.template($ => ({
 export default new Application(null, {
 	skin: backgroundSkin,
 	displayListLength: 4096,
+	Behavior: AppBehavior,
 	contents: [
 		new Face({}),
-		new SpeechBalloon({ text: "   Hello from Moddable ! We are excited to your enthusiathm ! " }),
+		// new Drawer({ buttons: [{ label: "Toggle Mouth", action: "toggleMouth" }] }),
+		new SpeechBalloon({ text: "   Hello from Moddable ! We are excited to see your enthusiathm ! " }),
 	],
 });

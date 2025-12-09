@@ -9,6 +9,9 @@
 			"./*"
 		]
 	},
+	"config": {
+		"startupSound": false
+	},
 	"resources": {
 		"*-mask": [
 			"$(MODDABLE)/examples/assets/fonts/OpenSans-Regular-20"
