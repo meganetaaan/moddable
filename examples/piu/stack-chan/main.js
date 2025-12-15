@@ -211,8 +211,7 @@ class AppBehavior extends Behavior {
 		this.drawer = application.content("drawer");
 	}
 	toggleDrawer() {
-		if (this.drawer?.behavior?.toggle)
-			this.drawer.behavior.toggle(this.drawer);
+		this.drawer?.delegate?.("toggle");
 	}
 	toggleMouth() {
 		const ctx = this.faceContext;
@@ -342,7 +341,7 @@ export default new Application(null, {
 	Behavior: AppBehavior,
 	contents: [
 		new Face({}),
-		// new Drawer({ buttons: [{ label: "Toggle Mouth", action: "toggleMouth" }] }),
+		new Drawer({ buttons: [{ label: "Toggle Mouth", action: "toggleMouth" }] }),
 		new SpeechBalloon({ text: "   Hello from Moddable ! We are excited to see your enthusiathm ! " }),
 	],
 });

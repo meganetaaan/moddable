@@ -1,7 +1,8 @@
 import {} from "piu/MC";
 import Timeline from "piu/Timeline";
 
-const drawerSkin = new Skin({ fill: "#111822" });
+const scrollerSkin = new Skin({ fill: "#00FF00" });
+const drawerSkin = new Skin({ fill: "#FF0000" });
 const drawerButtonSkin = new Skin({ fill: "#1e2a38" });
 const drawerButtonStyle = new Style({ font: "18px Open Sans", color: "#e7f7ff", horizontal: "left" });
 const drawerWidth = 140;
@@ -28,11 +29,13 @@ const DrawerButton = Container.template($ => ({
 
 export const Drawer = Container.template($ => ({
 	name: "drawer",
-	left: null,
+	// left: 0,
 	right: -drawerWidth,
+	// right: 0,
 	top: 0,
 	bottom: 0,
 	width: drawerWidth,
+	// width: 20,
 	clip: true,
 	skin: drawerSkin,
 	contents: [
@@ -43,6 +46,7 @@ export const Drawer = Container.template($ => ({
 			bottom: 0,
 			clip: true,
 			active: true,
+			skin: scrollerSkin,
 			contents: [
 				Column(null, {
 					left: 0,
@@ -59,21 +63,30 @@ export const Drawer = Container.template($ => ({
 			this.timeline = null;
 		}
 		onTimeChanged(container) {
-			if (this.timeline)
-				this.timeline.seekTo(container.time);
+			// if (this.timeline)
+			// 	this.timeline.seekTo(container.time);
 		}
 		onFinished(container) {
-			this.timeline = null;
+			// this.timeline = null;
 		}
 		toggle(container) {
-			const from = this.isOpen ? 0 : -drawerWidth;
-			const to = this.isOpen ? -drawerWidth : 0;
-			const tl = (this.timeline = new Timeline());
-			tl.on(container, { right: [from, to] }, 180, Math.quadEaseOut, 0);
-			tl.seekTo(0);
-			container.duration = tl.duration;
-			container.time = 0;
-			container.start();
+			// const from = this.isOpen ? 0 : -drawerWidth;
+			// const to = this.isOpen ? -drawerWidth : 0;
+			// const tl = (this.timeline = new Timeline());
+			// tl.on(container, { right: [from, to] }, 180, Math.quadEaseOut, 0);
+			// tl.seekTo(0);
+			// container.duration = tl.duration;
+			// container.time = 0;
+			// container.start();
+
+			// For debugging: skip animation and update position immediately.
+			const coords = {
+				right: this.isOpen ? -drawerWidth : 0,
+				width: drawerWidth,
+				top: 0,
+				bottom: 0,
+			};
+			container.coordinates = coords;
 			this.isOpen = !this.isOpen;
 		}
 	}
