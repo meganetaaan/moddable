@@ -14,7 +14,8 @@
 	},
 	"resources": {
 		"*-mask": [
-			"$(MODDABLE)/examples/assets/fonts/OpenSans-Regular-20"
+			"$(MODDABLE)/examples/assets/fonts/OpenSans-Regular-20",
+			"$(MODDABLE)/examples/assets/fonts/OpenSans-Regular-16"
 		]
 	},
 	"platforms": {

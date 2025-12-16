@@ -339,12 +339,14 @@ const Face = Container.template($ => ({
 }));
 
 export default new Application(null, {
-	skin: backgroundSkin,
-	displayListLength: 4096,
-	Behavior: AppBehavior,
-	contents: [
-		new Face({}),
-		new Drawer({ buttons: [{ label: "Toggle Mouth", action: "toggleMouth" }] }),
-		new SpeechBalloon({ text: "   Hello from Moddable ! We are excited to see your enthusiathm ! " }),
-	],
+  skin: backgroundSkin,
+  displayListLength: 4096,
+  Behavior: AppBehavior,
+  contents: [
+    new Face({}),
+    new SpeechBalloon({
+      text: "   Hello from Moddable ! We are excited to see your enthusiathm ! ",
+    }),
+    new Drawer({ buttons: [{ label: "Mouth", action: "toggleMouth" }] }),
+  ],
 });
