@@ -4,6 +4,7 @@ import Timeline from "piu/Timeline";
 const scrollerSkin = new Skin({ fill: "#444" });
 const drawerSkin = new Skin({ fill: "#FF0000" });
 const drawerButtonSkin = new Skin({ fill: "#fafafa" });
+const drawerButtonPressedSkin = new Skin({ fill: "#c0c0c0" });
 const drawerButtonStyle = new Style({ font: "16px Open Sans", color: "#222", horizontal: "left" });
 const drawerWidth = 140;
 const toggleOnSkin = new Skin({ fill: "#23c552" });  // green
@@ -33,7 +34,14 @@ const DrawerButton = Container.template($ => ({
 			this.toggleKey = data.toggleKey;
 			this.icon = this.toggleKey ? content.first : null;
 		}
+		onTouchBegan(content) {
+			content.skin = drawerButtonPressedSkin;
+		}
+		onTouchCancelled(content) {
+			content.skin = drawerButtonSkin;
+		}
 		onTouchEnded(content) {
+			content.skin = drawerButtonSkin;
 			if (this.action)
 				application.delegate(this.action);
 		}

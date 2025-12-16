@@ -2,23 +2,54 @@
 	"include": [
 		"$(MODDABLE)/examples/manifest_base.json",
 		"$(MODDABLE)/examples/manifest_piu.json",
+		"$(MODDABLE)/examples/manifest_net.json",
+		"$(MODDABLE)/modules/input/expanding-keyboard/horizontal/manifest.json",
 		"$(MODDABLE)/modules/piu/MC/outline/manifest.json"
 	],
 	"modules": {
-		"*": [
-			"./*"
-		]
+		"wifi-assets": "../wifi-config/assets",
+		"wifi-screens": "../wifi-config/wifi-screens",
+		"*": [ "./*" ],
+		"scroller": "../scroller/scroller"
 	},
 	"config": {
 		"startupSound": false
 	},
 	"resources": {
+		"*-alpha": [
+			{
+				"source": "$(MODDABLE)/examples/assets/scalablefonts/NotoSans/NotoSansJP-Regular",
+				"size": 16,
+				"characters": "ここに設定を追加できます"
+			},
+			"$(MODDABLE)/examples/assets/fonts/OpenSans-Semibold-16",
+			"$(MODDABLE)/examples/assets/fonts/OpenSans-Semibold-18",
+			"$(MODDABLE)/examples/assets/fonts/OpenSans-Regular-20",
+			"../wifi-config/assets/header-arrow",
+			"../wifi-config/assets/wifi-strip",
+			"../wifi-config/assets/page-1"
+		],
 		"*-mask": [
 			"$(MODDABLE)/examples/assets/fonts/OpenSans-Regular-20",
 			"$(MODDABLE)/examples/assets/fonts/OpenSans-Regular-16"
 		]
 	},
 	"platforms": {
+		"mac": {
+			"modules": {
+				"wifi": "../wifi-config/simulator/wifisim"
+			}
+		},
+		"win": {
+			"modules": {
+				"wifi": "../wifi-config/simulator/wifisim"
+			}
+		},
+		"lin": {
+			"modules": {
+				"wifi": "../wifi-config/simulator/wifisim"
+			}
+		},
 		"esp32/moddable_six": {
 			"config": {
 				"rotation": 90

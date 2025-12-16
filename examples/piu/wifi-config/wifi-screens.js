@@ -139,7 +139,7 @@ export const NetworkListScreen = Container.template($ => ({
 				}),
 			],
 		}),
-		new ASSETS.Header({ title: "Networks" }),
+		new ASSETS.Header({ title: "Networks", backArrowBehavior: $.backArrowBehavior }),
 	],
 }));
 

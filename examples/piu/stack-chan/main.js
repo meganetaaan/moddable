@@ -6,10 +6,27 @@
 import {} from "piu/MC";
 import {} from "piu/shape";
 import Timeline from "piu/Timeline";
+import WipeTransition from "piu/WipeTransition";
+import { SettingsScreen } from "settings";
 import { Outline } from "commodetto/outline";
 import { createFaceContext, copyFaceContext, defaultFaceContext, toColorString } from "faceContext";
 import { createBlinkModifier, createBreathModifier, createSaccadeModifier } from "modifiers";
 import { Drawer } from "drawer";
+import Timer from "timer";
+import WiFi from "wifi";
+import Net from "net";
+import SNTP from "sntp";
+import Time from "time";
+import { WiFiStatusSpinner } from "wifi-assets";
+import { NetworkListScreen, LoginScreen, ConnectionErrorScreen } from "wifi-screens";
+
+function getVariantFromSignalLevel(value) {
+	let low = -120;
+	let high = -40;
+	if (value < low) value = low;
+	if (value > high) value = high;
+	return Math.round(4 * ((value - low) / (high - low)));
+}
 
 const mainSkin = new Skin({ fill: "#e7f7ff" });
 const backgroundSkin = new Skin({ fill: "#0d1017" });;
@@ -201,14 +218,34 @@ class FaceBehavior extends Behavior {
 
 class AppBehavior extends Behavior {
 	onCreate(application) {
+		globalThis.application = application;
 		this.face = null;
 		this.drawer = null;
 		this.faceContext = createFaceContext();
 		copyFaceContext(defaultFaceContext, this.faceContext);
+		this.currentScreen = null;
+		this.showingSettings = false;
+		this.wifiHost = null;
+		this.wifiNetworks = undefined;
+		this.wifiMonitor = undefined;
+		this.wifiTimeoutTimer = undefined;
+		this.wifiTimeoutData = undefined;
 	}
 	onDisplaying(application) {
-		this.face = application.first; // Face container is added first
-		this.drawer = application.content("drawer");
+		this.currentScreen = application.first;
+		this.bindMainRefsIfMain(this.currentScreen);
+	}
+	bindMainRefsIfMain(screen) {
+		if (!screen || screen.name !== "main") {
+			this.face = null;
+			this.drawer = null;
+			return;
+		}
+		this.face = screen.first; // Face container is added first
+		this.drawer = screen.content("drawer");
+		// Restore current face state when returning from settings
+		if (this.face?.behavior?.onFaceUpdate)
+			this.face.behavior.onFaceUpdate(this.face, this.faceContext);
 	}
 	toggleDrawer() {
 		this.drawer?.delegate?.("toggle");
@@ -218,6 +255,177 @@ class AppBehavior extends Behavior {
 		ctx.mouth.open = ctx.mouth.open ? 0 : 1;
 		if (this.face?.behavior?.onFaceUpdate)
 			this.face.behavior.onFaceUpdate(this.face, ctx);
+	}
+	showSettings() {
+		if (this.showingSettings)
+			return;
+		this.showingSettings = true;
+		const next = new SettingsScreen({ backgroundSkin, onSelect: action => application.delegate("onSettingSelect", action) });
+		this.swapScreen(next, "right");
+	}
+	backToMain() {
+		if (!this.showingSettings)
+			return;
+		this.showingSettings = false;
+		const next = new MainScreen({ buttons: drawerButtons });
+		this.swapScreen(next, "left");
+	}
+	onSettingSelect(application, action) {
+		if (action === "wifi") {
+			this.showingSettings = false;
+			this.showWiFi();
+		}
+	}
+	showWiFi() {
+		this.ensureWiFiHost();
+		this.clearWifiTimeout();
+		if (this.wifiMonitor?.close)
+			this.wifiMonitor.close();
+		this.wifiMonitor = undefined;
+		this.wifiNetworks = undefined;
+		this.swapScreen(this.wifiHost, "right");
+		WiFi.mode = 1;
+		this.wifiDoNext("NETWORK_LIST_SCAN");
+	}
+	backFromWiFi() {
+		if (this.currentScreen?.name !== "wifi")
+			return;
+		this.clearWifiTimeout();
+		if (this.wifiMonitor?.close)
+			this.wifiMonitor.close();
+		this.wifiMonitor = undefined;
+		this.showSettings();
+	}
+	ensureWiFiHost() {
+		if (this.wifiHost)
+			return;
+		this.wifiHost = new Container({ name: "wifi", left: 0, right: 0, top: 0, bottom: 0 });
+	}
+	doNext(application, nextScreenName, nextScreenData = {}) {
+		if (this.currentScreen?.name === "wifi")
+			this.wifiDoNext(nextScreenName, nextScreenData);
+	}
+	wifiDoNext(nextScreenName, nextScreenData = {}) {
+		application.defer("onSwitchWiFiScreen", nextScreenName, nextScreenData);
+	}
+	onSwitchWiFiScreen(application, nextScreenName, nextScreenData = {}) {
+		if (this.currentScreen?.name !== "wifi")
+			return;
+		const wifiContainer = this.wifiHost;
+		wifiContainer.empty();
+		switch (nextScreenName) {
+			case "NETWORK_LIST_SCAN":
+				if (undefined === this.wifiNetworks) {
+					wifiContainer.add(new WiFiStatusSpinner({ status: "Finding networks..." }));
+					this.wifiScan(true);
+				} else {
+					wifiContainer.add(new NetworkListScreen({ networks: this.wifiNetworks, backArrowBehavior: this.makeWiFiBackBehavior() }));
+				}
+				break;
+			case "NETWORK_LIST":
+				wifiContainer.add(new NetworkListScreen({ ...nextScreenData, backArrowBehavior: this.makeWiFiBackBehavior() }));
+				break;
+			case "LOGIN":
+				wifiContainer.add(new LoginScreen(nextScreenData));
+				break;
+			case "CONNECTING":
+				WiFi.connect();
+				wifiContainer.add(new WiFiStatusSpinner({ status: "Joining network..." }));
+				this.startWifiTimeout(nextScreenData);
+				if (this.wifiMonitor?.close)
+					this.wifiMonitor.close();
+				this.wifiMonitor = new WiFi(nextScreenData, (message, value) => {
+					if ("gotIP" === message) {
+						this.clearWifiTimeout();
+						Net.resolve("pool.ntp.org", (name, host) => {
+							if (!host) {
+								this.wifiDoNext("CONNECTION_ERROR", nextScreenData);
+								return;
+							}
+							this.startWifiTimeout(nextScreenData);
+							new SNTP({ host }, (msg, val) => {
+								if (1 === msg) {
+									Time.set(val);
+									this.clearWifiTimeout();
+									this.wifiDoNext("NETWORK_LIST", { networks: this.wifiNetworks, ssid: nextScreenData.ssid });
+								} else if (-1 === msg) {
+									this.wifiDoNext("CONNECTION_ERROR", nextScreenData);
+								}
+							});
+						});
+					} else if ("disconnect" === message) {
+						/* ignore, wait for reconnect or timeout */
+					}
+				});
+				break;
+			case "CONNECTION_ERROR":
+				host.add(new ConnectionErrorScreen(nextScreenData));
+				break;
+		}
+	}
+	makeWiFiBackBehavior() {
+		return class extends Behavior {
+			onTouchBegan(content) {
+				content.state = 1;
+			}
+			onTouchEnded(content) {
+				content.state = 0;
+				application.delegate("backFromWiFi");
+			}
+		};
+	}
+	startWifiTimeout(data) {
+		this.clearWifiTimeout();
+		this.wifiTimeoutData = data;
+		this.wifiTimeoutTimer = Timer.set(() => {
+			this.wifiTimeoutTimer = undefined;
+			if (this.wifiMonitor?.close)
+				this.wifiMonitor.close();
+			WiFi.connect(); // force disconnect
+			this.wifiDoNext("CONNECTION_ERROR", this.wifiTimeoutData);
+			this.wifiTimeoutData = undefined;
+		}, 10000);
+	}
+	clearWifiTimeout() {
+		if (this.wifiTimeoutTimer) {
+			Timer.clear(this.wifiTimeoutTimer);
+			this.wifiTimeoutTimer = undefined;
+		}
+	}
+	wifiScan(isFirstScan) {
+		WiFi.scan({}, item => {
+			let networks = this.wifiNetworks;
+			if (item) {
+				const strength = getVariantFromSignalLevel(item.rssi);
+				for (let walker = networks; walker; walker = walker.next) {
+					if (walker.ssid === item.ssid) {
+						if (strength > Math.abs(walker.variant))
+							walker.variant = strength * Math.sign(walker.variant);
+						return;
+					}
+				}
+				const ap = { ssid: item.ssid, variant: (item.authentication === "none") ? -strength : strength, next: networks };
+				this.wifiNetworks = ap;
+			} else {
+				if (isFirstScan)
+					this.wifiDoNext("NETWORK_LIST", { networks: this.wifiNetworks });
+				else if (this.wifiHost?.first)
+					this.wifiHost.first.distribute("onUpdateNetworkList", this.wifiNetworks);
+			}
+		});
+	}
+	scan(application, isFirstScan = false) {
+		if (this.currentScreen?.name === "wifi")
+			this.wifiScan(isFirstScan);
+	}
+	swapScreen(next, direction = "right") {
+		const transition = new WipeTransition(250, Math.quadEaseOut, direction);
+		application.run(transition, this.currentScreen, next);
+		this.currentScreen = next;
+	}
+	onTransitionEnded(application) {
+		this.currentScreen = application.first;
+		this.bindMainRefsIfMain(this.currentScreen);
 	}
 }
 
@@ -338,15 +546,28 @@ const Face = Container.template($ => ({
 	],
 }));
 
+const drawerButtons = [
+	{ label: "Mouth", action: "toggleMouth", toggleKey: "mouth" },
+	{ label: "Settings", action: "showSettings" },
+];
+
+const MainScreen = Container.template($ => ({
+	name: "main",
+	left: 0, right: 0, top: 0, bottom: 0,
+	contents: [
+		new Face({}),
+		new SpeechBalloon({
+			text: "   Hello from Moddable ! We are excited to see your enthusiathm ! ",
+		}),
+		new Drawer({ buttons: $.buttons }),
+	],
+}));
+
 export default new Application(null, {
   skin: backgroundSkin,
   displayListLength: 4096,
   Behavior: AppBehavior,
   contents: [
-    new Face({}),
-    new SpeechBalloon({
-      text: "   Hello from Moddable ! We are excited to see your enthusiathm ! ",
-    }),
-    new Drawer({ buttons: [{ label: "Mouth", action: "toggleMouth", toggleKey: "mouth" }] }),
+    new MainScreen({ buttons: drawerButtons }),
   ],
 });
