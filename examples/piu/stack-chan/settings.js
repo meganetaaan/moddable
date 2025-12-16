@@ -12,95 +12,78 @@ const settingsItemSkin = new Skin({ fill: "#131b26", stroke: "#e7f7ff", borders:
 const settingsItemStyle = new Style({ font: "16px Open Sans", color: "#e7f7ff", horizontal: "left", vertical: "middle" });
 
 const defaultSettingsItems = [
-	{ label: "Wi-Fi", action: "wifi" },
-	{ label: "Bluetooth" },
-	{ label: "Brightness" },
-	{ label: "Volume" },
-	{ label: "Language" },
-	{ label: "Time Zone" },
-	{ label: "Notifications" },
-	{ label: "Privacy" },
-	{ label: "Sleep Timer" },
-	{ label: "Display Timeout" },
-	{ label: "Developer Options" },
-	{ label: "About Stack-chan" },
+    { label: "Wi-Fi" },
+    { label: "Bluetooth" },
+    { label: "Brightness" },
+    { label: "Volume" },
+    { label: "Language" },
+    { label: "Time Zone" },
+    { label: "Notifications" },
+    { label: "Privacy" },
+    { label: "Sleep Timer" },
+    { label: "Display Timeout" },
+    { label: "Developer Options" },
+    { label: "About Stack-chan" },
 ];
 
 const BackButton = Container.template($ => ({
-	left: 0, width: 44, height: 36,
-	active: true,
-	skin: settingsButtonSkin,
-	contents: [
-		new Label(null, { string: "<", style: settingsButtonStyle })
-	],
-	Behavior: class extends Behavior {
-		onTouchBegan(container) {
-			container.skin = settingsButtonPressedSkin;
-		}
-		onTouchCancelled(container) {
-			container.skin = settingsButtonSkin;
-		}
-		onTouchEnded(container) {
-			container.skin = settingsButtonSkin;
-			application.delegate("backToMain");
-		}
-	}
+    left: 0, width: 44, height: 36,
+    active: true,
+    skin: settingsButtonSkin,
+    contents: [
+        new Label(null, { string: "<", style: settingsButtonStyle })
+    ],
+    Behavior: class extends Behavior {
+        onTouchBegan(container) {
+            container.skin = settingsButtonPressedSkin;
+        }
+        onTouchCancelled(container) {
+            container.skin = settingsButtonSkin;
+        }
+        onTouchEnded(container) {
+            container.skin = settingsButtonSkin;
+            application.delegate("backToMain");
+        }
+    }
 }));
 
 const SettingItem = Container.template($ => ({
-	left: 0, right: 0, height: 52,
-	active: true,
-	skin: settingsItemSkin,
-	contents: [
-		new Label(null, { left: 12, right: 12, string: $.label ?? "Setting", style: settingsItemStyle })
-	],
-	Behavior: class extends Behavior {
-		onCreate(container, data) {
-			this.action = data.action ?? data.label;
-			this.onSelect = data.onSelect;
-		}
-		onTouchBegan(container) {
-			container.state = 1;
-		}
-		onTouchCancelled(container) {
-			container.state = 0;
-		}
-		onTouchEnded(container) {
-			container.state = 0;
-			this.onSelect?.(this.action);
-		}
-	}
+    left: 0, right: 0, height: 52,
+    skin: settingsItemSkin,
+    contents: [
+        new Label(null, { left: 12, right: 12, string: $.label ?? "Setting", style: settingsItemStyle })
+    ],
 }));
 
 export const SettingsScreen = Container.template($ => ({
-	name: "settings",
-	left: 0, right: 0, top: 0, bottom: 0,
-	skin: $.backgroundSkin ?? defaultBackgroundSkin,
-	contents: [
-		// Header row with back button and centered title
-		new Container(null, {
-			left: 12, right: 12, top: 12, height: 44,
-			contents: [
-				new BackButton(),
-				new Label(null, {
-					left: 0, right: 0, top: 0, bottom: 0,
-					string: "Settings",
-					style: settingsTitleStyle,
-				}),
-			],
-		}),
-		new Label(null, { left: 0, right: 0, top: 64, string: "設定項目をここに追加できます", style: settingsTextStyle }),
-	new Scroller(null, {
-		left: 24, right: 24, top: 96, bottom: 16,
-		active: true, clip: true,
-		skin: scrollerBackgroundSkin,
-		Behavior: VerticalScrollerBehavior,
-		contents: [
-			new Column(null, {
-					left: 0, right: 0, top: 0, spacing: 8,
-					contents: ($.items ?? defaultSettingsItems).map(item => new SettingItem({ ...item, onSelect: $.onSelect })),
-				}),
-			],
-		}),
-	],
+    name: "settings",
+    left: 0, right: 0, top: 0, bottom: 0,
+    skin: $.backgroundSkin ?? defaultBackgroundSkin,
+    contents: [
+        // Header row with back button and centered title
+        new Container(null, {
+            left: 12, right: 12, top: 12, height: 44,
+            contents: [
+                new BackButton(),
+                new Label(null, {
+                    left: 0, right: 0, top: 0, bottom: 0,
+                    string: "Settings",
+                    style: settingsTitleStyle,
+                }),
+            ],
+        }),
+        new Label(null, { left: 0, right: 0, top: 64, string: "設定項目をここに追加できます", style: settingsTextStyle }),
+    new Scroller(null, {
+        left: 24, right: 24, top: 96, bottom: 16,
+        active: true, clip: true,
+        skin: scrollerBackgroundSkin,
+        Behavior: VerticalScrollerBehavior,
+        contents: [
+            new Column(null, {
+                    left: 0, right: 0, top: 0, spacing: 8,
+                    contents: ($.items ?? defaultSettingsItems).map(item => new SettingItem(item)),
+                }),
+            ],
+        }),
+    ],
 }));

@@ -12,21 +12,6 @@ import { Outline } from "commodetto/outline";
 import { createFaceContext, copyFaceContext, defaultFaceContext, toColorString } from "faceContext";
 import { createBlinkModifier, createBreathModifier, createSaccadeModifier } from "modifiers";
 import { Drawer } from "drawer";
-import Timer from "timer";
-import WiFi from "wifi";
-import Net from "net";
-import SNTP from "sntp";
-import Time from "time";
-import { WiFiStatusSpinner } from "wifi-assets";
-import { NetworkListScreen, LoginScreen, ConnectionErrorScreen } from "wifi-screens";
-
-function getVariantFromSignalLevel(value) {
-	let low = -120;
-	let high = -40;
-	if (value < low) value = low;
-	if (value > high) value = high;
-	return Math.round(4 * ((value - low) / (high - low)));
-}
 
 const mainSkin = new Skin({ fill: "#e7f7ff" });
 const backgroundSkin = new Skin({ fill: "#0d1017" });;
@@ -193,16 +178,16 @@ class FaceBehavior extends Behavior {
 		this.baseY = null; // set after layout
 		container.interval = 33;
 	}
-		onDisplaying(container) {
-			if (this.baseY === null)
-				this.baseY = container.y; // layout settled
-			container.start();
-		}
-		onFaceUpdate(_container, face) {
-			if (!face)
-				return;
-			copyFaceContext(face, this.desired);
-		}
+	onDisplaying(container) {
+		if (this.baseY === null)
+			this.baseY = container.y; // layout settled
+		container.start();
+	}
+	onFaceUpdate(_container, face) {
+		if (!face)
+			return;
+		copyFaceContext(face, this.desired);
+	}
 	onTimeChanged(container) {
 		const interval = container.interval;
 		copyFaceContext(this.desired, this.current);
@@ -210,7 +195,7 @@ class FaceBehavior extends Behavior {
 		for (let i = 0; i < mods.length; i++) mods[i](interval, this.current);
 		if (this.baseY === null)
 			this.baseY = container.y;
-		container.y = this.baseY + this.current.breath * 8;
+		container.y = this.baseY + this.current.breath * 6;
 		application.distribute("onFaceContext", this.current);
 		// Theme更新を行うならここで skin の色を差し替える
 	}
@@ -269,154 +254,6 @@ class AppBehavior extends Behavior {
 		this.showingSettings = false;
 		const next = new MainScreen({ buttons: drawerButtons });
 		this.swapScreen(next, "left");
-	}
-	onSettingSelect(application, action) {
-		if (action === "wifi") {
-			this.showingSettings = false;
-			this.showWiFi();
-		}
-	}
-	showWiFi() {
-		this.ensureWiFiHost();
-		this.clearWifiTimeout();
-		if (this.wifiMonitor?.close)
-			this.wifiMonitor.close();
-		this.wifiMonitor = undefined;
-		this.wifiNetworks = undefined;
-		this.swapScreen(this.wifiHost, "right");
-		WiFi.mode = 1;
-		this.wifiDoNext("NETWORK_LIST_SCAN");
-	}
-	backFromWiFi() {
-		if (this.currentScreen?.name !== "wifi")
-			return;
-		this.clearWifiTimeout();
-		if (this.wifiMonitor?.close)
-			this.wifiMonitor.close();
-		this.wifiMonitor = undefined;
-		this.showSettings();
-	}
-	ensureWiFiHost() {
-		if (this.wifiHost)
-			return;
-		this.wifiHost = new Container({ name: "wifi", left: 0, right: 0, top: 0, bottom: 0 });
-	}
-	doNext(application, nextScreenName, nextScreenData = {}) {
-		if (this.currentScreen?.name === "wifi")
-			this.wifiDoNext(nextScreenName, nextScreenData);
-	}
-	wifiDoNext(nextScreenName, nextScreenData = {}) {
-		application.defer("onSwitchWiFiScreen", nextScreenName, nextScreenData);
-	}
-	onSwitchWiFiScreen(application, nextScreenName, nextScreenData = {}) {
-		if (this.currentScreen?.name !== "wifi")
-			return;
-		const wifiContainer = this.wifiHost;
-		wifiContainer.empty();
-		switch (nextScreenName) {
-			case "NETWORK_LIST_SCAN":
-				if (undefined === this.wifiNetworks) {
-					wifiContainer.add(new WiFiStatusSpinner({ status: "Finding networks..." }));
-					this.wifiScan(true);
-				} else {
-					wifiContainer.add(new NetworkListScreen({ networks: this.wifiNetworks, backArrowBehavior: this.makeWiFiBackBehavior() }));
-				}
-				break;
-			case "NETWORK_LIST":
-				wifiContainer.add(new NetworkListScreen({ ...nextScreenData, backArrowBehavior: this.makeWiFiBackBehavior() }));
-				break;
-			case "LOGIN":
-				wifiContainer.add(new LoginScreen(nextScreenData));
-				break;
-			case "CONNECTING":
-				WiFi.connect();
-				wifiContainer.add(new WiFiStatusSpinner({ status: "Joining network..." }));
-				this.startWifiTimeout(nextScreenData);
-				if (this.wifiMonitor?.close)
-					this.wifiMonitor.close();
-				this.wifiMonitor = new WiFi(nextScreenData, (message, value) => {
-					if ("gotIP" === message) {
-						this.clearWifiTimeout();
-						Net.resolve("pool.ntp.org", (name, host) => {
-							if (!host) {
-								this.wifiDoNext("CONNECTION_ERROR", nextScreenData);
-								return;
-							}
-							this.startWifiTimeout(nextScreenData);
-							new SNTP({ host }, (msg, val) => {
-								if (1 === msg) {
-									Time.set(val);
-									this.clearWifiTimeout();
-									this.wifiDoNext("NETWORK_LIST", { networks: this.wifiNetworks, ssid: nextScreenData.ssid });
-								} else if (-1 === msg) {
-									this.wifiDoNext("CONNECTION_ERROR", nextScreenData);
-								}
-							});
-						});
-					} else if ("disconnect" === message) {
-						/* ignore, wait for reconnect or timeout */
-					}
-				});
-				break;
-			case "CONNECTION_ERROR":
-				host.add(new ConnectionErrorScreen(nextScreenData));
-				break;
-		}
-	}
-	makeWiFiBackBehavior() {
-		return class extends Behavior {
-			onTouchBegan(content) {
-				content.state = 1;
-			}
-			onTouchEnded(content) {
-				content.state = 0;
-				application.delegate("backFromWiFi");
-			}
-		};
-	}
-	startWifiTimeout(data) {
-		this.clearWifiTimeout();
-		this.wifiTimeoutData = data;
-		this.wifiTimeoutTimer = Timer.set(() => {
-			this.wifiTimeoutTimer = undefined;
-			if (this.wifiMonitor?.close)
-				this.wifiMonitor.close();
-			WiFi.connect(); // force disconnect
-			this.wifiDoNext("CONNECTION_ERROR", this.wifiTimeoutData);
-			this.wifiTimeoutData = undefined;
-		}, 10000);
-	}
-	clearWifiTimeout() {
-		if (this.wifiTimeoutTimer) {
-			Timer.clear(this.wifiTimeoutTimer);
-			this.wifiTimeoutTimer = undefined;
-		}
-	}
-	wifiScan(isFirstScan) {
-		WiFi.scan({}, item => {
-			let networks = this.wifiNetworks;
-			if (item) {
-				const strength = getVariantFromSignalLevel(item.rssi);
-				for (let walker = networks; walker; walker = walker.next) {
-					if (walker.ssid === item.ssid) {
-						if (strength > Math.abs(walker.variant))
-							walker.variant = strength * Math.sign(walker.variant);
-						return;
-					}
-				}
-				const ap = { ssid: item.ssid, variant: (item.authentication === "none") ? -strength : strength, next: networks };
-				this.wifiNetworks = ap;
-			} else {
-				if (isFirstScan)
-					this.wifiDoNext("NETWORK_LIST", { networks: this.wifiNetworks });
-				else if (this.wifiHost?.first)
-					this.wifiHost.first.distribute("onUpdateNetworkList", this.wifiNetworks);
-			}
-		});
-	}
-	scan(application, isFirstScan = false) {
-		if (this.currentScreen?.name === "wifi")
-			this.wifiScan(isFirstScan);
 	}
 	swapScreen(next, direction = "right") {
 		const transition = new WipeTransition(250, Math.quadEaseOut, direction);
@@ -564,10 +401,10 @@ const MainScreen = Container.template($ => ({
 }));
 
 export default new Application(null, {
-  skin: backgroundSkin,
-  displayListLength: 4096,
+	skin: backgroundSkin,
+	displayListLength: 4096,
   Behavior: AppBehavior,
-  contents: [
+	contents: [
     new MainScreen({ buttons: drawerButtons }),
-  ],
+	],
 });
