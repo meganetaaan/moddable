@@ -6,6 +6,8 @@ const drawerSkin = new Skin({ fill: "#FF0000" });
 const drawerButtonSkin = new Skin({ fill: "#fafafa" });
 const drawerButtonStyle = new Style({ font: "16px Open Sans", color: "#222", horizontal: "left" });
 const drawerWidth = 140;
+const toggleOnSkin = new Skin({ fill: "#23c552" });  // green
+const toggleOffSkin = new Skin({ fill: "#888888" }); // gray
 
 const DrawerButton = Container.template($ => ({
 	left: 0,
@@ -14,15 +16,33 @@ const DrawerButton = Container.template($ => ({
 	active: true,
 	skin: drawerButtonSkin,
 	contents: [
-		new Label(null, { left: 12, right: 12, top: 0, bottom: 0, string: $.label ?? "Button", style: drawerButtonStyle }),
+		// Optional toggle indicator on the left
+		$.toggleKey ? new Content(null, { left: 12, width: 16, height: 16, top: 14, skin: toggleOffSkin }) : null,
+		new Label(null, {
+			left: $.toggleKey ? 36 : 12,
+			right: 12,
+			top: 0,
+			bottom: 0,
+			string: $.label ?? "Button",
+			style: drawerButtonStyle
+		}),
 	],
 	Behavior: class extends Behavior {
 		onCreate(content, data) {
 			this.action = data.action;
+			this.toggleKey = data.toggleKey;
+			this.icon = this.toggleKey ? content.first : null;
 		}
 		onTouchEnded(content) {
 			if (this.action)
 				application.delegate(this.action);
+		}
+		onFaceContext(_content, face) {
+			if (!this.icon || !this.toggleKey)
+				return;
+			// Currently only "mouth" is supported.
+			const active = this.toggleKey === "mouth" ? !!face.mouth?.open : false;
+			this.icon.skin = active ? toggleOnSkin : toggleOffSkin;
 		}
 	}
 }));

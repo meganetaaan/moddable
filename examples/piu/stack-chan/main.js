@@ -347,6 +347,6 @@ export default new Application(null, {
     new SpeechBalloon({
       text: "   Hello from Moddable ! We are excited to see your enthusiathm ! ",
     }),
-    new Drawer({ buttons: [{ label: "Mouth", action: "toggleMouth" }] }),
+    new Drawer({ buttons: [{ label: "Mouth", action: "toggleMouth", toggleKey: "mouth" }] }),
   ],
 });
