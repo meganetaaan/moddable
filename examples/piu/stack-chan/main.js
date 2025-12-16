@@ -244,10 +244,13 @@ const Mouth = Content.template($ => ({
 			this.lastOpen = open;
 			const h = this.minHeight + (this.maxHeight - this.minHeight) * open;
 			const w = this.minWidth + (this.maxWidth - this.minWidth) * (1 - open);
-			content.width = w;
-			content.height = h;
-			content.left = this.cx - w / 2;
-			content.top = this.cy - h / 2;
+			// Update layout coordinates so the mouth stays centered while resizing.
+			content.coordinates = {
+				left: this.cx - w / 2,
+				top: this.cy - h / 2,
+				width: w,
+				height: h,
+			};
 		}
 	}
 }));
