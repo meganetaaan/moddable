@@ -96,7 +96,8 @@ const SpeechBalloon = Container.template($ => ({
 			this.space = data.space ?? 24;
 			this.radius = data.radius ?? 6;
 			this.text = data.text ?? "Hello from Stack-chan";
-			this.font = data.font ?? "20px Open Sans";
+			// this.font = data.font ?? "20px Open Sans";
+			this.font = data.font ?? "k8x12-12";
 			this.speed = data.speed ?? 60;
 			this.shape = null;
 			this.label = null;
@@ -394,7 +395,7 @@ const MainScreen = Container.template($ => ({
 	contents: [
 		new Face({}),
 		new SpeechBalloon({
-			text: "   Hello from Moddable ! We are excited to see your enthusiathm ! ",
+			text: "Moddableからこんにちは！お会いできて光栄です！",
 		}),
 		new Drawer({ buttons: $.buttons }),
 	],

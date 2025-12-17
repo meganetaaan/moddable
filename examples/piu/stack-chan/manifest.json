@@ -19,6 +19,12 @@
 				"source": "$(MODDABLE)/examples/assets/scalablefonts/NotoSans/NotoSansJP-Regular",
 				"size": 16,
 				"characters": "ここに設定を追加できます"
+			},
+			{
+				"source": "./k8x12",
+				"size": 12,
+				"blocks": ["Basic Latin", "Hiragana", "Katakana", "CJK Unified Ideographs", "CJK Symbols and Punctuation", "Halfwidth and Fullwidth Forms"],
+				"monochrome": true
 			}
 		],
 		"*-mask": [
