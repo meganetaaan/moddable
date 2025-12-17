@@ -9,6 +9,7 @@ import Timeline from "piu/Timeline";
 import WipeTransition from "piu/WipeTransition";
 import { SettingsScreen } from "settings";
 import { Outline } from "commodetto/outline";
+import { createEmoticon } from "emoticons";
 import { createFaceContext, copyFaceContext, defaultFaceContext, toColorString } from "faceContext";
 import { createBlinkModifier, createBreathModifier, createSaccadeModifier } from "modifiers";
 import { Drawer } from "drawer";
@@ -209,6 +210,8 @@ class AppBehavior extends Behavior {
 		this.drawer = null;
 		this.faceContext = createFaceContext();
 		copyFaceContext(defaultFaceContext, this.faceContext);
+		this.emoticonKeys = ["heart", "angry", "sweat", "tear", "sleepy"];
+		this.emoticonIndex = 0;
 		this.currentScreen = null;
 		this.showingSettings = false;
 		this.wifiHost = null;
@@ -232,6 +235,7 @@ class AppBehavior extends Behavior {
 		// Restore current face state when returning from settings
 		if (this.face?.behavior?.onFaceUpdate)
 			this.face.behavior.onFaceUpdate(this.face, this.faceContext);
+		this.applyCurrentEmoticon();
 	}
 	toggleDrawer() {
 		this.drawer?.delegate?.("toggle");
@@ -241,6 +245,14 @@ class AppBehavior extends Behavior {
 		ctx.mouth.open = ctx.mouth.open ? 0 : 1;
 		if (this.face?.behavior?.onFaceUpdate)
 			this.face.behavior.onFaceUpdate(this.face, ctx);
+	}
+	toggleEmoticon() {
+		this.emoticonIndex = (this.emoticonIndex + 1) % this.emoticonKeys.length;
+		this.applyCurrentEmoticon();
+	}
+	applyCurrentEmoticon() {
+		const key = this.emoticonKeys[this.emoticonIndex];
+		application.distribute("onEmoticon", key);
 	}
 	showSettings() {
 		if (this.showingSettings)
@@ -366,6 +378,39 @@ const Eyelid = Content.template($ => ({
 	}
 }));
 
+// Holds a single emoticon; switches on onEmoticon(key)
+const EmoticonLayer = Container.template($ => ({
+	left: 0, right: 0, top: 0, bottom: 0,
+	Behavior: class extends Behavior {
+		onCreate(container) {
+			this.currentKey = null;
+			this.emoticon = null;
+			this.lastFace = defaultFaceContext;
+		}
+		onFaceContext(_container, face) {
+			this.lastFace = face;
+		}
+		onEmoticon(container, key) {
+			this.show(container, key);
+		}
+		show(container, key) {
+			if (!key || key === this.currentKey)
+				return;
+			if (this.emoticon) {
+				container.remove(this.emoticon);
+				this.emoticon = null;
+			}
+			this.emoticon = createEmoticon(key);
+			container.add(this.emoticon);
+			// Refresh palette immediately
+			const face = this.lastFace;
+			if (face && this.emoticon?.behavior?.onFaceContext)
+				this.emoticon.behavior.onFaceContext(this.emoticon, face);
+			this.currentKey = key;
+		}
+	}
+}));
+
 const Face = Container.template($ => ({
 	left: 0, right: 0, top: 0, height: 240,
 	skin: faceSkin,
@@ -381,11 +426,13 @@ const Face = Container.template($ => ({
 		new Eyelid({ cx: 90, cy: 93, width: 24, height: 24, side: "left" }),
 		new Eyelid({ cx: 230, cy: 96, width: 24, height: 24, side: "right" }),
 		new Mouth({ cx: 160, cy: 148 }),
+		new EmoticonLayer({}),
 	],
 }));
 
 const drawerButtons = [
 	{ label: "Mouth", action: "toggleMouth", toggleKey: "mouth" },
+	{ label: "Emoticon", action: "toggleEmoticon" },
 	{ label: "Settings", action: "showSettings" },
 ];
 
