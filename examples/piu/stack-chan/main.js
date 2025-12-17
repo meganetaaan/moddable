@@ -210,8 +210,15 @@ class AppBehavior extends Behavior {
 		this.drawer = null;
 		this.faceContext = createFaceContext();
 		copyFaceContext(defaultFaceContext, this.faceContext);
-		this.emoticonKeys = ["heart", "angry", "sweat", "tear", "sleepy"];
-		this.emoticonIndex = 0;
+		this.emotionStates = [
+			{ emotion: "NEUTRAL", emoticon: null },
+			{ emotion: "HAPPY", emoticon: "heart" },
+			{ emotion: "ANGRY", emoticon: "angry" },
+			{ emotion: "SAD", emoticon: "tear" },
+			{ emotion: "HOT", emoticon: "sweat" },
+			{ emotion: "SLEEPY", emoticon: "sleepy" },
+		];
+		this.emotionIndex = 0;
 		this.currentScreen = null;
 		this.showingSettings = false;
 		this.wifiHost = null;
@@ -235,7 +242,7 @@ class AppBehavior extends Behavior {
 		// Restore current face state when returning from settings
 		if (this.face?.behavior?.onFaceUpdate)
 			this.face.behavior.onFaceUpdate(this.face, this.faceContext);
-		this.applyCurrentEmoticon();
+		this.applyCurrentEmotion();
 	}
 	toggleDrawer() {
 		this.drawer?.delegate?.("toggle");
@@ -246,13 +253,16 @@ class AppBehavior extends Behavior {
 		if (this.face?.behavior?.onFaceUpdate)
 			this.face.behavior.onFaceUpdate(this.face, ctx);
 	}
-	toggleEmoticon() {
-		this.emoticonIndex = (this.emoticonIndex + 1) % this.emoticonKeys.length;
-		this.applyCurrentEmoticon();
+	toggleEmotion() {
+		this.emotionIndex = (this.emotionIndex + 1) % this.emotionStates.length;
+		this.applyCurrentEmotion();
 	}
-	applyCurrentEmoticon() {
-		const key = this.emoticonKeys[this.emoticonIndex];
-		application.distribute("onEmoticon", key);
+	applyCurrentEmotion() {
+		const state = this.emotionStates[this.emotionIndex];
+		this.faceContext.emotion = state.emotion;
+		if (this.face?.behavior?.onFaceUpdate)
+			this.face.behavior.onFaceUpdate(this.face, this.faceContext);
+		application.distribute("onEmoticon", state.emoticon);
 	}
 	showSettings() {
 		if (this.showingSettings)
@@ -355,25 +365,67 @@ const Eye = Container.template($ => ({
 	}
 }));
 
-const Eyelid = Content.template($ => ({
+const Eyelid = Shape.template($ => ({
 	left: $.cx - $.width / 2,
 	top: $.cy - $.height / 2,
 	width: $.width,
 	height: $.height,
 	skin: eyelidSkin,
 	Behavior: class extends Behavior {
-		onCreate(content, data) {
-			this.maxHeight = data.height;
+		onCreate(shape, data) {
+			this.w = data.width;
+			this.h = data.height;
 			this.side = data.side;
 			this.lastOpen = -1;
-			content.height = 0;
+			this.lastEmotion = null;
+			this.updatePath(shape, 1, "NEUTRAL");
 		}
-		onFaceContext(content, face) {
+		onFaceContext(shape, face) {
 			const eye = face.eyes[this.side];
 			const open = eye.open;
-			if (open === this.lastOpen) return;
+			const emotion = face.emotion;
+			if (open === this.lastOpen && emotion === this.lastEmotion) return;
 			this.lastOpen = open;
-			content.height = this.maxHeight * (1 - open);
+			this.lastEmotion = emotion;
+			this.updatePath(shape, open, emotion);
+		}
+		updatePath(shape, open, emotion) {
+			const w = this.w;
+			const h = this.h;
+			const x = 0;
+			const y = 0;
+			const closedH = h * (1 - open);
+			const path = new Outline.CanvasPath;
+			switch (emotion) {
+				case "ANGRY":
+				case "SAD": {
+					let h1 = y + (h + closedH) / 2;
+					let h2 = y + closedH;
+					if (this.side === "left") {
+						[h1, h2] = [h2, h1];
+					}
+					if (emotion === "SAD") {
+						[h1, h2] = [h2, h1];
+					}
+			path.moveTo(x, y);
+			path.lineTo(x, h1);
+			path.lineTo(x + w, h2);
+			path.lineTo(x + w, y);
+			path.closePath();
+			break;
+		}
+		case "SLEEPY":
+			path.rect(x, y, w, h * 0.5 + closedH * 0.5);
+			break;
+		case "HAPPY":
+			path.rect(x, y, w, closedH * 0.6);
+			path.rect(x, y + h * 0.6, w, h * 0.4);
+			break;
+		default:
+			path.rect(x, y, w, closedH);
+			}
+			shape.fillOutline = Outline.fill(path);
+			shape.strokeOutline = undefined;
 		}
 	}
 }));
@@ -394,19 +446,21 @@ const EmoticonLayer = Container.template($ => ({
 			this.show(container, key);
 		}
 		show(container, key) {
-			if (!key || key === this.currentKey)
+			if (key === this.currentKey)
 				return;
 			if (this.emoticon) {
 				container.remove(this.emoticon);
 				this.emoticon = null;
 			}
+			this.currentKey = key;
+			if (!key)
+				return;
 			this.emoticon = createEmoticon(key);
 			container.add(this.emoticon);
 			// Refresh palette immediately
 			const face = this.lastFace;
 			if (face && this.emoticon?.behavior?.onFaceContext)
 				this.emoticon.behavior.onFaceContext(this.emoticon, face);
-			this.currentKey = key;
 		}
 	}
 }));
@@ -432,7 +486,7 @@ const Face = Container.template($ => ({
 
 const drawerButtons = [
 	{ label: "Mouth", action: "toggleMouth", toggleKey: "mouth" },
-	{ label: "Emoticon", action: "toggleEmoticon" },
+	{ label: "Emotion", action: "toggleEmotion" },
 	{ label: "Settings", action: "showSettings" },
 ];
 
