@@ -27,6 +27,12 @@
 				"embedded:io/audio/in": "./esp32/audioin"
 			}
 		},
+		"wasm": {
+			"modules": {
+				"*": "$(MODDABLE)/modules/io/common/builtinCommon",
+				"embedded:io/audio/in": "./wasm/audioin"
+			}
+		},
 		"...": {
 			"error": "Experimental TC53 IO modules"
 		}
