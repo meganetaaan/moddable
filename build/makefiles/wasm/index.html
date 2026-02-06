@@ -95,7 +95,373 @@ input[type="file"] {
 			</div>
 		</div>
 		<script>
-		
+		class AudioBridge {
+			constructor() {
+				this.context = null;
+				this.module = null;
+				this.outs = new Map();
+				this.ins = new Map();
+				this.nextId = 1;
+				this.unlockRequested = false;
+				this._resumeHandler = this._resumeHandler.bind(this);
+			}
+			setModule(module) {
+				this.module = module;
+			}
+			ensureContext(sampleRate) {
+				if (this.context)
+					return this.context;
+				const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+				if (!AudioContextClass)
+					return null;
+				try {
+					this.context = new AudioContextClass({ sampleRate });
+				}
+				catch (_) {
+					this.context = new AudioContextClass();
+				}
+				return this.context;
+			}
+			requestUnlock() {
+				if (!this.context || this.context.state === "running")
+					return;
+				if (this.unlockRequested)
+					return;
+				this.unlockRequested = true;
+				window.addEventListener("pointerdown", this._resumeHandler, { once: true });
+				window.addEventListener("keydown", this._resumeHandler, { once: true });
+				window.addEventListener("touchstart", this._resumeHandler, { once: true });
+			}
+			_resumeHandler() {
+				if (!this.context)
+					return;
+				this.context.resume().catch(() => {});
+				this.unlockRequested = false;
+			}
+			_createRing(bufferSize, queueLength, bytesPerFrame) {
+				const size = Math.max(bufferSize * queueLength, bytesPerFrame * 1024);
+				return {
+					data: new Uint8Array(size),
+					size,
+					read: 0,
+					write: 0,
+					available: 0
+				};
+			}
+			_ringWrite(ring, src) {
+				const length = src.length;
+				if (length > (ring.size - ring.available))
+					return false;
+				let remaining = ring.size - ring.write;
+				if (length <= remaining) {
+					ring.data.set(src, ring.write);
+				}
+				else {
+					ring.data.set(src.subarray(0, remaining), ring.write);
+					ring.data.set(src.subarray(remaining), 0);
+				}
+				ring.write = (ring.write + length) % ring.size;
+				ring.available += length;
+				return true;
+			}
+			_ringWriteByte(ring, value) {
+				if (ring.available >= ring.size)
+					return false;
+				ring.data[ring.write] = value & 0xFF;
+				ring.write = (ring.write + 1) % ring.size;
+				ring.available += 1;
+				return true;
+			}
+			_ringRead(ring, dest) {
+				const length = dest.length;
+				if (length > ring.available)
+					return false;
+				let remaining = ring.size - ring.read;
+				if (length <= remaining) {
+					dest.set(ring.data.subarray(ring.read, ring.read + length));
+				}
+				else {
+					dest.set(ring.data.subarray(ring.read));
+					dest.set(ring.data.subarray(0, length - remaining), remaining);
+				}
+				ring.read = (ring.read + length) % ring.size;
+				ring.available -= length;
+				return true;
+			}
+			createOut(bitsPerSample, numChannels, sampleRate, bytesPerFrame, queueLength, bufferSize) {
+				const context = this.ensureContext(sampleRate);
+				if (!context)
+					return 0;
+				const id = this.nextId++;
+				const ring = this._createRing(bufferSize, queueLength, bytesPerFrame);
+				const processor = context.createScriptProcessor(1024, 0, numChannels);
+				const out = {
+					id,
+					bitsPerSample,
+					numChannels,
+					sampleRate: context.sampleRate,
+					bytesPerFrame,
+					bufferSize,
+					ring,
+					running: false,
+					volume: 1.0,
+					processor
+				};
+				processor.onaudioprocess = (event) => {
+					const output = event.outputBuffer;
+					const frames = output.length;
+					const channels = out.numChannels;
+					const ringData = out.ring.data;
+					const ringSize = out.ring.size;
+					let read = out.ring.read;
+					let available = out.ring.available;
+					const bytesPerFrameLocal = out.bytesPerFrame;
+					const is16 = out.bitsPerSample === 16;
+					for (let c = 0; c < channels; c++)
+						output.getChannelData(c).fill(0);
+					if (out.running && available >= bytesPerFrameLocal) {
+						for (let i = 0; i < frames; i++) {
+							if (available < bytesPerFrameLocal)
+								break;
+							if (channels === 1) {
+								let sample;
+								if (is16) {
+									const lo = ringData[read];
+									read = (read + 1) % ringSize;
+									const hi = ringData[read];
+									read = (read + 1) % ringSize;
+									sample = (hi << 8) | lo;
+									if (sample & 0x8000) sample -= 0x10000;
+									sample = (sample / 32768) * out.volume;
+								}
+								else {
+									let val = ringData[read];
+									read = (read + 1) % ringSize;
+									val = (val << 24) >> 24;
+									sample = (val / 128) * out.volume;
+								}
+								output.getChannelData(0)[i] = sample;
+								available -= bytesPerFrameLocal;
+							}
+							else {
+								let left, right;
+								if (is16) {
+									let lo = ringData[read];
+									read = (read + 1) % ringSize;
+									let hi = ringData[read];
+									read = (read + 1) % ringSize;
+									left = (hi << 8) | lo;
+									if (left & 0x8000) left -= 0x10000;
+									lo = ringData[read];
+									read = (read + 1) % ringSize;
+									hi = ringData[read];
+									read = (read + 1) % ringSize;
+									right = (hi << 8) | lo;
+									if (right & 0x8000) right -= 0x10000;
+									left = (left / 32768) * out.volume;
+									right = (right / 32768) * out.volume;
+								}
+								else {
+									let val = ringData[read];
+									read = (read + 1) % ringSize;
+									val = (val << 24) >> 24;
+									left = (val / 128) * out.volume;
+									val = ringData[read];
+									read = (read + 1) % ringSize;
+									val = (val << 24) >> 24;
+									right = (val / 128) * out.volume;
+								}
+								output.getChannelData(0)[i] = left;
+								output.getChannelData(1)[i] = right;
+								available -= bytesPerFrameLocal;
+							}
+						}
+					}
+					out.ring.read = read;
+					out.ring.available = available;
+					const free = out.ring.size - available;
+					if (out.running && this.module && free >= out.bufferSize) {
+						this.module._modAudioOutWritable(out.id, out.bufferSize);
+					}
+				};
+				processor.connect(context.destination);
+				this.outs.set(id, out);
+				if (this.module)
+					this.module._modAudioOutSetSampleRate(id, context.sampleRate);
+				return id;
+			}
+			destroyOut(id) {
+				const out = this.outs.get(id);
+				if (!out)
+					return;
+				out.processor.disconnect();
+				this.outs.delete(id);
+			}
+			startOut(id) {
+				const out = this.outs.get(id);
+				if (!out)
+					return;
+				out.running = true;
+				this.requestUnlock();
+			}
+			stopOut(id) {
+				const out = this.outs.get(id);
+				if (!out)
+					return;
+				out.running = false;
+				out.ring.available = 0;
+				out.ring.read = out.ring.write;
+			}
+			availableOut(id) {
+				const out = this.outs.get(id);
+				if (!out)
+					return 0;
+				return out.ring.size - out.ring.available;
+			}
+			writeOut(id, ptr, length) {
+				const out = this.outs.get(id);
+				if (!out || !this.module)
+					return -1;
+				const heap = this.module.HEAPU8;
+				const src = heap.subarray(ptr, ptr + length);
+				return this._ringWrite(out.ring, src) ? length : -1;
+			}
+			setOutVolume(id, volume) {
+				const out = this.outs.get(id);
+				if (out)
+					out.volume = volume;
+			}
+			createIn(bitsPerSample, numChannels, sampleRate, bytesPerFrame, queueLength, bufferSize) {
+				const context = this.ensureContext(sampleRate);
+				if (!context)
+					return 0;
+				const id = this.nextId++;
+				const ring = this._createRing(bufferSize, queueLength, bytesPerFrame);
+				this.ins.set(id, {
+					id,
+					bitsPerSample,
+					numChannels,
+					sampleRate,
+					bytesPerFrame,
+					bufferSize,
+					ring,
+					running: false,
+					stream: null,
+					processor: null
+				});
+				return id;
+			}
+			async startIn(id) {
+				const input = this.ins.get(id);
+				if (!input)
+					return;
+				input.running = true;
+				this.requestUnlock();
+				if (input.stream)
+					return;
+				if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+					console.error("AudioIn getUserMedia not available");
+					return;
+				}
+				try {
+					const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: input.numChannels, sampleRate: input.sampleRate } });
+					if (!input.running)
+						return;
+					const source = this.context.createMediaStreamSource(stream);
+					const processor = this.context.createScriptProcessor(1024, input.numChannels, 1);
+					processor.onaudioprocess = (event) => {
+						if (!input.running)
+							return;
+						const frames = event.inputBuffer.length;
+						const channels = input.numChannels;
+						const ring = input.ring;
+						const bytesPerFrameLocal = input.bytesPerFrame;
+						const capacityFrames = Math.floor((ring.size - ring.available) / bytesPerFrameLocal);
+						const framesToWrite = Math.min(frames, capacityFrames);
+						if (framesToWrite <= 0)
+							return;
+						const max16 = 32767;
+						const max8 = 127;
+						writeLoop:
+						for (let i = 0; i < framesToWrite; i++) {
+							for (let c = 0; c < channels; c++) {
+								let sample = event.inputBuffer.getChannelData(c)[i];
+								if (sample > 1) sample = 1;
+								if (sample < -1) sample = -1;
+								if (input.bitsPerSample === 16) {
+									let v = (sample * 32768) | 0;
+									if (v > max16) v = max16;
+									if (v < -32768) v = -32768;
+									const lo = v & 0xFF;
+									const hi = (v >> 8) & 0xFF;
+									if (!this._ringWriteByte(ring, lo) || !this._ringWriteByte(ring, hi))
+										break writeLoop;
+								}
+								else {
+									let v = (sample * 128) | 0;
+									if (v > max8) v = max8;
+									if (v < -128) v = -128;
+									if (!this._ringWriteByte(ring, v))
+										break writeLoop;
+								}
+							}
+						}
+						if (event.outputBuffer && event.outputBuffer.numberOfChannels > 0)
+							event.outputBuffer.getChannelData(0).fill(0);
+						if (this.module && ring.available >= input.bufferSize) {
+							this.module._modAudioInReadable(input.id, input.bufferSize);
+						}
+					};
+					source.connect(processor);
+					processor.connect(this.context.destination);
+					input.stream = stream;
+					input.processor = processor;
+					if (this.module) {
+						const settings = stream.getAudioTracks()[0].getSettings();
+						if (settings && settings.sampleRate)
+							this.module._modAudioInSetSampleRate(input.id, settings.sampleRate);
+					}
+				}
+				catch (error) {
+					console.error("AudioIn getUserMedia failed", error);
+				}
+			}
+			destroyIn(id) {
+				const input = this.ins.get(id);
+				if (!input)
+					return;
+				if (input.processor)
+					input.processor.disconnect();
+				if (input.stream)
+					input.stream.getTracks().forEach(track => track.stop());
+				this.ins.delete(id);
+			}
+			stopIn(id) {
+				const input = this.ins.get(id);
+				if (!input)
+					return;
+				input.running = false;
+				input.ring.available = 0;
+				input.ring.read = input.ring.write;
+			}
+			availableIn(id) {
+				const input = this.ins.get(id);
+				if (!input)
+					return 0;
+				return input.ring.available;
+			}
+			readIn(id, ptr, length) {
+				const input = this.ins.get(id);
+				if (!input || !this.module)
+					return -1;
+				const heap = this.module.HEAPU8;
+				const dest = heap.subarray(ptr, ptr + length);
+				return this._ringRead(input.ring, dest) ? length : -1;
+			}
+		}
+
+		window.gxAudio = new AudioBridge();
+
 	class View {
 		constructor() {
 			this.orientation = 90;
@@ -130,6 +496,9 @@ input[type="file"] {
 					this.fxMainLaunch = mc._fxMainLaunch;
 					this.fxMainQuit = mc._fxMainQuit;
 					this.fxMainTouch = mc._fxMainTouch;
+					window.gxModule = mc;
+					if (window.gxAudio)
+						window.gxAudio.setModule(mc);
 					this.launch()
 				});
 			})

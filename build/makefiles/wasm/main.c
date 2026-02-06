@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 #include <emscripten.h>
 #include "screen.h"
 #include "xsCommon.h"
@@ -14,6 +15,30 @@ static void fxScreenStart(txScreen* screen, double interval);
 static void fxScreenStop(txScreen* screen);
 
 static txScreen* gxScreen = NULL;
+
+__attribute__((weak)) void modAudioOutWritable(uint32_t id, uint32_t bytes)
+{
+	(void)id;
+	(void)bytes;
+}
+
+__attribute__((weak)) void modAudioOutSetSampleRate(uint32_t id, uint32_t sampleRate)
+{
+	(void)id;
+	(void)sampleRate;
+}
+
+__attribute__((weak)) void modAudioInReadable(uint32_t id, uint32_t bytes)
+{
+	(void)id;
+	(void)bytes;
+}
+
+__attribute__((weak)) void modAudioInSetSampleRate(uint32_t id, uint32_t sampleRate)
+{
+	(void)id;
+	(void)sampleRate;
+}
 
 int fxMainIdle()
 {

@@ -41,6 +41,12 @@
 				]
 			}
 		},
+		"wasm": {
+			"modules": {
+				"*": "$(MODDABLE)/modules/io/common/builtinCommon",
+				"embedded:io/audio/out": "./wasm/audioout"
+			}
+		},
 		"...": {
 			"include": [
 				"$(MODDABLE)/modules/pins/i2s/manifest.json"
