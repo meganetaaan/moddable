@@ -174,7 +174,7 @@ void xs_audioout_constructor_(xsMachine* the)
 	int bitsPerSample = 0;
 	int numChannels = 0;
 	int sampleRate = 0;
-	uint16_t queueLength = 2;
+	uint16_t queueLength = 6;
 	uint16_t bytesPerFrame = 0;
 	uint32_t bufferSize = 0;
 	AudioOutput output;
@@ -370,4 +370,3 @@ void xs_audioout_set_volume_(xsMachine* the)
 	output->volume = volume;
 	wasmAudioOutSetVolume(output->id, volume);
 }
-
