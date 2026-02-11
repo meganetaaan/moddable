@@ -25,6 +25,7 @@ import TextEncoder from "text/encoder";
 const WebSocketClient = device.network.ws.io;
 
 const text = Object.freeze({binary: false});
+function log(message) { trace(`[ChatWS] ${message}\n`); }
 
 class ChatWebSocketWorker extends ChatWorker {
 	#buffers = [];
@@ -35,10 +36,12 @@ class ChatWebSocketWorker extends ChatWorker {
 	constructor(options) {
 		super(options);
 		this.ws = null;
-		this.outputMinimum = (options.outputSampleRate ?? 24000) >> 1;
+		// 500 ms minimum chunk to reduce callback/message frequency.
+		this.outputMinimum = options.outputMinimum ?? (options.outputSampleRate ?? 24000);
 		this.silence = new ArrayBuffer(this.outputMinimum);
 	}
 	close() {
+		log("close");
 		this.ws.close();
 		this.ws = null;
 		this.#buffers = [];
@@ -47,6 +50,7 @@ class ChatWebSocketWorker extends ChatWorker {
 	}
 	
 	connect(message) {
+		log(`connect host=${this.host} path=${this.path}`);
 		super.connect(message);
 		this.parser = new JSONBase64Parser(this, this.outputBuffer, 2, this.outputMinimum);
 		this.parser.barrier = message.barrier;
@@ -57,7 +61,7 @@ class ChatWebSocketWorker extends ChatWorker {
 			port: 443,
 			headers: this.headers,
 			onClose: () => {
-// 				trace(`onClose\n`);
+				log("onClose");
 			},
 			onControl: (opcode, data) => {
 				switch (opcode) {
@@ -65,6 +69,7 @@ class ChatWebSocketWorker extends ChatWorker {
 					data = new Uint8Array(data);
 					const code = (data[0] << 8) | data[1];
 					const reason = String.fromArrayBuffer(data.buffer.slice(2));
+					log(`onControl close code=${code} reason=${reason}`);
 					if (code != 1000)
 						this.postMessage({ id:"failed", string:reason });
 					else
@@ -81,6 +86,7 @@ class ChatWebSocketWorker extends ChatWorker {
 				}
 			},
 			onError: () => {
+				log("onError");
 				this.postMessage({ id:"failed", string:"network error" });
 				this.close();
 			},
@@ -95,6 +101,7 @@ class ChatWebSocketWorker extends ChatWorker {
 					return;
 				this.#writable = count;
 				if (this.#state == 0) {
+					log("onWritable -> onOpen");
 					this.onOpen();
 					this.#state = 1;
 					return;
@@ -189,4 +196,3 @@ class ChatWebSocketWorker extends ChatWorker {
 }
 
 export default ChatWebSocketWorker;
-
