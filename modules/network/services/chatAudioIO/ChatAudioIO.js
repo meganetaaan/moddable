@@ -80,6 +80,12 @@ class ChatAudioIO {
 		this.outputCompletionSlots = [];
 		this.outputCompletionsHead = 0;
 		this.outputCompletionCallback = () => this.outputCompleted();
+		this.outputStarted = false;
+		this.outputPrebufferMS = 500;
+		this.outputPrebufferBytes = this.computeOutputPrebufferBytes(this.outputSampleRate);
+		this.outputPrebuffering = false;
+		this.outputLevelIntervalMS = 50;
+		this.outputLevelAt = 0;
       
 		this.level = 0;
 		this.microphone = 1;
@@ -100,6 +106,8 @@ class ChatAudioIO {
 		this.worker = null;
 		this.output?.close();
 		this.output = null;
+		this.outputStarted = false;
+		this.outputPrebuffering = false;
 		this.resetOutputAsyncState();
 		this.input?.close();
 		this.input = null;
@@ -158,6 +166,7 @@ class ChatAudioIO {
 				this.ensureOutput();
 			}
 		}
+		this.outputPrebufferBytes = this.computeOutputPrebufferBytes(this.outputSampleRate);
 	}
 	connect() {
 		log("connect");
@@ -199,12 +208,17 @@ class ChatAudioIO {
 		if (this.state == ChatAudioIO.SPEAKING) {
 			this.state = ChatAudioIO.LISTENING;
 // 			this.outputBufferStart = undefined;
+			this.outputPrebuffering = true;
 			this.ensureOutput();
 			this.onStateChanged(this.state);
 		}
 	}
 	receiveAudio(message) {
-		this.outputBufferHead = message.offset + message.size;
+		let head = message.offset + message.size;
+		if (head >= this.outputBufferSize)
+			head -= this.outputBufferSize;
+		this.outputBufferHead = head;
+		this.maybeStartOutput();
 	}
 	receiveFunctionCall(message) {
 		this.onFunctionCall(message.call, message.name, message.parameters);
@@ -291,11 +305,34 @@ class ChatAudioIO {
 		this.outputCompletionsHead = 0;
 		this.outputChunkBusy.fill(0);
 	}
+	computeOutputPrebufferBytes(sampleRate) {
+		let bytes = Math.round((sampleRate * 2 * this.outputPrebufferMS) / 1000);
+		if (bytes < this.outputChunkSize)
+			bytes = this.outputChunkSize;
+		return bytes;
+	}
+	bufferedOutputBytes(start = this.outputBufferQueued) {
+		const stop = this.outputBufferHead;
+		return (stop - start + this.outputBufferSize) % this.outputBufferSize;
+	}
+	maybeStartOutput() {
+		if (!this.output || this.outputStarted)
+			return;
+		if (this.outputPrebuffering && (this.bufferedOutputBytes() < this.outputPrebufferBytes))
+			return;
+		this.outputPrebuffering = false;
+		this.output.start();
+		this.output.volume = this.volume;
+		this.outputStarted = true;
+		this.outputLevelAt = Date.now();
+	}
 	
 	ensureInput() {
 		if (this.input) return;
 		this.output?.close();
 		this.output = null;
+		this.outputStarted = false;
+		this.outputPrebuffering = false;
 		this.resetOutputAsyncState();
 		let when = Date.now() + 500;
 		this.input = new AudioIn({
@@ -338,13 +375,19 @@ class ChatAudioIO {
 		this.input = null;
 		this.ready = false;
 		this.outputBufferQueued = this.outputBufferTail;
+		this.outputStarted = false;
+		this.outputPrebuffering = (this.state == ChatAudioIO.LISTENING);
 		this.resetOutputAsyncState();
 		this.output = new AudioOut.Async({
 			sampleRate: this.outputSampleRate,
 			onWritable: (size) => {
+				const now = Date.now();
+				const updateLevel = now >= this.outputLevelAt;
+				if (updateLevel)
+					this.outputLevelAt = now + this.outputLevelIntervalMS;
 				let start = this.outputBufferQueued;
 				let stop = this.outputBufferHead;
-				let level = 0;
+				let level = updateLevel ? 0 : this.level;
 				const chunkSize = this.outputChunkSize;
 				while (size > 0) {
 					let delta = 0;
@@ -369,9 +412,11 @@ class ChatAudioIO {
 						break;
 
 					const samples = new Uint8Array(this.outputBuffer, start, delta);
-					const samplesLevel = computeLevel(samples);
-					if (level < samplesLevel)
-						level = samplesLevel;
+					if (updateLevel) {
+						const samplesLevel = computeLevel(samples);
+						if (level < samplesLevel)
+							level = samplesLevel;
+					}
 
 					const chunk = this.outputChunkViews[slot];
 					chunk.set(samples);
@@ -387,14 +432,13 @@ class ChatAudioIO {
 				}
 				this.outputBufferQueued = start;
 				this.maybeOutputFinished();
-				if (this.level != level) {
+				if (updateLevel && (this.level != level)) {
 					this.level = level;
 					this.onOutputLevelChanged(level);
 				}
 			},
 		});
-		this.output.start();
-		this.output.volume = this.volume;
+		this.maybeStartOutput();
 	}
 }
 
