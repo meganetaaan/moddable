@@ -20,9 +20,11 @@
 
 import AudioIn from "embedded:io/audio/in";
 import AudioOut from "embedded:io/audio/out";
+import Timer from "timer";
 import Worker from "worker";
 
 function computeLevel(buffer) { return native("xs_computeLevel").call(this, buffer); };
+function log(message) { trace(`[ChatAudioIO] ${message}\n`); }
 
 class ChatAudioIO {
 	static FAILED = -1;
@@ -62,9 +64,22 @@ class ChatAudioIO {
 		this.outputBufferSize = 512 * 1024;
 		this.outputBuffer = new SharedArrayBuffer(this.outputBufferSize);
 		this.outputSampleRate = 24000;
-   		this.outputBufferHead = 0;
+	   	this.outputBufferHead = 0;
 		this.outputBufferTail = 0;
- 		this.barrier = new Int32Array(new SharedArrayBuffer(4));
+		this.outputBufferQueued = 0;
+	 	this.barrier = new Int32Array(new SharedArrayBuffer(4));
+		this.inputDeferred = false;
+		// Keep startup allocations small on constrained heaps.
+		this.outputChunkSize = 2048;
+		this.outputChunkCursor = 0;
+		this.outputChunkViews = [];
+		for (let i = 0; i < 4; i++)
+			this.outputChunkViews.push(new Uint8Array(new ArrayBuffer(this.outputChunkSize)));
+		this.outputChunkBusy = new Uint8Array(this.outputChunkViews.length);
+		this.outputCompletionTails = [];
+		this.outputCompletionSlots = [];
+		this.outputCompletionsHead = 0;
+		this.outputCompletionCallback = () => this.outputCompleted();
       
 		this.level = 0;
 		this.microphone = 1;
@@ -85,6 +100,7 @@ class ChatAudioIO {
 		this.worker = null;
 		this.output?.close();
 		this.output = null;
+		this.resetOutputAsyncState();
 		this.input?.close();
 		this.input = null;
 	}
@@ -97,6 +113,7 @@ class ChatAudioIO {
 			this.output.volume = volume;
 	}
 	createWorker(specifier, instructions, functions, voiceID, providerID, modelID) {
+		log(`createWorker specifier=${specifier}`);
 		this.worker = new Worker(specifier, {
 			static: 512 * 1024,
 			chunk: {
@@ -143,6 +160,7 @@ class ChatAudioIO {
 		}
 	}
 	connect() {
+		log("connect");
 		this.state = ChatAudioIO.CONNECTING;
 		this.inputBufferOffset = 0;
 		Atomics.store(this.barrier, 0, 0);
@@ -150,6 +168,7 @@ class ChatAudioIO {
 		this.onStateChanged(this.state);
 	}
 	connected() {
+		log("connected");
 		this.state = ChatAudioIO.CONNECTED;
 		this.onStateChanged(this.state);
 		this.state = ChatAudioIO.SPEAKING;
@@ -157,17 +176,20 @@ class ChatAudioIO {
 			this.onStateChanged(this.state);
 	}
 	disconnect() {
+		log("disconnect");
 		this.state = ChatAudioIO.DISCONNECTING;
 		this.worker.postMessage({ id:"disconnect" });
 		this.onStateChanged(this.state);
 	}
 	disconnected() {
+		log("disconnected");
 		this.error = "";
 		this.state = ChatAudioIO.DISCONNECTED;
 		this.ensureInput();
 		this.onStateChanged(this.state);
 	}
 	failed(message) {
+		log(`failed: ${message?.string ?? "unknown"}`);
 		this.error = message.string;
 		this.state = ChatAudioIO.FAILED;
 		this.ensureInput();
@@ -206,11 +228,75 @@ class ChatAudioIO {
 	speak() {
 		this.state = ChatAudioIO.WAITING;
 	}
+	maybeOutputFinished() {
+		if (
+			(this.state == ChatAudioIO.WAITING) &&
+			(this.outputBufferTail == this.outputBufferQueued) &&
+			(this.outputBufferQueued == this.outputBufferHead)
+		) {
+			this.worker.postMessage({ id:"listened" });
+			this.state = ChatAudioIO.SPEAKING;
+			if (!this.inputDeferred) {
+				this.inputDeferred = true;
+				Timer.set(() => {
+					this.inputDeferred = false;
+					// Defer close/open outside AudioOut completion callback context.
+					if (this.state == ChatAudioIO.SPEAKING)
+						this.ensureInput();
+				}, 0);
+			}
+		}
+	}
+	outputPlayed(tail) {
+		// Ignore late callbacks that may race with close()/state changes.
+		if (!this.output)
+			return;
+		this.outputBufferTail = tail;
+		Atomics.store(this.barrier, 0, tail);
+		Atomics.notify(this.barrier, 0);
+		this.maybeOutputFinished();
+	}
+	outputCompleted() {
+		const head = this.outputCompletionsHead;
+		if (head >= this.outputCompletionTails.length)
+			return;
+		const tail = this.outputCompletionTails[head];
+		const slot = this.outputCompletionSlots[head];
+		this.outputCompletionTails[head] = undefined;
+		this.outputCompletionSlots[head] = undefined;
+		if (slot !== undefined)
+			this.outputChunkBusy[slot] = 0;
+		this.outputCompletionsHead = head + 1;
+		if (this.outputCompletionsHead == this.outputCompletionTails.length)
+			this.resetOutputAsyncState();
+		this.outputPlayed(tail);
+	}
+	acquireOutputChunk() {
+		const busy = this.outputChunkBusy;
+		const length = busy.length;
+		let cursor = this.outputChunkCursor;
+		for (let i = 0; i < length; i++) {
+			const index = (cursor + i) % length;
+			if (!busy[index]) {
+				busy[index] = 1;
+				this.outputChunkCursor = (index + 1) % length;
+				return index;
+			}
+		}
+		return -1;
+	}
+	resetOutputAsyncState() {
+		this.outputCompletionTails.length = 0;
+		this.outputCompletionSlots.length = 0;
+		this.outputCompletionsHead = 0;
+		this.outputChunkBusy.fill(0);
+	}
 	
 	ensureInput() {
 		if (this.input) return;
 		this.output?.close();
 		this.output = null;
+		this.resetOutputAsyncState();
 		let when = Date.now() + 500;
 		this.input = new AudioIn({
 			sampleRate: this.inputSampleRate,
@@ -251,50 +337,56 @@ class ChatAudioIO {
 		this.input?.close();
 		this.input = null;
 		this.ready = false;
-		this.output = new AudioOut({
+		this.outputBufferQueued = this.outputBufferTail;
+		this.resetOutputAsyncState();
+		this.output = new AudioOut.Async({
 			sampleRate: this.outputSampleRate,
 			onWritable: (size) => {
-				let start = this.outputBufferTail;
+				let start = this.outputBufferQueued;
 				let stop = this.outputBufferHead;
 				let level = 0;
-				if (stop < start) {
-					let limit = this.outputBufferSize;
-					if ((start < limit) && (size > 0)) {
-						let delta = limit - start;
-						if (delta > size)
-							delta = size;
-						const samples = new Uint8Array(this.outputBuffer, start, delta);
-						const samplesLevel = computeLevel(samples);
-						if (level < samplesLevel)
-							level = samplesLevel;
-						this.output.write(samples);
-						start += delta;
-						size -= delta;
+				const chunkSize = this.outputChunkSize;
+				while (size > 0) {
+					let delta = 0;
+					if (stop < start) {
+						delta = this.outputBufferSize - start;
 					}
-					if (start == limit)
-						start = 0;	
-				}
-				if ((start < stop) && (size > 0)) {
-					let delta = stop - start;
+					else if (start < stop) {
+						delta = stop - start;
+					}
+					else {
+						break;
+					}
 					if (delta > size)
 						delta = size;
+					if (delta > chunkSize)
+						delta = chunkSize;
+					if (delta <= 0)
+						break;
+
+					const slot = this.acquireOutputChunk();
+					if (slot < 0)
+						break;
+
 					const samples = new Uint8Array(this.outputBuffer, start, delta);
 					const samplesLevel = computeLevel(samples);
 					if (level < samplesLevel)
 						level = samplesLevel;
-					this.output.write(samples);
-					start += delta;
+
+					const chunk = this.outputChunkViews[slot];
+					chunk.set(samples);
+					let next = start + delta;
+					if (next == this.outputBufferSize)
+						next = 0;
+
+					this.outputCompletionTails.push(next);
+					this.outputCompletionSlots.push(slot);
+					this.output.write((delta == chunkSize) ? chunk : chunk.subarray(0, delta), this.outputCompletionCallback);
+					start = next;
 					size -= delta;
 				}
-				this.outputBufferTail = start;
-				Atomics.store(this.barrier, 0, start);
-				Atomics.notify(this.barrier, 0);
-
-				if ((start == stop) && (this.state == ChatAudioIO.WAITING)) {
-					this.worker.postMessage({ id:"listened" });
-					this.state = ChatAudioIO.SPEAKING;
-					this.ensureInput();
-				}
+				this.outputBufferQueued = start;
+				this.maybeOutputFinished();
 				if (this.level != level) {
 					this.level = level;
 					this.onOutputLevelChanged(level);
