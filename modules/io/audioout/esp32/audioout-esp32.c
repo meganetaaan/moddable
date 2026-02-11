@@ -225,9 +225,15 @@ void xs_audioout_constructor_(xsMachine *the)
 #ifndef I2S_DMA_BUFFER_MAX_SIZE
 	#define I2S_DMA_BUFFER_MAX_SIZE     (4092)
 #endif
+#ifndef MODDEF_AUDIOOUT_DMADESCNUM
+	#define MODDEF_AUDIOOUT_DMADESCNUM 6
+#endif
+#ifndef MODDEF_AUDIOOUT_DMAFRAMENUM
+	#define MODDEF_AUDIOOUT_DMAFRAMENUM (I2S_DMA_BUFFER_MAX_SIZE / 2)
+#endif
 
-	tx_chan_cfg.dma_desc_num = 6;
-	tx_chan_cfg.dma_frame_num = I2S_DMA_BUFFER_MAX_SIZE / 2;
+	tx_chan_cfg.dma_desc_num = MODDEF_AUDIOOUT_DMADESCNUM;
+	tx_chan_cfg.dma_frame_num = MODDEF_AUDIOOUT_DMAFRAMENUM;
 
 #ifdef MODDEF_AUDIOOUT_I2S_PDM_PIN
 	if (gPDMAudioOutBusy)

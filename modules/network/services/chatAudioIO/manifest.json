@@ -30,7 +30,11 @@
 		"audioOut": {
 			"bitsPerSample": 16,
 			"numChannels": 1,
-			"sampleRate": 24000
+			"sampleRate": 24000,
+			"dmaDescNum": 8
+		},
+		"task": {
+			"queueLength": 20
 		}
 	},
 	"modules": {
