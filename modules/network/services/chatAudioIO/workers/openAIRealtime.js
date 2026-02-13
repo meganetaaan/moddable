@@ -24,6 +24,8 @@ import {Encode} from "ChatAudioIO/Codecs";
 
 const audioPrefix = Object.freeze(new Uint8Array(ArrayBuffer.fromString(`{"type":"input_audio_buffer.append","audio":"`)), true);
 const audioSuffix = Object.freeze(new Uint8Array(ArrayBuffer.fromString('"}')), true);
+const OPENAI_OUTPUT_SAMPLE_RATE = 24000;
+const PLAYBACK_OUTPUT_SAMPLE_RATE = 32000;
 
 class OpenAIRealTimeModel extends ChatWebSocketWorker {
 	constructor(options) {
@@ -64,7 +66,7 @@ class OpenAIRealTimeModel extends ChatWebSocketWorker {
 				output: {
 					format: {
 						type: "audio/pcm",
-						rate: 24000,
+						rate: OPENAI_OUTPUT_SAMPLE_RATE,
 					},
 					voice,
 				}
@@ -179,5 +181,6 @@ class OpenAIRealTimeModel extends ChatWebSocketWorker {
 }
 
 new OpenAIRealTimeModel({
-	inputSampleRate: 8000
+	inputSampleRate: 8000,
+	outputSampleRate: PLAYBACK_OUTPUT_SAMPLE_RATE
 });

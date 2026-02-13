@@ -23,6 +23,7 @@ import JSONBase64Parser from "JSONBase64Parser";
 import TextEncoder from "text/encoder";
 
 const WebSocketClient = device.network.ws.io;
+const DEFAULT_OUTPUT_MINIMUM_MS = 160;
 
 const text = Object.freeze({binary: false});
 function log(message) { trace(`[ChatWS] ${message}\n`); }
@@ -36,8 +37,9 @@ class ChatWebSocketWorker extends ChatWorker {
 	constructor(options) {
 		super(options);
 		this.ws = null;
-		// 500 ms minimum chunk to reduce callback/message frequency.
-		this.outputMinimum = options.outputMinimum ?? (options.outputSampleRate ?? 24000);
+		const outputSampleRate = options.outputSampleRate ?? 24000;
+		const defaultOutputMinimum = Math.max(2048, ((outputSampleRate * 2 * DEFAULT_OUTPUT_MINIMUM_MS) / 1000) | 0);
+		this.outputMinimum = options.outputMinimum ?? defaultOutputMinimum;
 		this.silence = new ArrayBuffer(this.outputMinimum);
 	}
 	close() {

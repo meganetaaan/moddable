@@ -27,7 +27,8 @@ class ChatWorker {
 		}
 		const inputSampleRate = options.inputSampleRate ?? 24000;
 		const outputSampleRate = options.outputSampleRate ?? 24000;
-		self.postMessage({ id:"configureAudio", inputSampleRate, outputSampleRate });
+		const outputPrebufferMS = options.outputPrebufferMS;
+		self.postMessage({ id:"configureAudio", inputSampleRate, outputSampleRate, outputPrebufferMS });
 	}
 	post(id, param) {
 		self.postMessage({ id, ...param });

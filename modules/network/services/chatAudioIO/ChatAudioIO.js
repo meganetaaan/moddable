@@ -81,7 +81,7 @@ class ChatAudioIO {
 		this.outputCompletionsHead = 0;
 		this.outputCompletionCallback = () => this.outputCompleted();
 		this.outputStarted = false;
-		this.outputPrebufferMS = 500;
+		this.outputPrebufferMS = 160;
 		this.outputPrebufferBytes = this.computeOutputPrebufferBytes(this.outputSampleRate);
 		this.outputPrebuffering = false;
 		this.outputLevelIntervalMS = 50;
@@ -166,6 +166,9 @@ class ChatAudioIO {
 				this.ensureOutput();
 			}
 		}
+		const outputPrebufferMS = message.outputPrebufferMS;
+		if ((outputPrebufferMS !== undefined) && (this.outputPrebufferMS != outputPrebufferMS))
+			this.outputPrebufferMS = outputPrebufferMS;
 		this.outputPrebufferBytes = this.computeOutputPrebufferBytes(this.outputSampleRate);
 	}
 	connect() {
