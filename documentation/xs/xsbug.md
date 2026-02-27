@@ -170,3 +170,9 @@ To use xsbug-log with `mcconfig` use `-dl` (for debug log) in place of`-d` on th
 mcconfig -dl -m -p esp32/moddable_two
 ```
 
+When launching `xsbug-log` directly, optional filters are available:
+
+```shell
+cd $MODDABLE/tools/xsbug-log
+node xsbug-log --channel runtime,error --format jsonl serial2xsbug /dev/ttyUSB0 921600 8N1
+```

@@ -88,6 +88,20 @@ mcconfig [manifest] [-d] [-f format] [-i] [-m] [-o directory] [-p platform] [-r 
 
 > **Note**: `xsbug-log` supports an optional plug-in to allow for customizing output and control flow. Use the environment variable `XSBUG_LOGMACHINE` to set the path of a custom `LogMachine` class implementation (that extends `Machine`).  See `$MODDABLE/tools/xsbug-log/xsbug-machine.js` for the base class, and `$MODDABLE/tools/xsbug-log/xsbug-logmachine.js` for the default implementation.
 
+> **Note**: `xsbug-log` supports log filtering options when launched directly:
+>
+> - `--channel runtime,error,test` include only specific channels
+> - `--exclude system` exclude channels
+> - `--format jsonl` emit structured output
+> - `--strict-channel` suppress unclassified lines
+>
+> Example:
+>
+> ```shell
+> cd $MODDABLE/tools/xsbug-log
+> node xsbug-log --channel runtime,error --format jsonl serial2xsbug /dev/ttyUSB0 921600 8N1
+> ```
+
 > **Note**: The `-dn` option is currently unsupported on Windows. It will be implemented in the near future.
 
 <a id="buildtargets"></a>

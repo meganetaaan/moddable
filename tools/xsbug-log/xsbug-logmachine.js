@@ -26,6 +26,7 @@ const { Buffer } = require('node:buffer');
 const { Machine } = require('./xsbug-machine.js');
 
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+const kChannels = new Set(["build", "runtime", "test", "error", "system"]);
 let gCRC32Table;
 
 function getCRC32Table() {
@@ -66,10 +67,10 @@ function rgb565ToRGBA(raw, width, height, pixelFormat) {
 	const rgba = Buffer.alloc(width * height * 4);
 	let inOffset = 0;
 	let outOffset = 0;
-	const le = pixelFormat !== "rgb565be";
+	const littleEndian = (pixelFormat !== "rgb565be");
 
 	for (let i = 0; i < width * height; i++) {
-		const value = le
+		const value = littleEndian
 			? (raw[inOffset] | (raw[inOffset + 1] << 8))
 			: ((raw[inOffset] << 8) | raw[inOffset + 1]);
 		inOffset += 2;
@@ -121,6 +122,64 @@ class LogMachine extends Machine {
 	binaryOutput = null;
 	capture = null;
 	captureDiscard = false;
+	#format;
+	#include;
+	#exclude;
+	#strictChannel;
+
+	constructor(input, output, options = {}) {
+		super(input, output);
+
+		this.#format = (options.format === "jsonl") ? "jsonl" : "text";
+		this.#strictChannel = !!options.strictChannel;
+		this.#include = options.channel ? new Set(options.channel.filter(item => kChannels.has(item))) : null;
+		this.#exclude = options.exclude ? new Set(options.exclude.filter(item => kChannels.has(item))) : null;
+	}
+
+	#resolveChannel(channel) {
+		if (kChannels.has(channel))
+			return channel;
+		if (this.#strictChannel)
+			return null;
+		return "runtime";
+	}
+	#shouldPrint(channel) {
+		if (!channel)
+			return false;
+		if (this.#include && !this.#include.has(channel))
+			return false;
+		if (this.#exclude && this.#exclude.has(channel))
+			return false;
+		return true;
+	}
+	#emit(channel, message, severity = "info", extra = undefined) {
+		channel = this.#resolveChannel(channel);
+		if (!this.#shouldPrint(channel))
+			return;
+
+		if (this.#format === "jsonl") {
+			const payload = {
+				ts: new Date().toISOString(),
+				channel,
+				severity,
+				message,
+				source: "xsbug-log"
+			};
+			if (extra && ("object" === typeof extra))
+				Object.assign(payload, extra);
+			console.log(JSON.stringify(payload));
+		}
+		else {
+			console.log(message);
+		}
+	}
+	#guessChannel(message) {
+		if (/(^|\b)(FAIL|PASS|SKIP|REPORT|TEST262|test262)(\b|$)/.test(message))
+			return "test";
+		if (/(error|exception|assert|failed|panic|timeout|unhandled)/i.test(message))
+			return "error";
+		return "runtime";
+	}
 
 	#capturePath(target) {
 		let result = target ?? "build/tmp/snapshot.png";
@@ -139,7 +198,7 @@ class LogMachine extends Machine {
 			metadata = JSON.parse(payload);
 		}
 		catch {
-			console.log(`#xsbug-log invalid capture metadata: ${payload}`);
+			this.#emit("system", `#xsbug-log invalid capture metadata: ${payload}`, "error");
 			this.captureDiscard = true;
 			return;
 		}
@@ -147,14 +206,14 @@ class LogMachine extends Machine {
 		const width = metadata.width | 0;
 		const height = metadata.height | 0;
 		if ((width <= 0) || (height <= 0)) {
-			console.log(`#xsbug-log invalid capture size: ${width}x${height}`);
+			this.#emit("system", `#xsbug-log invalid capture size: ${width}x${height}`, "error");
 			this.captureDiscard = true;
 			return;
 		}
 
 		const pixelFormat = metadata.pixelFormat ?? "rgb565le";
 		if ((pixelFormat !== "rgb565le") && (pixelFormat !== "rgb565be")) {
-			console.log(`#xsbug-log unsupported capture pixel format: ${pixelFormat}`);
+			this.#emit("system", `#xsbug-log unsupported capture pixel format: ${pixelFormat}`, "error");
 			this.captureDiscard = true;
 			return;
 		}
@@ -197,13 +256,18 @@ class LogMachine extends Machine {
 			png = encodePNG(raw, capture.width, capture.height, capture.pixelFormat);
 		}
 		catch (error) {
-			console.log(`#xsbug-log capture error: ${error.message}`);
+			this.#emit("system", `#xsbug-log capture error: ${error.message}`, "error");
 			return true;
 		}
 
 		fs.mkdirSync(path.dirname(capture.outputPath), { recursive: true });
 		fs.writeFileSync(capture.outputPath, png);
-		console.log(`#xsbug-log capture: ${capture.outputPath}`);
+		this.#emit("system", `#xsbug-log capture: ${capture.outputPath}`, "info", {
+			capturePath: capture.outputPath,
+			width: capture.width,
+			height: capture.height,
+			pixelFormat: capture.pixelFormat
+		});
 		return true;
 	}
 
@@ -211,7 +275,7 @@ class LogMachine extends Machine {
 		super.onTitleChanged(title, tag);
 		
 		if (title && (title !== "mcsim"))
-			console.log(`#xsbug-log connected to "${title}"`);
+			this.#emit("system", `#xsbug-log connected to "${title}"`, "info", { title });
 
 		this.doSetAllBreakpoint([], false, true);		// break on exceptions
 	}
@@ -232,7 +296,7 @@ class LogMachine extends Machine {
 					if (!this.#captureEnd()) {
 						if (this.binaryOutput) {
 							fs.closeSync(this.binaryOutput);
-							console.log(`#xsbug-log capture: ${this.binaryPath}`);
+							this.#emit("system", `#xsbug-log capture: ${this.binaryPath}`);
 						}
 						delete this.binaryOutput;
 						delete this.binaryName;
@@ -240,29 +304,35 @@ class LogMachine extends Machine {
 					}
 				}
 				else if (payload.startsWith("@")) {
-					console.log(`ignoring ${payload}`);
+					this.#emit("system", `ignoring ${payload}`);
 				}
 				else if (payload) {
 					if (!this.#captureAppend(payload)) {
 						if (!this.binaryOutput) {
-							this.binaryPath = process.env.MODDABLE + "/build/tmp/" + (this.binaryName ? this.binaryName : "log.bin");
+							const root = process.env.MODDABLE ?? process.cwd();
+							this.binaryPath = path.join(root, "build/tmp", this.binaryName ? this.binaryName : "log.bin");
+							fs.mkdirSync(path.dirname(this.binaryPath), { recursive: true });
 							this.binaryOutput = fs.openSync(this.binaryPath, "w+");
 						}
 						fs.writeSync(this.binaryOutput, Buffer.from(payload, "base64"), 0);
 					}
 				}
 			}
-			else
-				console.log(this.log.slice(0, this.log.length - 1));
+			else {
+				const message = this.log.slice(0, this.log.length - 1);
+				const channel = this.#guessChannel(message);
+				this.#emit(channel, message, channel === "error" ? "error" : "info");
+			}
 			this.log = "";
 		}
 	}
 	onBroken(path, line, text) {
-		this.view.frames.forEach((frame, index) => {
+		const frames = this.view.frames ?? [];
+		frames.forEach((frame, index) => {
 			let line = "  #" + index + ": " + frame.name;
 			if (frame.path)
-				line += " " + frame.path + ":" + frame.line
-			console.log(line);
+				line += " " + frame.path + ":" + frame.line;
+			this.#emit("error", line, "error");
 		});
 
 		super.onBroken(path, line, text);
