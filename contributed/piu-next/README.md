@@ -8,7 +8,7 @@ Current scope:
 - Batched updates (`batch`) to reduce redundant rerenders
 - Typed ref handle API (`createRef`, `attachRef`, `detachRef`) as an `anchor` replacement base
 - TSX transpile target to a compact IR (`node`, `fragment`, `text`)
-- Piu runtime (`mountPiuApplication`) with typed `onTap`, ref wiring, and queued reactive rerender apply
+- Piu runtime (`mountPiuApplication`) with typed `onTap`, ref wiring, and queued reactive diff apply (no full `application.empty/add` on update)
 - Tween animation utility (`tweenSignal`, `easings`) with native driver hook (`setNativeTweenDriver`)
 - Strict TypeScript with no `any` in public API
 - Test-first workflow with Node test runner

@@ -162,14 +162,16 @@ test("mountPiuApplication updates rendered label text when signal changes", () =
 	);
 
 	assert.equal(mounted.application.first.string, "Count: 1");
-	assert.equal(stats.applicationEmpties, 1);
+	assert.equal(stats.applicationAdds, 1);
+	assert.equal(stats.applicationEmpties, 0);
 	assert.equal(stats.labelConstructed, 1);
 
 	count.set(2);
 
 	assert.equal(mounted.application.first.string, "Count: 2");
-	assert.equal(stats.applicationEmpties, 2);
-	assert.equal(stats.labelConstructed, 2);
+	assert.equal(stats.applicationAdds, 1);
+	assert.equal(stats.applicationEmpties, 0);
+	assert.equal(stats.labelConstructed, 1);
 
 	mounted.dispose();
 });
@@ -194,16 +196,26 @@ test("mountPiuApplication reflects keyed child order updates", () => {
 	});
 
 	const row = mounted.application.first;
+	const labelA = row.first;
+	const labelB = row.last;
 	assert.equal(row.first.string, "A");
 	assert.equal(row.last.string, "B");
+	assert.equal(stats.applicationAdds, 1);
+	assert.equal(stats.applicationEmpties, 0);
 	assert.equal(stats.labelConstructed, 2);
 
 	flip.set(true);
 
 	const nextRow = mounted.application.first;
+	assert.equal(nextRow, row);
 	assert.equal(nextRow.first.string, "B");
 	assert.equal(nextRow.last.string, "A");
-	assert.equal(stats.labelConstructed, 4);
+	assert.equal(nextRow.first, labelB);
+	assert.equal(nextRow.last, labelA);
+	assert.equal(stats.applicationAdds, 1);
+	assert.equal(stats.applicationEmpties, 0);
+	assert.equal(stats.applicationInserts, 0);
+	assert.equal(stats.labelConstructed, 2);
 
 	mounted.dispose();
 });
@@ -227,6 +239,7 @@ test("mountPiuApplication updates refs to the latest rendered node", () => {
 	assert.equal(refB.current, null);
 
 	swap.set(true);
+	assert.equal(mounted.application.first, label);
 	assert.equal(refA.current, null);
 	assert.equal(refB.current, mounted.application.first);
 
