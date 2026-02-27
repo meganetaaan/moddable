@@ -185,6 +185,34 @@ The tests appear as a `moddable` category in the Test list.
 
 Once the testmc test app is running and the tests are in place, selecting tests, running tests, and viewing results is done in the same way as test262 tests.
 
+### Headless CLI Runner
+
+`tools/testmc/mctest.js` provides an experimental headless runner for CI and terminal-only workflows.
+
+List tests:
+
+```shell
+node $MODDABLE/tools/testmc/mctest.js list --app testmc --root $MODDABLE/tests/modules --select piu/rgb565le/*
+```
+
+Run selected tests and emit JSON:
+
+```shell
+node $MODDABLE/tools/testmc/mctest.js run \
+  --app testmc \
+  --root $MODDABLE/tests/modules \
+  --select piu/rgb565le/* \
+  --launch "mcconfig -d -m -p sim/moddable_two" \
+  --format json \
+  --out ./artifacts/mctest-report.json
+```
+
+Rerun only failures:
+
+```shell
+node $MODDABLE/tools/testmc/mctest.js rerun --failed ./artifacts/mctest-report.json
+```
+
 <a id="testing-on-simulator"></a>
 ## Running Tests on the Simulator
 The test262 and testmc test apps may also be run on the mcsim, the Moddable SDK's simulator. This is useful for verifying that the simulator is providing consistent results with the target device and for developing tests. Of course, tests which depend on features the simulator does not support, such as hardware I/O, will fail.

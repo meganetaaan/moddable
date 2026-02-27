@@ -6,6 +6,18 @@ For in-depth documentation on using testmc see [Testing](../../documentation/too
 
 `testmc` now supports `screen.captureImage(path)` for PNG snapshots when running with `mcconfig -dl` and `xsbug-log`.
 
+### Headless Runner (experimental)
+
+`mctest.js` provides a CLI runner for headless test execution.
+
+```text
+node tools/testmc/mctest.js list --app testmc --root tests/modules --select piu/rgb565le/*
+node tools/testmc/mctest.js run --app testmc --root tests/modules --select piu/rgb565le/* --launch "mcconfig -d -m -p sim/moddable_two"
+node tools/testmc/mctest.js rerun --failed ./artifacts/report.json
+```
+
+> **Note**: `mctest.js` reuses `tools/xsbug-log/xsbug-machine.js`. Run `npm install` in `tools/xsbug-log` first.
+
 ### Manifests
 
 `testmc` may be built with different manifests to test different combinations of features. 
