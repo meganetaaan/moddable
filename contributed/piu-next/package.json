@@ -1,0 +1,17 @@
+{
+  "name": "piu-next",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist",
+    "test": "npm run build && node --loader ./tests/alias-loader.mjs --test tests/*.test.mjs",
+    "test:e2e:build": "cd ../../tools/testmc && mcconfig -dn -m -p lin -x 127.0.0.1:5124 -t build manifest_piu_next.json",
+    "test:e2e:once": "node ../../tools/testmc/mctest.js run --app testmc --root tests/e2e --select counter-tap-once-e2e.js --host 127.0.0.1 --port 5124 --launch \"mcconfig -dn -m -p lin -x 127.0.0.1:5124 -t xsbug manifest_piu_next.json\" --launch-cwd ../../tools/testmc --connect-timeout 60000 --timeout 60000",
+    "test:e2e:twice": "node ../../tools/testmc/mctest.js run --app testmc --root tests/e2e --select counter-tap-twice-e2e.js --host 127.0.0.1 --port 5124 --launch \"mcconfig -dn -m -p lin -x 127.0.0.1:5124 -t xsbug manifest_piu_next.json\" --launch-cwd ../../tools/testmc --connect-timeout 60000 --timeout 60000",
+    "test:e2e": "npm run test:e2e:build && npm run test:e2e:once && npm run test:e2e:twice",
+    "test:perf": "node tests/e2e/perf-compare.mjs",
+    "test:ci": "npm test && npm run test:e2e && npm run test:perf"
+  }
+}

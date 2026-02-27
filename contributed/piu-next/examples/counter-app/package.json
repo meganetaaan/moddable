@@ -1,0 +1,11 @@
+{
+  "name": "piu-next-counter-app",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "mcconfig -d -m -p lin -t build",
+    "sim:build": "mcconfig -d -m -p lin -t build",
+    "sim:run": "mcconfig -d -m -p lin"
+  }
+}

@@ -39,11 +39,16 @@ catch (error) {
 	throw error;
 }
 
+function debugLog(message) {
+	if (process.env.MCTEST_DEBUG)
+		console.error(`#mctest ${message}`);
+}
+
 function usage() {
 	console.log("Usage:");
 	console.log("  mctest.js list [--app testmc|test262] [--root <dir>] [--select <glob,...>] [--format text|json]");
-	console.log("  mctest.js run [--app testmc|test262] [--root <dir>] [--select <glob,...>] [--launch <command>] [--host 127.0.0.1] [--port 5002] [--connect-timeout 30000] [--timeout 30000] [--format text|json|junit] [--out <path>]");
-	console.log("  mctest.js rerun --failed <json-report> [--launch <command>] [--host 127.0.0.1] [--port 5002] [--connect-timeout 30000] [--timeout 30000] [--format text|json|junit] [--out <path>]");
+	console.log("  mctest.js run [--app testmc|test262] [--root <dir>] [--select <glob,...>] [--launch <command>] [--launch-cwd <dir>] [--host 127.0.0.1] [--port 5002] [--connect-timeout 30000] [--timeout 30000] [--format text|json|junit] [--out <path>]");
+	console.log("  mctest.js rerun --failed <json-report> [--launch <command>] [--launch-cwd <dir>] [--host 127.0.0.1] [--port 5002] [--connect-timeout 30000] [--timeout 30000] [--format text|json|junit] [--out <path>]");
 }
 
 function parseArgs(argv) {
@@ -189,7 +194,70 @@ function resolveIncludePath(testRoot, includeName, extraRoots = []) {
 }
 
 function launchCommand(command, cwd) {
-	return exec(command, { cwd });
+	return exec(`exec ${command}`, { cwd });
+}
+
+let gTestmcModuleMap;
+
+function resolveExistingModulePath(pathname) {
+	if (!pathname)
+		return null;
+	if (fs.existsSync(pathname))
+		return pathname;
+	const withJS = `${pathname}.js`;
+	if (fs.existsSync(withJS))
+		return withJS;
+	return null;
+}
+
+function loadTestmcModuleMap() {
+	if (gTestmcModuleMap !== undefined)
+		return gTestmcModuleMap;
+
+	const candidates = [
+		path.join(moddableRoot, "build", "tmp", "lin", "mc", "debug", "testmc", "manifest_flat.json"),
+		path.join(moddableRoot, "build", "tmp", "lin", "mc", "release", "testmc", "manifest_flat.json"),
+	];
+
+	const map = new Map();
+	for (const candidate of candidates) {
+		if (!fs.existsSync(candidate))
+			continue;
+		const manifest = JSON.parse(fs.readFileSync(candidate, "utf8"));
+		const modules = manifest.modules ?? {};
+		for (const [id, values] of Object.entries(modules)) {
+			if ((id === "*") || (id === "~"))
+				continue;
+			if (!Array.isArray(values) || !values.length)
+				continue;
+			const resolved = resolveExistingModulePath(values[0]);
+			if (resolved)
+				map.set(id, resolved);
+		}
+		break;
+	}
+
+	gTestmcModuleMap = map;
+	return gTestmcModuleMap;
+}
+
+function resolveTestmcModulePath(pathname) {
+	const map = loadTestmcModuleMap();
+	const mapped = map.get(pathname);
+	if (!mapped)
+		return null;
+	return resolveExistingModulePath(mapped);
+}
+
+async function waitForReady(machine, timeout, context = "ready") {
+	for (;;) {
+		const message = await machine.waitMessage(timeout);
+		debugLog(`${context} message=${message}`);
+		if (message === ">")
+			return;
+		if (message !== "<")
+			throw new Error(`${context} failed: ${message}`);
+	}
 }
 
 function escapeXML(value) {
@@ -245,6 +313,10 @@ class HeadlessMachine extends Machine {
 		this.messages = [];
 		this.waiters = [];
 		this.connected = false;
+		this.disconnected = false;
+		this.disconnectReason = "";
+		this.title = "";
+		this.onConnected = null;
 		this.waitForConnectResolve = null;
 		this.waitForConnect = new Promise(resolve => {
 			this.waitForConnectResolve = resolve;
@@ -252,20 +324,48 @@ class HeadlessMachine extends Machine {
 	}
 	onTitleChanged(title, tag) {
 		super.onTitleChanged(title, tag);
+		this.title = title ?? "";
+		if (this.title)
+			debugLog(`connected title=${this.title}`);
 		this.connected = true;
 		if (this.waitForConnectResolve) {
 			this.waitForConnectResolve();
 			this.waitForConnectResolve = null;
 		}
-		this.doSetAllBreakpoint([], false, true);
+		if (this.onConnected)
+			this.onConnected(this);
+	}
+	onBroken(pathname, line, text) {
+		const message = text ? String(text) : "exception";
+		debugLog(`broken path=${pathname} line=${line} text=${message}`);
+		super.onBroken(pathname, line, text);
+	}
+	onError(error) {
+		debugLog(`parser error=${error?.message ?? error}`);
+		super.onError(error);
+	}
+	onDisconnected(reason = "disconnected") {
+		if (this.disconnected)
+			return;
+		this.disconnected = true;
+		this.disconnectReason = reason;
+		const error = new Error(reason);
+		const waiters = this.waiters.splice(0);
+		for (const waiter of waiters)
+			waiter.reject(error);
 	}
 	onImport(pathname) {
-		if (fs.existsSync(pathname))
-			this.doModule(pathname, false, fs.readFileSync(pathname, "utf8"));
+		let resolved = resolveExistingModulePath(pathname);
+		if (!resolved)
+			resolved = resolveTestmcModulePath(pathname);
+		debugLog(`import request path=${pathname} resolved=${resolved ? resolved : "(none)"}`);
+		if (resolved)
+			this.doModule(resolved, false, fs.readFileSync(resolved, "utf8"));
 		else
 			this.doGo();
 	}
-	onBubbled(path, line, id, flags, message) {
+	onBubbled(id, flags, path, line, message) {
+		debugLog(`bubble id=${id} flags=${flags} path=${path} line=${line} message=${message}`);
 		if (id !== "test262")
 			return;
 		const waiter = this.waiters.shift();
@@ -275,15 +375,26 @@ class HeadlessMachine extends Machine {
 		}
 		this.messages.push(message);
 	}
+	onLogged(path, line, text) {
+		if (!process.env.MCTEST_DEBUG_LOGS)
+			return;
+		debugLog(`log path=${path} line=${line} text=${text}`);
+	}
 	waitMessage(timeout) {
 		if (this.messages.length)
 			return Promise.resolve(this.messages.shift());
+		if (this.disconnected)
+			return Promise.reject(new Error(this.disconnectReason || "disconnected"));
 		return new Promise((resolve, reject) => {
 			const waiter = {
 				resolve: value => {
 					clearTimeout(timer);
 					resolve(value);
-				}
+				},
+				reject: error => {
+					clearTimeout(timer);
+					reject(error);
+				},
 			};
 			const timer = setTimeout(() => {
 				const index = this.waiters.indexOf(waiter);
@@ -318,12 +429,43 @@ async function runTests(options) {
 	const selected = options.files ?? selectTests(root, allTests, selectPatterns);
 	if (!selected.length)
 		throw new Error("no tests selected");
+	debugLog(`selected tests=${selected.length}`);
+	if ((app === "testmc") && (selected.length > 1)) {
+		const hasNonModule = selected.some(pathname => !parseFrontmatter(pathname).module);
+		if (hasNonModule) {
+			console.error("mctest: warning: multiple non-module tests may leak global bindings. Run individually or use module tests for reliable results.");
+		}
+	}
 
 	const server = net.createServer();
+	const sockets = new Set();
 	const machinePromise = new Promise(resolve => {
+		let settled = false;
+		const maybeResolve = candidate => {
+			if (settled)
+				return;
+			if ((app === "testmc") && (candidate.title !== "testmc")) {
+				debugLog(`waiting for title=testmc (got ${candidate.title || "(empty)"})`);
+				return;
+			}
+			settled = true;
+			resolve(candidate);
+		};
+
 		server.on("connection", socket => {
+			sockets.add(socket);
+			socket.on("close", () => {
+				sockets.delete(socket);
+				if (machine)
+					machine.onDisconnected("socket closed");
+			});
+			socket.on("error", error => {
+				if (machine)
+					machine.onDisconnected(`socket error: ${error?.message ?? error}`);
+			});
 			socket.setEncoding("utf8");
-			resolve(new HeadlessMachine(socket, socket));
+			const machine = new HeadlessMachine(socket, socket);
+			machine.onConnected = maybeResolve;
 		});
 	});
 	await new Promise((resolve, reject) => {
@@ -341,8 +483,20 @@ async function runTests(options) {
 	});
 
 	let launched = null;
-	if (options.launch)
-		launched = launchCommand(options.launch, moddableRoot);
+	if (options.launch) {
+		let launchCwd = moddableRoot;
+		if (options.launchCwd)
+			launchCwd = path.resolve(options.launchCwd);
+		else if (app === "testmc")
+			launchCwd = path.join(moddableRoot, "tools", "testmc");
+		debugLog(`launch cwd=${launchCwd}`);
+		debugLog(`launch cmd=${options.launch}`);
+		launched = launchCommand(options.launch, launchCwd);
+		if (launched && process.env.MCTEST_DEBUG) {
+			launched.stdout?.on("data", data => process.stderr.write(`#mctest launch stdout: ${data}`));
+			launched.stderr?.on("data", data => process.stderr.write(`#mctest launch stderr: ${data}`));
+		}
+	}
 
 	let machine;
 	try {
@@ -350,7 +504,9 @@ async function runTests(options) {
 			machinePromise,
 			new Promise((_, reject) => setTimeout(() => reject(new Error(`connect timeout (${connectTimeout} ms)`)), connectTimeout))
 		]);
-		await machine.waitForConnect;
+		debugLog("machine ready");
+		if (app === "testmc")
+			await waitForReady(machine, connectTimeout, "startup");
 
 		const report = {
 			created_at: new Date().toISOString(),
@@ -363,6 +519,7 @@ async function runTests(options) {
 
 		for (const pathname of selected) {
 			const startedAt = Date.now();
+			debugLog(`start test=${pathname}`);
 			const metadata = parseFrontmatter(pathname);
 			const includes = [];
 			for (const includeName of metadata.includes ?? []) {
@@ -379,12 +536,24 @@ async function runTests(options) {
 				while (queue.length) {
 					const scriptPath = queue.shift();
 					const isLast = queue.length === 0;
-					if (isLast && metadata.module)
+					if (isLast && metadata.module) {
+						debugLog(`import path=${scriptPath} async=${metadata.async ? 1 : 0}`);
 						machine.doImport(scriptPath, metadata.async);
-					else
+					}
+					else {
+						debugLog(`script path=${scriptPath} async=${(isLast ? metadata.async : false) ? 1 : 0}`);
 						machine.doScript(scriptPath, isLast ? metadata.async : false, fs.readFileSync(scriptPath, "utf8"));
+					}
 
-					const bubble = await machine.waitMessage(timeout);
+					debugLog(`wait timeout=${timeout}`);
+					let bubble;
+					for (;;) {
+						bubble = await machine.waitMessage(timeout);
+						debugLog(`recv message=${bubble}`);
+						// testmc readiness marker can arrive at any point; ignore it for per-script result handling.
+						if (bubble !== ">")
+							break;
+					}
 					if (bubble === "<")
 						continue;
 
@@ -408,6 +577,7 @@ async function runTests(options) {
 				status = "failed";
 				message = error.message;
 			}
+			debugLog(`result status=${status}${message ? ` message=${message}` : ""}`);
 
 			const result = {
 				path: path.relative(root, pathname).split(path.sep).join("/"),
@@ -418,7 +588,6 @@ async function runTests(options) {
 			report.results.push(result);
 			if (status === "failed")
 				report.failedPaths.push(pathname);
-			machine.doAbort();
 		}
 
 		const summary = { total: report.results.length, passed: 0, failed: 0, skipped: 0 };
@@ -430,8 +599,13 @@ async function runTests(options) {
 		return summary.failed ? 1 : 0;
 	}
 	finally {
-		if (launched)
+		for (const socket of sockets)
+			socket.destroy();
+		if (launched) {
 			launched.kill();
+			launched.stdout?.destroy();
+			launched.stderr?.destroy();
+		}
 		server.close();
 	}
 }
@@ -476,14 +650,12 @@ async function main() {
 			root: previous.root ?? args.root,
 			files: previous.failedPaths
 		});
-		process.exitCode = code;
-		return;
+		process.exit(code);
 	}
 
 	if (command === "run") {
 		const code = await runTests(args);
-		process.exitCode = code;
-		return;
+		process.exit(code);
 	}
 
 	throw new Error(`unknown command: ${command}`);

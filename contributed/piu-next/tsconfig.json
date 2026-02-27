@@ -1,0 +1,43 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noImplicitAny": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "skipLibCheck": true,
+    "baseUrl": "src",
+    "paths": {
+      "signal": [
+        "signal.ts"
+      ],
+      "ir": [
+        "ir.ts"
+      ],
+      "ref": [
+        "ref.ts"
+      ],
+      "animation": [
+        "animation.ts"
+      ],
+      "piu-runtime": [
+        "piu-runtime.ts"
+      ]
+    },
+    "rootDir": "src",
+    "outDir": "dist",
+    "jsx": "react",
+    "jsxFactory": "node",
+    "jsxFragmentFactory": "fragment"
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "src/**/*.d.ts"
+  ]
+}

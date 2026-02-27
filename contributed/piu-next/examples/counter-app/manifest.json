@@ -1,0 +1,24 @@
+{
+	"include": [
+		"$(MODDABLE)/examples/manifest_base.json",
+		"$(MODDABLE)/examples/manifest_piu.json",
+		"$(MODDABLE)/examples/manifest_typings.json"
+	],
+	"modules": {
+		"*": [
+			"./src/main",
+			"../../src/*"
+		]
+	},
+	"resources": {
+		"*-mask": [
+			"$(MODDABLE)/examples/assets/fonts/OpenSans-Semibold-28",
+			"$(MODDABLE)/examples/assets/fonts/OpenSans-Regular-52",
+			"$(MODDABLE)/examples/assets/fonts/OpenSans-Semibold-20",
+			"$(MODDABLE)/examples/assets/fonts/OpenSans-Regular-18"
+		]
+	},
+	"creation": {
+		"main": "main"
+	}
+}
