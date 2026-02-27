@@ -4,6 +4,7 @@ import { effect, type Unsubscribe } from "signal";
 
 type Dictionary = Record<string, unknown>;
 type TapHandler = (content: unknown, event: { index: number; x: number; y: number; ticks: number }) => void;
+type TapAwareContent = { __piuNextTap?: TapHandler | null };
 
 interface PiuContainer {
 	empty(start?: number, stop?: number): void;
@@ -99,14 +100,16 @@ function extractLabelString(node: ElementNode): string | undefined {
 
 function createTapBehavior(
 	globals: PiuGlobals,
-	onTap: TapHandler,
 	taskQueue: TaskQueue,
 ): new(...args: readonly never[]) => object {
 	const Base = globals.Behavior;
 	return class extends Base {
 		onTouchEnded(content: unknown, index: number, x: number, y: number, ticks: number): void {
+			const handler = (content as TapAwareContent).__piuNextTap;
+			if (typeof handler !== "function")
+				return;
 			taskQueue.post(() => {
-				onTap(content, { index, x, y, ticks });
+				handler(content, { index, x, y, ticks });
 			});
 		}
 	};
@@ -117,6 +120,7 @@ function instantiateNode(
 	globals: PiuGlobals,
 	refBindings: RefBinding[],
 	taskQueue: TaskQueue,
+	tapBehavior: new(...args: readonly never[]) => object,
 ): unknown {
 	const onTap = typeof node.props.onTap === "function"
 		? node.props.onTap as TapHandler
@@ -131,19 +135,21 @@ function instantiateNode(
 		case "row": {
 			const contents = node.children
 				.filter((child) => child.kind === "element")
-				.map((child) => instantiateNode(child, globals, refBindings, taskQueue));
+				.map((child) => instantiateNode(child, globals, refBindings, taskQueue, tapBehavior));
 			const dictionary = sanitizeProps(node.props as Dictionary, ["onTap", "ref", "key"]);
 			dictionary.contents = contents;
 			if (onTap) {
 				dictionary.active = true;
-				dictionary.Behavior = createTapBehavior(globals, onTap, taskQueue);
+				dictionary.Behavior = tapBehavior;
 			}
 			const ctor = (node.type === "container")
 				? globals.Container
 				: (node.type === "column")
 					? globals.Column
 					: globals.Row;
-			const content = new ctor(null, dictionary);
+			const content = new ctor(null, dictionary) as TapAwareContent;
+			if (onTap)
+				content.__piuNextTap = onTap;
 			if (ref) {
 				attachRef(ref, content);
 				refBindings.push({ ref, target: content });
@@ -157,9 +163,11 @@ function instantiateNode(
 				dictionary.string = stringValue;
 			if (onTap) {
 				dictionary.active = true;
-				dictionary.Behavior = createTapBehavior(globals, onTap, taskQueue);
+				dictionary.Behavior = tapBehavior;
 			}
-			const label = new globals.Label(null, dictionary);
+			const label = new globals.Label(null, dictionary) as TapAwareContent;
+			if (onTap)
+				label.__piuNextTap = onTap;
 			if (ref) {
 				attachRef(ref, label);
 				refBindings.push({ ref, target: label });
@@ -170,9 +178,11 @@ function instantiateNode(
 			const dictionary = sanitizeProps(node.props as Dictionary, ["onTap", "ref", "key"]);
 			if (onTap) {
 				dictionary.active = true;
-				dictionary.Behavior = createTapBehavior(globals, onTap, taskQueue);
+				dictionary.Behavior = tapBehavior;
 			}
-			const content = new globals.Content(null, dictionary);
+			const content = new globals.Content(null, dictionary) as TapAwareContent;
+			if (onTap)
+				content.__piuNextTap = onTap;
 			if (ref) {
 				attachRef(ref, content);
 				refBindings.push({ ref, target: content });
@@ -189,13 +199,14 @@ function renderTree(
 	globals: PiuGlobals,
 	refBindings: RefBinding[],
 	taskQueue: TaskQueue,
+	tapBehavior: new(...args: readonly never[]) => object,
 ): RenderedTree {
 	if (root.type !== "application")
 		throw new Error("Root node must be <application>.");
 	const rootProps = sanitizeProps(root.props as Dictionary, ["onTap", "ref", "key"]);
 	const children = root.children
 		.filter((child) => child.kind === "element")
-		.map((child) => instantiateNode(child, globals, refBindings, taskQueue));
+		.map((child) => instantiateNode(child, globals, refBindings, taskQueue, tapBehavior));
 	return {
 		rootType: root.type,
 		rootProps,
@@ -220,6 +231,7 @@ export function mountPiuApplication(
 ): MountedPiuApplication {
 	const globals = getPiuGlobals();
 	const taskQueue = options.taskQueue ?? createDefaultTaskQueue();
+	const tapBehavior = createTapBehavior(globals, taskQueue);
 	let application = options.application ?? null;
 	let disposeEffect: Unsubscribe | null = null;
 	let refBindings: RefBinding[] = [];
@@ -235,7 +247,7 @@ export function mountPiuApplication(
 
 	const render = (root: ElementNode): void => {
 		clearRefs();
-		const rendered = renderTree(root, globals, refBindings, taskQueue);
+		const rendered = renderTree(root, globals, refBindings, taskQueue, tapBehavior);
 		if (!application)
 			application = new globals.Application(null, rendered.rootProps) as PiuApplication;
 		applyAppProps(application, rendered.rootProps);
