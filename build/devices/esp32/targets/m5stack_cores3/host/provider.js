@@ -31,6 +31,62 @@ import PulseWidth from "embedded:io/pulsewidth";
 import RTC from "embedded:RTC/BM8563"
 import Touch from "M5StackCoreS3Touch";
 
+const TOUCH_INTERRUPT_PIN = 21;
+const AW9523_INPUT_PORT0 = 0x00;
+const AW9523_INPUT_PORT1 = 0x01;
+const AW9523_TOUCH_MASK = 0b00000100;
+
+class CoreS3TouchInterrupt {
+  static Rising = Digital.Rising;
+  static Falling = Digital.Falling;
+
+  #io;
+  #expander;
+  #onReadable;
+
+  constructor(options) {
+    const {onReadable} = options;
+    if ("function" !== typeof onReadable)
+      throw new Error("onReadable required");
+
+    this.#onReadable = onReadable;
+    this.#expander = globalThis.power?.expander;
+    if (!this.#expander?.readByte)
+      throw new Error("missing AW9523 readByte");
+
+    options = {...options};
+    delete options.io;
+    options.onReadable = this.#onDigitalReadable.bind(this);
+    this.#io = new Digital(options);
+  }
+
+  close() {
+    this.#io?.close();
+    this.#io = undefined;
+    this.#expander = undefined;
+    this.#onReadable = undefined;
+  }
+
+  read() {
+    return this.#io.read();
+  }
+
+  #onDigitalReadable() {
+    let isTouch = true;
+    try {
+      this.#expander.readByte(AW9523_INPUT_PORT0);
+      const port1 = this.#expander.readByte(AW9523_INPUT_PORT1);
+      isTouch = !(port1 & AW9523_TOUCH_MASK);
+    } catch {
+      // Fall back to unfiltered delivery when AW9523 read fails.
+      isTouch = true;
+    }
+
+    if (isTouch)
+      this.#onReadable();
+  }
+}
+
 
 const device = {
   I2C: {
@@ -100,13 +156,26 @@ const device = {
   sensor :{
         Touch: class {
           constructor(options) {				
-            const result = new Touch({
+            const touchOptions = {
               ...options,
               sensor: {
                 ...device.I2C.internal,
                 io: device.io.SMBus,
               }
-            });
+            };
+            let result;
+            try {
+              result = new Touch({
+                ...touchOptions,
+                interrupt: {
+                  io: CoreS3TouchInterrupt,
+                  mode: device.io.Digital.InputPullUp,
+                  pin: TOUCH_INTERRUPT_PIN,
+                },
+              });
+            } catch {
+              result = new Touch(touchOptions);
+            }
             result.configure({threshold: 20});
             return result;
           }
