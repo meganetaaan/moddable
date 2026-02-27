@@ -24,6 +24,15 @@ import {Digest} from "crypt";
 export default class ChecksumOut {
 	#digest = new Digest("MD5");
 	#continue;
+	#capture;
+	#captureNext;
+	#captureCurrent;
+	#captureX = 0;
+	#captureY = 0;
+	#captureWidth = 0;
+	#captureHeight = 0;
+	#captureBuffers = [];
+	#captureByteLength = 0;
 	#full;
 	#show;
 	#screen = globalThis.screen;
@@ -36,6 +45,8 @@ export default class ChecksumOut {
 	begin(x, y, width, height) {
 		if ("object" === typeof x)
 			({x, y, width, height} = x);
+
+		this.#beginCapture(x, y, width, height);
 
 		this.#show?.begin(x, y, width, height);
 
@@ -50,6 +61,13 @@ export default class ChecksumOut {
 
 		if (offset || (byteLength !== pixels.byteLength))
 			pixels = new Uint8Array(pixels, offset, byteLength);
+
+		if (this.#captureCurrent && pixels.byteLength) {
+			const copy = new Uint8Array(pixels.byteLength);
+			copy.set(pixels);
+			this.#captureBuffers.push(copy);
+			this.#captureByteLength += copy.byteLength;
+		}
 		
 		this.#digest.write(pixels);
 	}
@@ -62,12 +80,26 @@ export default class ChecksumOut {
 			checksum.push(bytes[i].toString(16).padStart(2, "0"));
 		this.checksum = checksum.join("");
 		this.#continue = false;
+		this.#emitCapture();
 	}
 	continue() {
 		if (this.#show)
 			this.#show.continue();
 
 		this.#continue = true
+	}
+	captureImage(path, options = undefined) {
+		this.#capture = this.#normalizeCapture(path, options);
+	}
+	captureNext(path, options = undefined) {
+		this.#captureNext = this.#normalizeCapture(path, options);
+	}
+	clearCapture() {
+		this.#capture = undefined;
+		this.#captureNext = undefined;
+		this.#captureCurrent = undefined;
+		this.#captureBuffers = [];
+		this.#captureByteLength = 0;
 	}
 	adaptInvalid(r) {
 		if (this.#full)
@@ -84,5 +116,90 @@ export default class ChecksumOut {
 			this.#full = options.full;
 		if ("show" in options)
 			this.#show = options.show ? this.#screen : null;
+	}
+
+	#normalizeCapture(path, options) {
+		if ("object" === typeof path) {
+			options = path;
+			path = options.path;
+		}
+		if ("string" !== typeof path || !path.length)
+			throw new Error("captureImage path is required");
+
+		options ??= {};
+		const chunkSize = Number(options.chunkSize);
+		return {
+			path,
+			chunkSize: (chunkSize > 0) ? chunkSize : 768
+		};
+	}
+	#beginCapture(x, y, width, height) {
+		const capture = this.#captureNext ?? this.#capture;
+		if (!capture) {
+			this.#captureCurrent = undefined;
+			this.#captureBuffers = [];
+			this.#captureByteLength = 0;
+			return;
+		}
+
+		if (this.#captureNext)
+			this.#captureNext = undefined;
+
+		this.#captureCurrent = capture;
+		this.#captureX = (undefined === x) ? 0 : (x | 0);
+		this.#captureY = (undefined === y) ? 0 : (y | 0);
+		this.#captureWidth = (undefined === width) ? this.width : (width | 0);
+		this.#captureHeight = (undefined === height) ? this.height : (height | 0);
+		this.#captureBuffers = [];
+		this.#captureByteLength = 0;
+	}
+	#emitCapture() {
+		const capture = this.#captureCurrent;
+		if (!capture)
+			return;
+
+		this.#captureCurrent = undefined;
+		if (!this.#captureByteLength)
+			return;
+
+		const header = JSON.stringify({
+			type: "testmc-capture",
+			path: capture.path,
+			width: this.#captureWidth,
+			height: this.#captureHeight,
+			x: this.#captureX,
+			y: this.#captureY,
+			pixelFormat: this.#pixelFormatName()
+		});
+
+		trace("|:@capture ");
+		trace(header);
+		trace(":|\n");
+
+		const chunkSize = capture.chunkSize;
+		for (let i = 0; i < this.#captureBuffers.length; i++) {
+			const source = this.#captureBuffers[i];
+			for (let offset = 0; offset < source.byteLength; offset += chunkSize) {
+				const end = Math.min(offset + chunkSize, source.byteLength);
+				const chunk = source.subarray(offset, end);
+				trace("|:");
+				trace(chunk.toBase64());
+				trace(":|\n");
+			}
+		}
+
+		trace("|:@close:|\n");
+		this.#captureBuffers = [];
+		this.#captureByteLength = 0;
+	}
+	#pixelFormatName() {
+		switch (this.pixelFormat) {
+		case Bitmap.RGB565LE:
+			return "rgb565le";
+		case Bitmap.RGB565BE:
+			return "rgb565be";
+		default:
+			throw new Error(`captureImage unsupported pixel format: ${this.pixelFormat}`);
+		}
 	}
 }

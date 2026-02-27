@@ -4,6 +4,8 @@ Updated: July 29, 2024
 
 For in-depth documentation on using testmc see [Testing](../../documentation/tools/testing.md).
 
+`testmc` now supports `screen.captureImage(path)` for PNG snapshots when running with `mcconfig -dl` and `xsbug-log`.
+
 ### Manifests
 
 `testmc` may be built with different manifests to test different combinations of features. 
