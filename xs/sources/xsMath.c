@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017  Moddable Tech, Inc.
+ * Copyright (c) 2016-2025  Moddable Tech, Inc.
  *
  *   This file is part of the Moddable SDK Runtime.
  * 
@@ -37,6 +37,8 @@
 
 #include "xsAll.h"
 
+#include "xsum.c"
+
 void fxBuildMath(txMachine* the)
 {
 	txSlot* slot;
@@ -57,6 +59,9 @@ void fxBuildMath(txMachine* the)
 	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_Math_cosh), 1, mxID(_cosh), XS_DONT_ENUM_FLAG);
 	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_Math_exp), 1, mxID(_exp), XS_DONT_ENUM_FLAG);
 	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_Math_expm1), 1, mxID(_expm1), XS_DONT_ENUM_FLAG);
+#if mxFloat16
+	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_Math_f16round), 1, mxID(_f16round), XS_DONT_ENUM_FLAG);
+#endif
 	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_Math_floor), 1, mxID(_floor), XS_DONT_ENUM_FLAG);
 	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_Math_fround), 1, mxID(_fround), XS_DONT_ENUM_FLAG);
 	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_Math_hypot), 2, mxID(_hypot_), XS_DONT_ENUM_FLAG);
@@ -83,6 +88,9 @@ void fxBuildMath(txMachine* the)
 	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_Math_sin), 1, mxID(_sin), XS_DONT_ENUM_FLAG);
 	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_Math_sinh), 1, mxID(_sinh), XS_DONT_ENUM_FLAG);
 	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_Math_sqrt), 1, mxID(_sqrt), XS_DONT_ENUM_FLAG);
+#if mxECMAScript2026
+	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_Math_sumPrecise), 1, mxID(_sumPrecise), XS_DONT_ENUM_FLAG);
+#endif
 	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_Math_tan), 1, mxID(_tan), XS_DONT_ENUM_FLAG);
 	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_Math_tanh), 1, mxID(_tanh), XS_DONT_ENUM_FLAG);
 	slot = fxNextHostFunctionProperty(the, slot, mxCallback(fx_Math_trunc), 1, mxID(_trunc), XS_DONT_ENUM_FLAG);
@@ -450,11 +458,32 @@ void fx_Math_log2(txMachine* the)
 
 void fx_Math_max(txMachine* the)
 {
-	txInteger c = mxArgc, i;
+	txInteger c = mxArgc, i = 0;
 	mxResult->kind = XS_NUMBER_KIND;
 	mxResult->value.number = -((txNumber)C_INFINITY);
-	for (i = 0; i < c; i++) {
-		txNumber n = fxToNumber(the, mxArgv(i));
+	if (0 == c)
+		return;
+
+	if (XS_INTEGER_KIND == mxArgv(0)->kind) {
+		mxResult->kind = XS_INTEGER_KIND;
+		mxResult->value.integer = mxArgv(0)->value.integer;
+		i = 1;
+	}
+
+	for (; i < c; i++) {
+		txSlot *slot = mxArgv(i);
+		if (XS_INTEGER_KIND == mxResult->kind) {
+			if (XS_INTEGER_KIND == slot->kind) {
+				if (mxResult->value.integer < slot->value.integer) {
+					mxResult->value.integer = slot->value.integer;
+				}
+				continue;
+			}
+			mxResult->kind = XS_NUMBER_KIND;
+			mxResult->value.number = mxResult->value.integer;
+		}
+
+		txNumber n = fxToNumber(the, slot);
 		if (c_isnan(n)) {
 			for (; i < c; i++)
 				fxToNumber(the, mxArgv(i));
@@ -472,11 +501,31 @@ void fx_Math_max(txMachine* the)
 
 void fx_Math_min(txMachine* the)
 {
-	txInteger c = mxArgc, i;
+	txInteger c = mxArgc, i = 0;
 	mxResult->kind = XS_NUMBER_KIND;
 	mxResult->value.number = (txNumber)C_INFINITY;
-	for (i = 0; i < c; i++) {
-		txNumber n = fxToNumber(the, mxArgv(i));
+	if (0 == c)
+		return;
+
+	if (XS_INTEGER_KIND == mxArgv(0)->kind) {
+		mxResult->kind = XS_INTEGER_KIND;
+		mxResult->value.integer = mxArgv(0)->value.integer;
+		i = 1;
+	}
+
+	for (; i < c; i++) {
+		txSlot *slot = mxArgv(i);
+		if (XS_INTEGER_KIND == mxResult->kind) {
+			if (XS_INTEGER_KIND == slot->kind) {
+				if (mxResult->value.integer > slot->value.integer)
+					mxResult->value.integer = slot->value.integer;
+				continue;
+			}
+			mxResult->kind = XS_NUMBER_KIND;
+			mxResult->value.number = mxResult->value.integer;
+		}
+	
+		txNumber n = fxToNumber(the, slot);
 		if (c_isnan(n)) {
 			for (; i < c; i++)
 				fxToNumber(the, mxArgv(i));
@@ -519,9 +568,10 @@ void fx_Math_pow(txMachine* the)
 
 void fx_Math_random(txMachine* the)
 {
-	uint32_t result = c_rand();
-	while (result == C_RAND_MAX)
+	uint32_t result;
+	do {
 		result = c_rand();
+	} while (result == C_RAND_MAX);
 	mxResult->kind = XS_NUMBER_KIND;
 	mxResult->value.number = (double)result / (double)C_RAND_MAX;
 }
@@ -560,6 +610,49 @@ void fx_Math_sqrt(txMachine* the)
 	fxToNumber(the, mxArgv(0));
 	mxResult->kind = XS_NUMBER_KIND;
 	mxResult->value.number = c_sqrt(mxArgv(0)->value.number);
+}
+
+void fx_Math_sumPrecise(txMachine* the)
+{
+	txSlot *iterable, *iterator, *next, *value;
+	xsum_small_accumulator accumulator;
+	txInteger count = 0;
+	txBoolean flag = 1;
+	if (mxArgc < 1)
+		mxTypeError("no items");
+	iterable = mxArgv(0);
+	fxToInstance(the, iterable);
+	mxTemporary(iterator);
+	mxTemporary(next);
+	fxGetIterator(the, iterable, iterator, next, 0);	
+	xsum_small_init(&accumulator);
+	mxTemporary(value);
+	while (fxIteratorNext(the, iterator, next, value)) {
+		mxTry(the) {
+			if (value->kind == XS_INTEGER_KIND) {
+				flag = 0;
+				xsum_small_add1(&accumulator, value->value.integer);
+			}
+			else if (value->kind == XS_NUMBER_KIND) {
+				if (value->value.number != -0.0) {
+					flag = 0;
+					xsum_small_add1(&accumulator, value->value.number);
+				}
+			}
+			else
+				mxTypeError("items[%d]: not a number", count);
+			count++;
+		}
+		mxCatch(the) {
+			fxIteratorReturn(the, iterator, 1);
+			fxJump(the);
+		}
+	}
+	if (flag)
+		mxResult->value.number = -0.0;
+	else
+		mxResult->value.number = xsum_small_round(&accumulator);
+	mxResult->kind = XS_NUMBER_KIND;
 }
 
 void fx_Math_sign(txMachine* the)

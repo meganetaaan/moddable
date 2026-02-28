@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2023  Moddable Tech, Inc.
+ * Copyright (c) 2016-2025  Moddable Tech, Inc.
  *
  *   This file is part of the Moddable SDK Tools.
  * 
@@ -101,6 +101,9 @@ export default class extends TOOL {
 		this.moddablePath = this.getenv("MODDABLE");
 		if (!this.moddablePath)
 			throw new Error("MODDABLE: variable not found!");
+		this.moddablePath = this.resolveDirectoryPath(this.moddablePath);
+		if (!this.moddablePath)
+			throw new Error("invalid MODDABLE environment variable!");
 		this.windows = this.currentPlatform == "win";
 		this.slash = this.windows ? "\\" : "/";
 		this.buildPath = this.moddablePath + this.slash + "build";
@@ -205,10 +208,13 @@ export default class extends TOOL {
 /**/				subclass = "esp32";
 /**/			this.environment.ESP32_SUBCLASS = subclass;
 		}
-		else if ("mac" == this.platform || "win" == this.platform || "lin" == this.platform)
-			path += "sim";
-		else
-			path += this.platform;
+		else {
+			if (this.resolveDirectoryPath(this.platform + path))
+				path += this.platform;
+			else
+				path += "sim";
+
+		}
 		this.environment.BLEMODULEPATH = path;
 
 		let userHome;
@@ -637,8 +643,8 @@ export default class extends TOOL {
 	throwPackagePathNotExportedError() {
 		throw new Error("package path not exported!");
 	}
-	throwUnsupportedModuleFormat() {
-		throw new Error("unsupported module format");
+	throwUnsupportedModuleFormat(format) {
+		throw new Error(`unsupported module format: ${format}`);
 	}
 	throwUnsupportedModuleSpecifier() {
 		throw new Error("unsupported module specifier");
@@ -662,7 +668,7 @@ export default class extends TOOL {
 				this.throwModuleNotFoundError();
 			let format = this.ESM_FILE_FORMAT(resolved);
 			if (format !== "module")
-				this.throwUnsupportedModuleFormat();
+				this.throwUnsupportedModuleFormat(format);
 		}
 		return resolved;
 	}
@@ -880,6 +886,10 @@ export default class extends TOOL {
 		let packageURL = this.LOOKUP_PACKAGE_SCOPE(url);
 		if (packageURL) {
 			let pjson = this.READ_PACKAGE_JSON(packageURL);
+			if (undefined === pjson.type) {
+				if (url.endsWith(".js"))
+					return "commonjs";		// default for type
+			}
 			if (pjson.type == "module") {
 				if (url.endsWith(".js"))
 					return "module";

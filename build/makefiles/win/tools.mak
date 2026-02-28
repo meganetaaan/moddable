@@ -135,6 +135,7 @@ MODULES = \
 	$(MOD_DIR)\mcmanifest.xsb \
 	$(MOD_DIR)\mcpack.xsb \
 	$(MOD_DIR)\mcrez.xsb \
+	$(MOD_DIR)\mcdevicetree.xsb \
 	$(MOD_DIR)\nodered2mcu.xsb \
 	$(MOD_DIR)\png2bmp.xsb \
 	$(MOD_DIR)\resampler.xsb \
@@ -189,6 +190,7 @@ HEADERS =\
 	$(INSTRUMENTATION)\modInstrumentation.h
 OBJECTS = \
 	$(TMP_DIR)\adpcm-lib.obj \
+	$(TMP_DIR)\adpcm-dns.obj \
 	$(TMP_DIR)\commodettoBitmap.obj \
 	$(TMP_DIR)\commodettoBufferOut.obj \
 	$(TMP_DIR)\commodettoColorCellOut.obj \
@@ -221,6 +223,7 @@ COMMANDS = \
 	$(BIN_DIR)\mclocal.bat \
 	$(BIN_DIR)\mcpack.bat \
 	$(BIN_DIR)\mcrez.bat \
+	$(BIN_DIR)\mcdevicetree.bat \
 	$(BIN_DIR)\nodered2mcu.bat \
 	$(BIN_DIR)\png2bmp.bat \
 	$(BIN_DIR)\rle4encode.bat \
@@ -241,12 +244,7 @@ C_OPTIONS = \
 	/D INCLUDE_XSPLATFORM=1 \
 	/D XSPLATFORM=\"win_xs.h\" \
 	/D XSTOOLS=1 \
-	/D mxRun=1 \
-	/D mxParse=1 \
-	/D mxNoFunctionLength=1 \
-	/D mxNoFunctionName=1 \
-	/D mxHostFunctionPrimitive=1 \
-	/D mxFewGlobalsTable=1 \
+	/D mxStringInfoCacheLength=4 \
 	/D mxMessageWindowClass=\"fxMessageWindowClassX\" \
 	/D kModdableToolsVersion=\"$(TOOLS_VERSION)\" \
 	/I$(XS_DIR)\includes \
@@ -455,6 +453,9 @@ $(BIN_DIR)\mcpack.bat :
 $(BIN_DIR)\mcrez.bat :
 	@echo # mcrez.bat
 	echo @%~dp0\tools mcrez %%* 1> $(BIN_DIR)\mcrez.bat
+$(BIN_DIR)\mcdevicetree.bat :
+	@echo # mcdevicetree.bat
+	echo @%~dp0\tools mcdevicetree %%* 1> $(BIN_DIR)\mcdevicetree.bat
 $(BIN_DIR)\mcrun.bat :
 	@echo # mcrun.bat
 	echo @%~dp0\tools mcrun %%* 1> $(BIN_DIR)\mcrun.bat

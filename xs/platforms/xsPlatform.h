@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017  Moddable Tech, Inc.
+ * Copyright (c) 2016-2025  Moddable Tech, Inc.
  *
  *   This file is part of the Moddable SDK Runtime.
  * 
@@ -225,6 +225,9 @@
 #ifndef c_qsort
 	#define c_qsort qsort
 #endif
+#ifndef c_bsearch
+	#define c_bsearch bsearch
+#endif
 #ifndef c_realloc
 	#define c_realloc realloc
 #endif
@@ -431,6 +434,9 @@
 #ifndef c_isfinite
 	#define c_isfinite isfinite
 #endif
+#ifndef c_ilogb
+	#define c_ilogb ilogb
+#endif
 #ifndef c_isnormal
 	#define c_isnormal isnormal
 #endif
@@ -487,6 +493,16 @@
 #endif
 #ifndef c_trunc
 	#define c_trunc trunc
+#endif
+
+#ifndef C_FP_ILOGB0
+	#define C_FP_ILOGB0 FP_ILOGB0
+#endif
+#ifndef C_FP_ILOGBNAN
+	#define C_FP_ILOGBNAN FP_ILOGBNAN
+#endif
+#ifndef C_INT_MAX
+	#define C_INT_MAX INT_MAX
 #endif
 
 /* STRING */
@@ -601,20 +617,18 @@
 	#define C_EINVAL EINVAL
 #endif
 
-#ifdef mxParse
-	#if mxWindows
-		#ifdef __cplusplus
-		extern "C" {
-		#endif
-			extern char* c_realpath(const char* path, char* real);
-		#ifdef __cplusplus
-		}
-		#endif
-		#define mxParserThrowElse(_ASSERTION) { if (!(_ASSERTION)) { parser->error = GetLastError(); c_longjmp(parser->firstJump->jmp_buf, 1); } }
-	#else
-		#define c_realpath realpath
-		#define mxParserThrowElse(_ASSERTION) { if (!(_ASSERTION)) { parser->error = errno; c_longjmp(parser->firstJump->jmp_buf, 1); } }
+#if mxWindows
+	#ifdef __cplusplus
+	extern "C" {
 	#endif
+		extern char* c_realpath(const char* path, char* real);
+	#ifdef __cplusplus
+	}
+	#endif
+	#define mxParserThrowElse(_ASSERTION) { if (!(_ASSERTION)) { parser->error = GetLastError(); c_longjmp(parser->firstJump->jmp_buf, 1); } }
+#else
+	#define c_realpath realpath
+	#define mxParserThrowElse(_ASSERTION) { if (!(_ASSERTION)) { parser->error = errno; c_longjmp(parser->firstJump->jmp_buf, 1); } }
 #endif
 
 #endif /* __XSPLATFORM__ */

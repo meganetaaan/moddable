@@ -3,7 +3,16 @@
 		"*": [
 			"./pocoqrcode"
 		],
-		"commodetto/PocoCore": "$(COMMODETTO)/commodettoPocoCore"
+		"commodetto/Poco": "$(COMMODETTO)/commodettoPoco"
 	},
-	"preload": "pocoqrcode"
+	"preload": "pocoqrcode",
+	"typescript": {
+		"tsconfig": {
+			"compilerOptions": {
+				"types": [
+					"./pocoqrcode"
+				]
+			}
+		}
+	}
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2023  Moddable Tech, Inc.
+ * Copyright (c) 2016-2025  Moddable Tech, Inc.
  *
  *   This file is part of the Moddable SDK Runtime.
  * 
@@ -37,7 +37,7 @@
 
 #include "xsAll.h"
 
-#ifdef mxRun
+#ifndef mxCompile
 static txSlot* fxBigIntCheck(txMachine* the, txSlot* it);
 static txBigInt* fxIntegerToBigInt(txMachine* the, txSlot* slot);
 static txBigInt* fxNumberToBigInt(txMachine* the, txSlot* slot);
@@ -71,7 +71,7 @@ static void fxBigInt_meter(txMachine* the, int n);
 
 // BYTE CODE
 
-#ifdef mxRun
+#ifndef mxCompile
 
 void fxBuildBigInt(txMachine* the)
 {
@@ -96,17 +96,17 @@ void fxBuildBigInt(txMachine* the)
 void fx_BigInt(txMachine* the)
 {
 	if (mxTarget->kind != XS_UNDEFINED_KIND)
-		mxTypeError("new BigInt");
+		mxTypeError("new: BigInt");
 	if (mxArgc > 0)
 		*mxResult = *mxArgv(0);
 	fxToPrimitive(the, mxResult, XS_NUMBER_HINT);
 	if (mxResult->kind == XS_NUMBER_KIND) {
 		int fpclass = c_fpclassify(mxResult->value.number);
 		txNumber check = c_trunc(mxResult->value.number);
-		if ((fpclass != FP_NAN) && (fpclass != FP_INFINITE) && (mxResult->value.number == check))
+		if ((fpclass != C_FP_NAN) && (fpclass != C_FP_INFINITE) && (mxResult->value.number == check))
 			fxNumberToBigInt(the, mxResult);
 		else
-			mxRangeError("Cannot coerce number to bigint");
+			mxRangeError("cannot coerce number to bigint");
 	}
 	else if (mxResult->kind == XS_INTEGER_KIND) {
 		fxIntegerToBigInt(the, mxResult);
@@ -130,14 +130,14 @@ txNumber fx_BigInt_asAux(txMachine* the)
 			else {
 				value = c_trunc(value);
 				if (value < 0)
-					mxRangeError("out of range index");
+					mxRangeError("index < 0");
 				index = value;
 				if (index <= 0)
 					index = 0;
 				else if (index > C_MAX_SAFE_INTEGER)
 					index = C_MAX_SAFE_INTEGER;
 				if (value != index)
-					mxRangeError("out of range index");
+					mxRangeError("invalid index");
 			}
 		}
 	}
@@ -223,7 +223,7 @@ void fx_BigInt_fromArrayBuffer(txMachine* the)
 			arrayBuffer = slot;
 	}
 	if (!arrayBuffer)
-		mxTypeError("argument is no ArrayBuffer instance");
+		mxTypeError("argument: not an ArrayBuffer instance");
 	bufferInfo = arrayBuffer->next;
 	length = bufferInfo->value.bufferInfo.length;
 	if ((mxArgc > 1) && fxToBoolean(the, mxArgv(1)))
@@ -233,7 +233,7 @@ void fx_BigInt_fromArrayBuffer(txMachine* the)
     if (sign)
         length--;
 	if (length <= 0) {
-		mxSyntaxError("invalid ArrayBuffer instance");
+		mxSyntaxError("argument: invalid ArrayBuffer instance");
 // 		mxResult->value.bigint = gxBigIntNaN;
 // 		mxResult->kind = XS_BIGINT_X_KIND;
 		return;
@@ -272,7 +272,7 @@ void fx_BigInt_prototype_toString(txMachine* the)
 	txSlot* slot;
 	txU4 radix;
 	slot = fxBigIntCheck(the, mxThis);
-	if (!slot) mxTypeError("this is no bigint");
+	if (!slot) mxTypeError("this: not a bigint");
 	if (mxArgc == 0)
 		radix = 10;
 	else if (mxIsUndefined(mxArgv(0)))
@@ -290,7 +290,7 @@ void fx_BigInt_prototype_toString(txMachine* the)
 void fx_BigInt_prototype_valueOf(txMachine* the)
 {
 	txSlot* slot = fxBigIntCheck(the, mxThis);
-	if (!slot) mxTypeError("this is no bigint");
+	if (!slot) mxTypeError("this: not a bigint");
 	mxResult->kind = slot->kind;
 	mxResult->value = slot->value;
 }
@@ -341,7 +341,7 @@ txBoolean fxBigIntCompare(txMachine* the, txBoolean less, txBoolean equal, txBoo
 	if ((right->kind != XS_BIGINT_KIND) && (right->kind != XS_BIGINT_X_KIND)) {
 		fxToNumber(the, right);
 		result = c_fpclassify(right->value.number);
-		if (result == FP_NAN)
+		if (result == C_FP_NAN)
 			return less & more & !equal;
 		if (result == C_FP_INFINITE)
 			return (right->value.number > 0) ? less : more;
@@ -411,7 +411,7 @@ void fxBigIntEncode(txByte* code, txBigInt* bigint, txSize size)
 #endif
 }
 
-#ifdef mxRun
+#ifndef mxCompile
 txSlot* fxBigIntToInstance(txMachine* the, txSlot* slot)
 {
 	txSlot* instance;
@@ -521,7 +521,7 @@ void fxBigIntParseX(txBigInt* bigint, txString p, txSize length)
 	}
 }
 
-#ifdef mxRun
+#ifndef mxCompile
 
 void fxBigintToArrayBuffer(txMachine* the, txSlot* slot, txU4 total, txBoolean sign, int endian)
 {
@@ -539,6 +539,8 @@ void fxBigintToArrayBuffer(txMachine* the, txSlot* slot, txU4 total, txBoolean s
 		total = length;
 	}
 	if (sign) {
+		if (total >= 0x7FFFFFFF)
+			mxRangeError("byteLength too big");
 		offset++;
 		total++;
 	}
@@ -581,56 +583,105 @@ txNumber fxBigIntToNumber(txMachine* the, txSlot* slot)
 	return number;
 }
 
+typedef struct {
+    uint32_t k;
+    uint32_t base_to_k;
+} BaseChunk32;
+
+static const BaseChunk32 base_chunks32[] ICACHE_FLASH_ATTR = {
+    {31, 0x80000000},
+    {19, 1162261467},
+    {15, 1073741824},
+    {13, 1220703125},
+    {12, 2176782336},
+    {11, 1977326743},
+    {10, 1073741824},
+    {10, 3486784401},
+    { 9, 1000000000},		// base 10
+    { 8, 214358881},
+    { 8, 429981696},
+    { 7, 62748517},
+    { 7, 105413504},
+    { 7, 170859375},
+    { 7, 268435456},
+    { 6, 24137569},
+    { 6, 34012224},
+    { 6, 470427017},
+    { 6, 64000000},
+    { 6, 85766121},
+    { 6, 113379904},
+    { 6, 148035889},
+    { 6, 191102976},
+    { 5, 9765625},
+    { 5, 11881376},
+    { 5, 14348907},
+    { 5, 17210368},
+    { 5, 20537907},
+    { 5, 24300000},
+    { 5, 28430241},
+    { 5, 32768000},
+    { 5, 39135393},
+    { 5, 45435424},
+    { 5, 52521875},
+    { 5, 60466176}
+};
+
 void fxBigintToString(txMachine* the, txSlot* slot, txU4 radix)
 {
 	static const char gxDigits[] ICACHE_FLASH_ATTR = "0123456789abcdefghijklmnopqrstuvwxyz";
-	txU4 data[1] = { 10 };
-	txBigInt divider = { .sign=0, .size=1, .data=data };
 	txSize length, offset;
-	txBoolean minus = 0;
 	txSlot* result;
 	txSlot* stack;
-	
+	if (0 == radix) radix = 10;
+	const BaseChunk32 *bc = base_chunks32 + (radix - 2);
+
 	if (mxBigIntIsNaN(&slot->value.bigint)) {
 		fxStringX(the, slot, "NaN");
 		return;
 	}
-	
-	mxMeterSome(slot->value.bigint.size);
-	
+	mxBigInt_meter(slot->value.bigint.size);
+
 	mxPushUndefined();
 	result = the->stack;
 	
 	mxPushSlot(slot);
+	fxBigInt_dup(the, &the->stack->value.bigint);
 	stack = the->stack;
-	
-	if (radix)
-		divider.data[0] = radix;
-	
-	length = 1 + (txSize)c_ceil((txNumber)stack->value.bigint.size * 32 * c_log(2) / c_log(data[0]));
-	if (stack->value.bigint.sign) {
-		stack->value.bigint.sign = 0;
+
+	length = 1 + bc->k + (txSize)c_ceil((txNumber)(stack->value.bigint.size + 1) * 32 * c_log(2) / c_log(radix));
+	if (stack->value.bigint.sign)
 		length++;
-		minus = 1;
-	}
 	offset = length;
 	result->value.string = fxNewChunk(the, length);
 	result->kind = XS_STRING_KIND;
 
 	result->value.string[--offset] = 0;
+	int32_t nonZeroWords = stack->value.bigint.size;
 	do {
-		txBigInt* remainder = NULL;
-		txBigInt* quotient = fxBigInt_udiv(the, C_NULL, &stack->value.bigint, &divider, &remainder);
-		result->value.string[--offset] = c_read8(gxDigits + remainder->data[0]);
-        stack->value.bigint = *quotient;
-        stack->kind = XS_BIGINT_KIND;
-		the->stack = stack;
-	}
-	while (!fxBigInt_iszero(&stack->value.bigint));
-	if (minus)
+		uint64_t carry = 0;
+		for (uint32_t i = stack->value.bigint.size - 1, count = nonZeroWords, base_to_k = bc->base_to_k; count > 0; --count) {
+			carry = (carry << 32) | stack->value.bigint.data[i];
+			stack->value.bigint.data[i--] = (uint32_t)(carry / base_to_k);
+			carry %= base_to_k;
+		}
+		uint32_t remainder = (uint32_t)carry, k = bc->k;
+		do {
+			result->value.string[--offset] = c_read8(gxDigits + (remainder % radix));
+            remainder /= radix;
+        } while (--k);
+
+		while (nonZeroWords && (0 == stack->value.bigint.data[stack->value.bigint.size - nonZeroWords]))
+			nonZeroWords -= 1;
+	} while (nonZeroWords);
+
+	while (('0' == result->value.string[offset]) && result->value.string[offset + 1])
+		offset++;
+
+	if (stack->value.bigint.sign)
 		result->value.string[--offset] = '-';
 	c_memmove(result->value.string, result->value.string + offset, length - offset);
-	
+
+	mxPop();
 	mxPop();
 	mxPullSlot(slot);
 }
@@ -783,46 +834,52 @@ again:
 		break;
 	case XS_INTEGER_KIND:
 		if (strict)
-			mxTypeError("Cannot coerce number to bigint");
+			mxTypeError("cannot coerce number to bigint");
 		fxIntegerToBigInt(the, slot);	
 		break;
 	case XS_NUMBER_KIND:
 		if (strict)
-			mxTypeError("Cannot coerce number to bigint");
+			mxTypeError("cannot coerce number to bigint");
 		fxNumberToBigInt(the, slot);	
 		break;
 	case XS_STRING_KIND:
 	case XS_STRING_X_KIND:
 		fxStringToBigInt(the, slot, 1);
 		if (mxBigIntIsNaN(&slot->value.bigint))
-			mxSyntaxError("Cannot coerce string to bigint");
+			mxSyntaxError("cannot coerce string to bigint");
 		break;
 	case XS_BIGINT_KIND:
 	case XS_BIGINT_X_KIND:
 		break;
 	case XS_SYMBOL_KIND:
-		mxTypeError("Cannot coerce symbol to bigint");
+		mxTypeError("cannot coerce symbol to bigint");
 		break;
 	case XS_REFERENCE_KIND:
 		fxToPrimitive(the, slot, XS_NUMBER_HINT);
 		goto again;
 	default:
-		mxTypeError("Cannot coerce to bigint");
+		mxTypeError("cannot coerce to bigint");
 		break;
 	}
 	return &slot->value.bigint;
 }
 
-void fxFromBigInt64(txMachine* the, txSlot* slot, txS8 value)
+void fxFromBigInt64(txMachine* the, txSlot* slot, txS8 it)
 {
 	txU1 sign = 0;
-	if (value < 0) {
-		value = -value;
+	txU8 value = 0;
+	if (it < 0) {
+		if (it & 0x7FFFFFFFFFFFFFFFll)
+			value = -it;
+		else
+			value = (txU8)it;
 		sign = 1;
 	}
+	else
+		value = it;
 	if (value > 0x00000000FFFFFFFFll) {
 		slot->value.bigint.data = fxNewChunk(the, 2 * sizeof(txU4));
-		slot->value.bigint.data[0] = (txU4)(value);
+		slot->value.bigint.data[0] = (txU4)value;
 		slot->value.bigint.data[1] = (txU4)(value >> 32);
 		slot->value.bigint.size = 2;
 	}
@@ -856,7 +913,7 @@ void fxFromBigUint64(txMachine* the, txSlot* slot, txU8 value)
 
 txBigInt *fxBigInt_alloc(txMachine* the, txU4 size)
 {
-#ifdef mxRun
+#ifndef mxCompile
 	txBigInt* bigint;
 	if (size > 0xFFFF) {
 		fxAbort(the, XS_NOT_ENOUGH_MEMORY_EXIT);
@@ -875,7 +932,7 @@ txBigInt *fxBigInt_alloc(txMachine* the, txU4 size)
 
 void fxBigInt_free(txMachine* the, txBigInt *bigint)
 {
-#ifdef mxRun
+#ifndef mxCompile
 	if (bigint == &the->stack->value.bigint)
 		the->stack++;
 // 	else
@@ -1287,7 +1344,7 @@ txBigInt *fxBigInt_ulsr1(txMachine* the, txBigInt *r, txBigInt *a, txU4 sw)
 
 txBigInt *fxBigInt_nop(txMachine* the, txBigInt *r, txBigInt *a, txBigInt *b)
 {
-#ifdef mxRun
+#ifndef mxCompile
 	mxTypeError("no such operation");
 #endif
 	return C_NULL;
@@ -1359,19 +1416,27 @@ static int fxBigInt_uadd_prim(txU4 *rp, txU4 *ap, txU4 *bp, int an, int bn)
 
 	for (i = 0; i < an; i++) {
 #ifdef __ets__
-	txU4 r;
+	unsigned int r;
 	if (__builtin_uadd_overflow(ap[i], bp[i], &r)) {
 		rp[i] = r + c;
 		c = 1;
 	}
-	else
-		c = __builtin_uadd_overflow(r, c, &rp[i]);
+	else {
+		unsigned int t;
+		c = __builtin_uadd_overflow(r, c, &t);
+		rp[i] = t;
+	}
 #else
-		c = __builtin_uadd_overflow(ap[i], bp[i], &rp[i]) | (txU4)__builtin_uadd_overflow(rp[i], c, &rp[i]);
+		unsigned int r = rp[i];
+		c = __builtin_uadd_overflow(ap[i], bp[i], &r) | (txU4)__builtin_uadd_overflow(r, c, &r);
+		rp[i] = r;
 #endif
 	}
-	for (; c && (i < bn); i++) {
-		c = __builtin_uadd_overflow(1, bp[i], &rp[i]);
+	for (; c && (i < bn); i++) { {
+		unsigned int t;
+		c = __builtin_uadd_overflow(1, bp[i], &t);
+		rp[i] = t;
+	}
 	}
 	for (; i < bn; i++) {
 		rp[i] = bp[i];
@@ -1553,7 +1618,7 @@ txBigInt *fxBigInt_umul1(txMachine* the, txBigInt *r, txBigInt *a, txU4 b)
 
 txBigInt *fxBigInt_exp(txMachine* the, txBigInt *r, txBigInt *a, txBigInt *b)
 {
-#ifdef mxRun
+#ifndef mxCompile
 	if (b->sign)
 		mxRangeError("negative exponent");
 #endif
@@ -1572,7 +1637,7 @@ txBigInt *fxBigInt_exp(txMachine* the, txBigInt *r, txBigInt *a, txBigInt *b)
 		txU4 c = fxBigInt_bitsize(a);
 		txBigInt *t = fxBigInt_umul1(the, NULL, b, c);
 		t = fxBigInt_ulsr1(the, t, t, 5);
-#ifdef mxRun
+#ifndef mxCompile
 		if ((t->size > 1) || (t->data[0] > 0xFFFF))
 			mxRangeError("too big exponent");
 #endif
@@ -1652,7 +1717,7 @@ txBigInt *fxBigInt_sqr(txMachine* the, txBigInt *r, txBigInt *a)
 
 txBigInt *fxBigInt_div(txMachine* the, txBigInt *q, txBigInt *a, txBigInt *b)
 {
-#ifdef mxRun
+#ifndef mxCompile
 	if (fxBigInt_iszero(b))
 		mxRangeError("zero divider");
 #endif
@@ -1686,7 +1751,7 @@ txBigInt *fxBigInt_mod(txMachine* the, txBigInt *r, txBigInt *a, txBigInt *b)
 txBigInt *fxBigInt_rem(txMachine* the, txBigInt *r, txBigInt *a, txBigInt *b)
 {
 	txBigInt *q;
-#ifdef mxRun
+#ifndef mxCompile
 	if (fxBigInt_iszero(b))
 		mxRangeError("zero divider");
 #endif
@@ -1853,7 +1918,8 @@ txBigInt *fxBigInt_udiv(txMachine* the, txBigInt *q, txBigInt *a, txBigInt *b, t
 #ifdef mxMetering
 void fxBigInt_meter(txMachine* the, int n)
 {
-	the->meterIndex += n - 1;
+	n--;
+	the->meterIndex += n * XS_BIGINT_METERING;
 }
 #endif
 

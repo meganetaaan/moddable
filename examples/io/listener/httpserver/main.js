@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022  Moddable Tech, Inc.
+ * Copyright (c) 2022-2025  Moddable Tech, Inc.
  *
  *   This file is part of the Moddable SDK.
  * 
@@ -23,13 +23,13 @@ import WebSocket from "WebSocket";
 
 const router = new Map;
 const notFound = {
-	...WebPage,
-	msg: ArrayBuffer.fromString("Not found"),
+	...WebPage,		// STATIC ROUTE
+	data: ArrayBuffer.fromString("Not found"),
 };
 
 let server = new HTTPServer({
 	io: Listener,
-	port: 80,
+	port: 8080,
 	onConnect(connection) {
 		connection.accept({
 			onRequest(request) {
@@ -37,7 +37,7 @@ let server = new HTTPServer({
 			},
 		})
 	}
-})
+});
 
 const reply = ArrayBuffer.fromString("1 2 3 4 5 6 7 8\n");
 router.set("/", {
@@ -53,7 +53,7 @@ router.set("/", {
 		response.headers.set("content-length", reply.byteLength);
 		this.respond(response);
 	},
-	onWritable(count) {
+	onWritable(/* count */) {
 		this.write(reply);
 	},
 	onDone() {
@@ -87,10 +87,10 @@ router.set("/sse", {
 });
 router.set("/sse.html", { 
 	...WebPage,
-	msg: ArrayBuffer.fromString(`
+	data: ArrayBuffer.fromString(`
 <script>
 console.log("starting EventSource");
-var es = new EventSource("http://localhost/sse");
+var es = new EventSource("http://localhost:${server.port}/sse");
 es.onmessage = function (event) {
   console.log(event.data);
 };
@@ -131,9 +131,9 @@ router.set("/ws", {
 /*
 	WebSocket client for testing
 */
-const ws = new WebSocket("ws://localhost/ws");
+const ws = new WebSocket("ws://localhost:8080/ws");
 ws.binaryType = "arraybuffer";
-ws.addEventListener("open", event => {
+ws.addEventListener("open", () => {
 	ws.send("hello");
 });
 ws.addEventListener("message", event => {

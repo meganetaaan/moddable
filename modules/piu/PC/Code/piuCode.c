@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018  Moddable Tech, Inc.
+ * Copyright (c) 2016-2025  Moddable Tech, Inc.
  *
  *   This file is part of the Moddable SDK Runtime.
  * 
@@ -185,8 +185,7 @@ void PiuCodeDictionary(xsMachine* the, void* it)
 	slot = PiuString(xsResult);
 	string = PiuToString(slot);
 	(*self)->string = slot;
-	(*self)->size = c_strlen(string);
-	(*self)->length = fxUnicodeLength(string);
+	(*self)->length = fxUnicodeLength(string, (xsIntegerValue*)&((*self)->size));
 	if (xsFindString(xsArg(1), xsID_type, &string)) {
 		if (!c_strcmp(string, "js"))
 			(*self)->type = 1;
@@ -835,6 +834,7 @@ void PiuCode_create(xsMachine *the)
 	(*self)->reference = xsToReference(xsThis);
 	xsSetHostHooks(xsThis, (xsHostHooks*)&PiuCodeHooks);
 	(*self)->dispatch = (PiuDispatch)&PiuCodeDispatchRecord;
+	(*self)->recordSize = PiuRecordSize(sizeof(PiuCodeRecord));
 	(*self)->flags = piuVisible | piuActive;
 	PiuContentDictionary(the, self);
 	PiuTextBufferNew(the, 512);
@@ -961,8 +961,7 @@ void PiuCode_set_string(xsMachine *the)
 	xsSlot* slot = PiuString(xsArg(0));
 	xsStringValue string = PiuToString(slot);
 	(*self)->string = slot;
-	(*self)->size = c_strlen(string);
-	(*self)->length = fxUnicodeLength(string);
+	(*self)->length = fxUnicodeLength(string, (xsIntegerValue*)&((*self)->size));
 	PiuCodeFormat(self);
 	PiuCodeSearch(self, (*self)->size);
 	PiuCodeSelect(self, (*self)->from, (*self)->to - (*self)->from);

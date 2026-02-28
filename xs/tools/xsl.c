@@ -52,6 +52,7 @@
 
 static txBoolean fxFindScript(txMachine* the, txString path, txID* id);
 static void fxFreezeBuiltIns(txMachine* the);
+static void fxFreezeJSONModule(txMachine* the);
 static txScript* fxLoadScript(txMachine* the, txString path);
 
 int main(int argc, char* argv[]) 
@@ -169,7 +170,7 @@ int main(int argc, char* argv[])
 				argi++;
 				if (argi >= argc)
 					fxReportLinkerError(linker, "-c: no creation");
-				sscanf(argv[argi], "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s", 
+				sscanf(argv[argi], "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%[^,],%d", 
 					&linker->creation.initialChunkSize,
 					&linker->creation.incrementalChunkSize,
 					&linker->creation.initialHeapCount,
@@ -182,7 +183,8 @@ int main(int argc, char* argv[])
 					&linker->creation.parserBufferSize,
 					&linker->creation.parserTableModulo,
 					&linker->creation.staticSize,
-					linker->main);
+					linker->main,
+					&linker->creation.nativeStackSize);
 				linker->symbolModulo = linker->creation.nameModulo;
 			}		
 			else if (!c_strcmp(argv[argi], "-n")) {
@@ -367,6 +369,7 @@ int main(int argc, char* argv[])
 							if (c_strncmp(preload->name, "lockdown/", 9)) {
 								fxSlashPath(preload->name, mxSeparator, url[0]);
 								xsResult = xsAwaitImport(preload->name, XS_IMPORT_NAMESPACE);
+								fxFreezeJSONModule(the);
 								xsCollectGarbage();
 							}
 							preload = preload->nextPreload;
@@ -376,6 +379,7 @@ int main(int argc, char* argv[])
 							if (!c_strncmp(preload->name, "lockdown/", 9)) {
 								fxSlashPath(preload->name, mxSeparator, url[0]);
 								xsResult = xsAwaitImport(preload->name, XS_IMPORT_NAMESPACE);
+								fxFreezeJSONModule(the);
 								xsCollectGarbage();
 							}
 							preload = preload->nextPreload;
@@ -399,24 +403,32 @@ int main(int argc, char* argv[])
 			xsBeginHost(the);
 			{
 				{
+					txSlot* constructor;
 					txCallback callback;
 					txSlot* property;
 					txID id;
+					
+					fxDuplicateInstance(the, mxThrowTypeErrorFunction.value.reference);
+					constructor = the->stack;
+					constructor->value.reference->flag |= XS_CAN_CONSTRUCT_FLAG;
+					mxFunctionInstanceCode(constructor->value.reference)->ID = XS_NO_ID; 
+					mxFunctionInstanceHome(constructor->value.reference)->value.home.object = NULL;
+
 					property = mxBehaviorGetProperty(the, mxAsyncFunctionPrototype.value.reference, mxID(_constructor), 0, XS_OWN);
-					property->kind = mxThrowTypeErrorFunction.kind;
-					property->value = mxThrowTypeErrorFunction.value;
+					property->kind = constructor->kind;
+					property->value = constructor->value;
 					property = mxBehaviorGetProperty(the, mxAsyncGeneratorFunctionPrototype.value.reference, mxID(_constructor), 0, XS_OWN);
-					property->kind = mxThrowTypeErrorFunction.kind;
-					property->value = mxThrowTypeErrorFunction.value;
+					property->kind = constructor->kind;
+					property->value = constructor->value;
 					property = mxBehaviorGetProperty(the, mxFunctionPrototype.value.reference, mxID(_constructor), 0, XS_OWN);
-					property->kind = mxThrowTypeErrorFunction.kind;
-					property->value = mxThrowTypeErrorFunction.value;
+					property->kind = constructor->kind;
+					property->value = constructor->value;
 					property = mxBehaviorGetProperty(the, mxGeneratorFunctionPrototype.value.reference, mxID(_constructor), 0, XS_OWN);
-					property->kind = mxThrowTypeErrorFunction.kind;
-					property->value = mxThrowTypeErrorFunction.value;
+					property->kind = constructor->kind;
+					property->value = constructor->value;
 					property = mxBehaviorGetProperty(the, mxCompartmentPrototype.value.reference, mxID(_constructor), 0, XS_OWN);
-					property->kind = mxThrowTypeErrorFunction.kind;
-					property->value = mxThrowTypeErrorFunction.value;
+					property->kind = constructor->kind;
+					property->value = constructor->value;
 
 					fxDuplicateInstance(the, mxDateConstructor.value.reference);
 					callback = mxCallback(fx_Date_secure);
@@ -454,6 +466,8 @@ int main(int argc, char* argv[])
 					mxPop();
 					mxPush(mxGlobal);
 					mxDeleteID(mxID(_globalThis));
+					mxPop();
+					
 					mxPop();
 				}
 				{
@@ -707,7 +721,7 @@ int main(int argc, char* argv[])
 			fprintf(file, "\tmxScriptsCount,\n");
 			fprintf(file, "\t(txScript*)gxScripts,\n");
 			fprintf(file, "\t%d,\n", the->profileID);
-			fprintf(file, "\t{ %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d },\n",
+			fprintf(file, "\t{ %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d},\n",
 				linker->creation.initialChunkSize,
 				linker->creation.incrementalChunkSize,
 				linker->creation.initialHeapCount,
@@ -719,7 +733,8 @@ int main(int argc, char* argv[])
 				linker->creation.symbolModulo,
 				linker->creation.parserBufferSize,
 				linker->creation.parserTableModulo,
-				linker->creation.staticSize
+				linker->creation.staticSize,
+				linker->creation.nativeStackSize
 			);
 			fprintf(file, "\t\"%s\",\n", linker->main);
 			fprintf(file, "\t{ 0x%.2X", linker->symbolsChecksum[0]);
@@ -795,6 +810,7 @@ txID fxFindModule(txMachine* the, txSlot* realm, txID moduleID, txSlot* slot)
 	char buffer[C_PATH_MAX];
 	char separator;
 	txInteger dot = 0;
+	txInteger i = 0;
 	txInteger hash = 0;
 	txString slash;
 	txString path;
@@ -804,9 +820,15 @@ txID fxFindModule(txMachine* the, txSlot* realm, txID moduleID, txSlot* slot)
 	if (name[0] == '.') {
 		if (name[1] == '/') {
 			dot = 1;
+			i = 1;
 		}
 		else if ((name[1] == '.') && (name[2] == '/')) {
 			dot = 2;
+			i = 2;
+			while ((name[i + 1] == '.') && (name[i + 2] == '.') && (name[i + 3] == '/')) {
+				dot++;
+				i += 3;
+			}
 		}
 	}
 	else if (name[0] == '#') {
@@ -824,7 +846,7 @@ txID fxFindModule(txMachine* the, txSlot* realm, txID moduleID, txSlot* slot)
 	if (slash && (!c_strcmp(slash, ".js") || !c_strcmp(slash, ".mjs") || !c_strcmp(slash, ".xsb")))
 		*slash = 0;
 		
-	if (dot) {
+	if (dot > 0) {
 		if (moduleID == XS_NO_ID)
 			return XS_NO_ID;
 		buffer[0] = separator;
@@ -833,16 +855,18 @@ txID fxFindModule(txMachine* the, txSlot* realm, txID moduleID, txSlot* slot)
 		slash = c_strrchr(buffer, separator);
 		if (!slash)
 			return XS_NO_ID;
-		if (dot == 2) {
-			*slash = 0;
+		*slash = 0;
+		dot--;
+		while (dot > 0) {
 			slash = c_strrchr(buffer, separator);
 			if (!slash)
 				return XS_NO_ID;
+			*slash = 0;
+			dot--;
 		}
-		*slash = 0;
-		if ((c_strlen(buffer) + c_strlen(name + dot)) >= sizeof(buffer))
+		if ((c_strlen(buffer) + c_strlen(name + i)) >= sizeof(buffer))
 			mxRangeError("path too long");
-		c_strcat(buffer, name + dot);
+		c_strcat(buffer, name + i);
 	}
 	else if (hash) {
 		if (moduleID == XS_NO_ID)
@@ -977,6 +1001,27 @@ void fxFreezeBuiltIns(txMachine* the)
 	mxFreezeBuiltInCall; mxPush(mxHosts); mxFreezeBuiltInRun; //@@
 	
 	mxPop();
+}
+
+void fxFreezeJSONModule(txMachine* the)
+{
+	txSlot* instance = fxGetInstance(the, mxResult);
+	txSlot* internal = instance->next;
+	if (internal && (internal->kind == XS_MODULE_KIND) && (internal->flag & XS_JSON_MODULE_FLAG)) {
+		txID defaultID = mxID(_default);
+		txSlot* export = mxModuleInstanceExports(instance)->value.reference->next;
+		if (export && (export->ID == defaultID)) {
+			mxPush(mxObjectConstructor);
+			mxDub();
+			mxGetID(mxID(_freeze));
+			mxCall();
+			mxPushSlot(export->value.export.closure);
+			mxPushBoolean(1);
+			mxRunCount(2);
+			mxPop();
+		}
+	
+	}
 }
 
 void fxLoadModule(txMachine* the, txSlot* module, txID moduleID)

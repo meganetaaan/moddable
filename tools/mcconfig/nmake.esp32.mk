@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2016-2023  Moddable Tech, Inc.
+# Copyright (c) 2016-2026  Moddable Tech, Inc.
 #
 #   This file is part of the Moddable SDK Tools.
 #
@@ -22,10 +22,6 @@ HOST_OS = win
 !IF "$(IDF_PATH)"==""
 !MESSAGE %IDF_PATH% not set. See set-up instructions at https://github.com/Moddable-OpenSource/moddable/blob/public/documentation/devices/esp32.md
 !ERROR
-!ENDIF
-
-!IF "$(EXPECTED_ESP_IDF)"==""
-EXPECTED_ESP_IDF = v5.1.2
 !ENDIF
 
 !IF "$(VERBOSE)"=="1"
@@ -71,7 +67,6 @@ ESP32_TARGET = 2
 !ELSE
 # regular esp32
 ESP32_TARGET = 1
-USB_OPTION =
 !ENDIF
 !ENDIF
 !ENDIF
@@ -83,7 +78,6 @@ USE_USB = 0
 !ENDIF
 
 !IF "$(USE_USB)"=="1"
-TINY_USB_BITS=$(PROJ_DIR)/managed_components
 !IF "$(USB_VENDOR_ID)"==""
 USB_VENDOR_ID = beef
 !ENDIF
@@ -113,11 +107,22 @@ UPLOAD_SPEED = 921600
 DEBUGGER_SPEED = 460800
 !ENDIF
 
+!IFNDEF XSBUG_HOST
+XSBUG_HOST = localhost
+!ENDIF
+!IFNDEF XSBUG_PORT
+XSBUG_PORT = 5002
+!ENDIF
+!IFNDEF XSBUG_LOG_PORT
+XSBUG_LOG_PORT = 5002
+!ENDIF
+
 !IF "$(BASE_DIR)"==""
 BASE_DIR = $(USERPROFILE)
 !ENDIF
 
-!IF [cd /D $(IDF_PATH) && git describe --always --abbrev=0 > $(TMP_DIR)\_idf_version.tmp 2> nul] == 0
+# !IF [cd /D $(IDF_PATH) && git describe --always --abbrev=0 > $(TMP_DIR)\_idf_version.tmp 2> nul] == 0
+!IF [cd /D $(IDF_PATH) && idf.py --version > $(TMP_DIR)\_idf_version.tmp 2> nul] == 0
 IDF_VERSION = \
 !INCLUDE $(TMP_DIR)\_idf_version.tmp
 !IF [del $(TMP_DIR)\_idf_version.tmp] == 0
@@ -149,11 +154,13 @@ PORT_COMMAND = -p $(UPLOAD_PORT)
 
 PROJ_DIR = $(TMP_DIR)\xsProj-$(ESP32_SUBCLASS)
 
+IDF_BUILD_OPTIONS=-D USE_USB=$(USE_USB) -D INSTRUMENT=$(INSTRUMENT) -D ESP32=$(ESP32_TARGET) -D ESP32_SUBCLASS=$(ESP32_SUBCLASS)
+
 !IF "$(DEBUG)"=="1"
 START_XSBUG= tasklist /nh /fi "imagename eq xsbug.exe" | find /i "xsbug.exe" > nul || (start $(BUILD_DIR)\bin\win\release\xsbug.exe)
-BUILD_CMD = python %IDF_PATH%\tools\idf.py $(IDF_PY_LOG_FLAG) build -D mxDebug=1 -D INSTRUMENT=$(INSTRUMENT) -D TMP_DIR="$(TMP_DIR)" -D SDKCONFIG_HEADER="$(SDKCONFIG_H)" -D CMAKE_MESSAGE_LOG_LEVEL=$(CMAKE_LOG_LEVEL) -D DEBUGGER_SPEED=$(DEBUGGER_SPEED) -D ESP32_SUBCLASS=$(ESP32_SUBCLASS)
+BUILD_CMD = python %IDF_PATH%\tools\idf.py $(IDF_PY_LOG_FLAG) build -D mxDebug=1 -D TMP_DIR="$(TMP_DIR)" -D SDKCONFIG_HEADER="$(SDKCONFIG_H)" -D CMAKE_MESSAGE_LOG_LEVEL=$(CMAKE_LOG_LEVEL) -D DEBUGGER_SPEED=$(DEBUGGER_SPEED) $(IDF_BUILD_OPTIONS)
 BUILD_MSG =
-DEPLOY_CMD = python %IDF_PATH%\tools\idf.py $(IDF_PY_LOG_FLAG) $(PORT_COMMAND) -b $(UPLOAD_SPEED) flash -D mxDebug=1 -D INSTRUMENT=$(INSTRUMENT) -D TMP_DIR="$(TMP_DIR)" -D SDKCONFIG_HEADER="$(SDKCONFIG_H)" -D CMAKE_MESSAGE_LOG_LEVEL=$(CMAKE_LOG_LEVEL) -D DEBUGGER_SPEED=$(DEBUGGER_SPEED) -D ESP32_SUBCLASS=$(ESP32_SUBCLASS)
+DEPLOY_CMD = python %IDF_PATH%\tools\idf.py $(IDF_PY_LOG_FLAG) $(PORT_COMMAND) -b $(UPLOAD_SPEED) flash -D mxDebug=1 -D TMP_DIR="$(TMP_DIR)" -D SDKCONFIG_HEADER="$(SDKCONFIG_H)" -D CMAKE_MESSAGE_LOG_LEVEL=$(CMAKE_LOG_LEVEL) -D DEBUGGER_SPEED=$(DEBUGGER_SPEED) $(IDF_BUILD_OPTIONS)
 
 !IF "$(USE_USB)"=="0"
 START_SERIAL2XSBUG = echo Launching app... & echo Type Ctrl-C twice after debugging app. && set "XSBUG_PORT=$(XSBUG_PORT)" && set "XSBUG_HOST=$(XSBUG_HOST)" && $(BUILD_DIR)\bin\win\release\serial2xsbug $(PORT_TO_USE) $(DEBUGGER_SPEED) 8N1
@@ -164,8 +171,8 @@ START_SERIAL2XSBUG = echo Launching app... & echo Type Ctrl-C twice after debugg
 !ELSE
 START_XSBUG=
 START_SERIAL2XSBUG = echo No debugger for a release build.
-BUILD_CMD = python %IDF_PATH%\tools\idf.py $(IDF_PY_LOG_FLAG) build -D mxDebug=0 -D INSTRUMENT=$(INSTRUMENT) -D TMP_DIR="$(TMP_DIR)" -D SDKCONFIG_HEADER="$(SDKCONFIG_H)" -D CMAKE_MESSAGE_LOG_LEVEL=$(CMAKE_LOG_LEVEL) -D DEBUGGER_SPEED=$(DEBUGGER_SPEED) -D ESP32_SUBCLASS=$(ESP32_SUBCLASS)
-DEPLOY_CMD = python %IDF_PATH%\tools\idf.py $(IDF_PY_LOG_FLAG) $(PORT_COMMAND) -b $(UPLOAD_SPEED) flash -D mxDebug=0 -D INSTRUMENT=$(INSTRUMENT) -D TMP_DIR="$(TMP_DIR)" -D SDKCONFIG_HEADER="$(SDKCONFIG_H)" -D CMAKE_MESSAGE_LOG_LEVEL=$(CMAKE_LOG_LEVEL) -D DEBUGGER_SPEED=$(DEBUGGER_SPEED) -D ESP32_SUBCLASS=$(ESP32_SUBCLASS) -D USE_USB=$(USE_USB)
+BUILD_CMD = python %IDF_PATH%\tools\idf.py $(IDF_PY_LOG_FLAG) build -D mxDebug=0 -D TMP_DIR="$(TMP_DIR)" -D SDKCONFIG_HEADER="$(SDKCONFIG_H)" -D CMAKE_MESSAGE_LOG_LEVEL=$(CMAKE_LOG_LEVEL) -D DEBUGGER_SPEED=$(DEBUGGER_SPEED) $(IDF_BUILD_OPTIONS)
+DEPLOY_CMD = python %IDF_PATH%\tools\idf.py $(IDF_PY_LOG_FLAG) $(PORT_COMMAND) -b $(UPLOAD_SPEED) flash -D mxDebug=0 -D TMP_DIR="$(TMP_DIR)" -D SDKCONFIG_HEADER="$(SDKCONFIG_H)" -D CMAKE_MESSAGE_LOG_LEVEL=$(CMAKE_LOG_LEVEL) -D DEBUGGER_SPEED=$(DEBUGGER_SPEED) $(IDF_BUILD_OPTIONS)
 
 !ENDIF
 
@@ -173,26 +180,20 @@ KILL_SERIAL2XSBUG= -tasklist /nh /fi "imagename eq serial2xsbug.exe" | (find /i 
 
 !IF "$(XSBUG_LOG)"=="1"
 !IF "$(USE_USB)"=="0"
-START_SERIAL2XSBUG = echo Launching app... & set "XSBUG_PORT=$(XSBUG_PORT)" && set "XSBUG_HOST=$(XSBUG_HOST)" && cd $(MODDABLE)\tools\xsbug-log && node xsbug-log start /B $(BUILD_DIR)\bin\win\release\serial2xsbug $(PORT_TO_USE) $(DEBUGGER_SPEED) 8N1 
+START_SERIAL2XSBUG = echo Launching app... && set "XSBUG_LOG_PORT=$(XSBUG_LOG_PORT)" && set "XSBUG_PORT=$(XSBUG_PORT)" && set "XSBUG_HOST=$(XSBUG_HOST)" && cd $(MODDABLE)\tools\xsbug-log && node xsbug-log start /B $(BUILD_DIR)\bin\win\release\serial2xsbug $(PORT_TO_USE) $(DEBUGGER_SPEED) 8N1 
 !ELSE
-START_SERIAL2XSBUG = echo Launching app... && set "XSBUG_PORT=$(XSBUG_PORT)" && set "XSBUG_HOST=$(XSBUG_HOST)" && cd $(MODDABLE)\tools\xsbug-log && node xsbug-log start /B $(BUILD_DIR)\bin\win\release\serial2xsbug $(USB_VENDOR_ID):$(USB_PRODUCT_ID) $(DEBUGGER_SPEED) 8N1
+START_SERIAL2XSBUG = echo Launching app... && set "XSBUG_LOG_PORT=$(XSBUG_LOG_PORT)" && set "XSBUG_PORT=$(XSBUG_PORT)" && set "XSBUG_HOST=$(XSBUG_HOST)" && cd $(MODDABLE)\tools\xsbug-log && node xsbug-log start /B $(BUILD_DIR)\bin\win\release\serial2xsbug $(USB_VENDOR_ID):$(USB_PRODUCT_ID) $(DEBUGGER_SPEED) 8N1
 !ENDIF
 START_XSBUG =
 !ENDIF
 
-IDF_RECONFIGURE_CMD=python %IDF_PATH%\tools\idf.py $(IDF_PY_LOG_FLAG) reconfigure -D SDKCONFIG_DEFAULTS=$(SDKCONFIG_FILE_MINGW) -D SDKCONFIG_HEADER="$(SDKCONFIG_H)" -D CMAKE_MESSAGE_LOG_LEVEL=$(CMAKE_LOG_LEVEL) -D DEBUGGER_SPEED=$(DEBUGGER_SPEED) -D IDF_TARGET=$(ESP32_SUBCLASS) -D ESP32_SUBCLASS=$(ESP32_SUBCLASS) -D SDKCONFIG_DEFAULTS=$(SDKCONFIG_FILE)
+IDF_RECONFIGURE_CMD=python %IDF_PATH%\tools\idf.py $(IDF_PY_LOG_FLAG) reconfigure -D SDKCONFIG_DEFAULTS=$(SDKCONFIG_FILE_MINGW) -D SDKCONFIG_HEADER="$(SDKCONFIG_H)" -D CMAKE_MESSAGE_LOG_LEVEL=$(CMAKE_LOG_LEVEL) -D DEBUGGER_SPEED=$(DEBUGGER_SPEED) -D IDF_TARGET=$(ESP32_SUBCLASS) -D SDKCONFIG_DEFAULTS=$(SDKCONFIG_FILE) $(IDF_BUILD_OPTIONS)
 
 BLD_DIR = $(PROJ_DIR)\build
 
 PLATFORM_DIR = $(BUILD_DIR)\devices\esp32
 
-INC_DIRS = \
- 	-I$(IDF_PATH)\components \
- 	-I$(IDF_PATH)\components\bootloader_support\include \
- 	-I$(IDF_PATH)\components\bt\include \
-	-I$(IDF_PATH)\components\bt\include\$(ESP32_BT_SUBCLASS)\include \
- 	-I$(IDF_PATH)\components\bt\host\bluedroid\api\include \
- 	-I$(IDF_PATH)\components\bt\host\bluedroid\api\include\api \
+DRIVER_DIRS_OLD = \
  	-I$(IDF_PATH)\components\driver\dac\include \
  	-I$(IDF_PATH)\components\driver\gpio\include \
  	-I$(IDF_PATH)\components\driver\gptimer\include \
@@ -207,10 +208,37 @@ INC_DIRS = \
  	-I$(IDF_PATH)\components\driver\include \
 	-I$(IDF_PATH)\components\driver\include\driver \
 	-I$(IDF_PATH)\components\driver\$(ESP32_SUBCLASS)\include \
-	-I$(IDF_PATH)\components\driver\$(ESP32_SUBCLASS)\include\driver \
+	-I$(IDF_PATH)\components\driver\$(ESP32_SUBCLASS)\include\driver
+
+DRIVER_DIRS = \
+ 	-I$(IDF_PATH)\components\driver\i2c\include \
+ 	-I$(IDF_PATH)\components\esp_driver_dac\include \
+ 	-I$(IDF_PATH)\components\esp_driver_gpio\include \
+ 	-I$(IDF_PATH)\components\esp_driver_gptimer\include \
+ 	-I$(IDF_PATH)\components\esp_driver_i2c\include \
+ 	-I$(IDF_PATH)\components\esp_driver_i2s\include \
+ 	-I$(IDF_PATH)\components\esp_driver_ledc\include \
+ 	-I$(IDF_PATH)\components\esp_driver_mcpwm\include \
+ 	-I$(IDF_PATH)\components\esp_driver_parlio\include \
+ 	-I$(IDF_PATH)\components\esp_driver_pcnt\include \
+ 	-I$(IDF_PATH)\components\esp_driver_rmt\include \
+ 	-I$(IDF_PATH)\components\esp_driver_sdmmc\include \
+ 	-I$(IDF_PATH)\components\esp_driver_spi\include \
+ 	-I$(IDF_PATH)\components\esp_driver_uart\include
+
+INC_DIRS = \
+	$(DRIVER_DIRS) \
+	$(MANAGED_COMPONENT_DIRS) \
+ 	-I$(IDF_PATH)\components \
+ 	-I$(IDF_PATH)\components\bootloader_support\include \
+ 	-I$(IDF_PATH)\components\bt\include \
+	-I$(IDF_PATH)\components\bt\include\$(ESP32_BT_SUBCLASS)\include \
+ 	-I$(IDF_PATH)\components\bt\host\bluedroid\api\include \
+ 	-I$(IDF_PATH)\components\bt\host\bluedroid\api\include\api \
 	-I$(IDF_PATH)\components\esp_app_format\include \
 	-I$(IDF_PATH)\components\esp_adc\include \
 	-I$(IDF_PATH)\components\esp_adc\$(ESP32_SUBCLASS)\include \
+	-I$(IDF_PATH)\components\esp_bootloader_format\include \
 	-I$(IDF_PATH)\components\esp_common\include \
  	-I$(IDF_PATH)\components\$(ESP32_SUBCLASS)\include \
 	-I$(IDF_PATH)\components\$(ESP32_SUBCLASS) \
@@ -218,27 +246,30 @@ INC_DIRS = \
 	-I$(IDF_PATH)\components\esp_eth\include \
 	-I$(IDF_PATH)\components\esp_hw_support\include \
 	-I$(IDF_PATH)\components\esp_hw_support\include\soc \
+	-I$(IDF_PATH)\components\esp_hw_support\port\$(ESP32_SUBCLASS)\private_include \
+ 	-I$(IDF_PATH)\components\esp_lcd\include \
  	-I$(IDF_PATH)\components\esp_netif\include \
  	-I$(IDF_PATH)\components\esp_partition\include \
  	-I$(IDF_PATH)\components\esp_pm\include \
  	-I$(IDF_PATH)\components\esp_ringbuf\include \
 	-I$(IDF_PATH)\components\esp_rom\include \
  	-I$(IDF_PATH)\components\esp_rom\include\$(ESP32_SUBCLASS) \
+ 	-I$(IDF_PATH)\components\esp_rom\$(ESP32_SUBCLASS)\include \
+ 	-I$(IDF_PATH)\components\esp_rom\$(ESP32_SUBCLASS)\include\$(ESP32_SUBCLASS) \
  	-I$(IDF_PATH)\components\esp_system\include \
  	-I$(IDF_PATH)\components\esp_timer\include \
  	-I$(IDF_PATH)\components\esp_wifi\include \
  	-I$(IDF_PATH)\components\$(ESP_ARCH)\include \
 	-I$(IDF_PATH)\components\$(ESP_ARCH)\$(ESP32_SUBCLASS)\include \
-	-I$(IDF_PATH)\components\freertos\port\$(ESP_ARCH)\include \
- 	-I$(IDF_PATH)\components\freertos\FreeRTOS-Kernel\portable\$(ESP_ARCH)\include \
+	-I$(IDF_PATH)\components\freertos\config\include \
+	-I$(IDF_PATH)\components\freertos\config\include\freertos \
+ 	-I$(IDF_PATH)\components\freertos\config\$(ESP_ARCH)\include \
  	-I$(IDF_PATH)\components\freertos\FreeRTOS-Kernel\include \
  	-I$(IDF_PATH)\components\freertos\FreeRTOS-Kernel\include\freertos \
-	-I$(IDF_PATH)\components\freertos\esp_additions\arch\$(ESP_ARCH)\include \
-	-I$(IDF_PATH)\components\freertos\esp_additions\include \
+	-I$(IDF_PATH)\components\freertos\FreeRTOS-Kernel\portable\$(ESP_ARCH)\include\freertos \
 	-I$(IDF_PATH)\components\freertos\esp_additions\include\freertos \
- 	-I$(IDF_PATH)\components\freertos \
- 	-I$(IDF_PATH)\components\freertos\include \
- 	-I$(IDF_PATH)\components\freertos\include\freertos \
+	-I$(IDF_PATH)\components\freertos\esp_additions\include \
+	-I$(IDF_PATH)\components\freertos\esp_additions\arch\$(ESP_ARCH)\include \
 	-I$(IDF_PATH)\components\hal\include \
 	-I$(IDF_PATH)\components\hal\$(ESP32_SUBCLASS)\include \
 	-I$(IDF_PATH)\components\hal\platform_port\include \
@@ -251,7 +282,7 @@ INC_DIRS = \
 	-I$(IDF_PATH)\components\lwip\port\esp32xx \
 	-I$(IDF_PATH)\components\lwip\port\esp32xx\include \
 	-I$(IDF_PATH)\components\lwip\port\freertos\include \
-	-I$(IDF_PATH)\components\mbedtls\include \
+	-I$(IDF_PATH)\components\mbedtls\mbedtls\include \
 	-I$(IDF_PATH)\components\newlib\include \
 	-I$(IDF_PATH)\components\newlib\platform_include \
 	-I$(IDF_PATH)\components\bt\host\nimble\esp-hci\include \
@@ -267,6 +298,7 @@ INC_DIRS = \
 	-I$(IDF_PATH)\components\bt\host\nimble\port\include \
 	-I$(IDF_PATH)\components\soc\$(ESP32_SUBCLASS)\include \
 	-I$(IDF_PATH)\components\soc\$(ESP32_SUBCLASS)\include\soc \
+	-I$(IDF_PATH)\components\soc\$(ESP32_SUBCLASS)\register \
 	-I$(IDF_PATH)\components\soc\include \
 	-I$(IDF_PATH)\components\soc\include\soc \
 	-I$(IDF_PATH)\components\spiffs\include \
@@ -281,6 +313,19 @@ INC_DIRS = \
 	-I$(IDF_PATH)\components\driver\touch_sensor\$(ESP32_SUBCLASS)\include \
 	-I$(IDF_PATH)\components\vfs\include \
 	-I$(IDF_PATH)\components\tinyusb\additions\include
+
+INC_DIRS = $(INC_DIRS) \
+	-I$(IDF_PATH)\components\freertos\port\$(ESP_ARCH)\include \
+	-I$(IDF_PATH)\components\freertos\FreeRTOS-Kernel\portable\$(ESP_ARCH)\include \
+	-I$(IDF_PATH)\components\freertos\esp_additions\arch\$(ESP_ARCH)\include \
+	-I$(IDF_PATH)\components\freertos\esp_additions\include\freertos \
+	-I$(IDF_PATH)\components\freertos \
+	-I$(IDF_PATH)\components\freertos\include \
+	-I$(IDF_PATH)\components\freertos\include\freertos \
+	-I$(IDF_PATH)\components\freertos\port \
+	-I$(IDF_PATH)\components\freertos\port\$(ESP_ARCH)\include\freertos \
+	-I$(IDF_PATH)\components\freertos\include\esp_additions \
+	-I$(IDF_PATH)\components\freertos\include\esp_additions\freertos
 
 XS_OBJ = \
 	$(LIB_DIR)\xsHost.o \
@@ -331,20 +376,6 @@ XS_OBJ = \
 
 SDKCONFIG_H_DIR = $(BLD_DIR)\config
 
-!IF "$(ESP32_SUBCLASS)"=="esp32h2"
-ESP32_TARGET = 6
-!ELSEIF "$(ESP32_SUBCLASS)"=="esp32c6"
-ESP32_TARGET = 5
-!ELSEIF "$(ESP32_SUBCLASS)"=="esp32c3"
-ESP32_TARGET = 4
-!ELSEIF "$(ESP32_SUBCLASS)"=="esp32s3"
-ESP32_TARGET = 3
-!ELSEIF "$(ESP32_SUBCLASS)"=="esp32s2"
-ESP32_TARGET = 2
-!ELSE
-ESP32_TARGET = 1
-!ENDIF
-
 XS_DIRS = \
 	-I$(XS_DIR)\includes \
 	-I$(XS_DIR)\sources \
@@ -380,14 +411,11 @@ OBJCOPY = $(TOOLS_BIN)$(GXX_PREFIX)-elf-objcopy
 
 AR_OPTIONS = crs
 
-#	-DICACHE_FLASH
-#	-DmxNoConsole=1
 C_DEFINES = \
 	-D__ets__ \
 	-U__STRICT_ANSI__ \
 	-DESP32=$(ESP32_TARGET) \
 	-DmxUseDefaultSharedChunks=1 \
-	-DmxRun=1 \
 	-DkCommodettoBitmapFormat=$(COMMODETTOBITMAPFORMAT) \
 	-DkPocoRotation=$(POCOROTATION)
 
@@ -440,10 +468,29 @@ C_DEFINES = $(C_DEFINES) -DmxDebug=1
 LAUNCH = release
 !ENDIF
 
+!IF "$(DEBUG)$(INSTRUMENT)"==""
+DEBUGGER_SRC_FILE = $(PROJ_DIR)\main\debugger_none.c
+!ELSE
+!IF "$(USE_USB)"=="1"
+DEBUGGER_SRC_FILE = $(PROJ_DIR)\main\debugger_tinyusb.c
+!ELSE
+!IF "$(ESP32_SUBCLASS)"=="esp32s3"
+DEBUGGER_SRC_FILE = $(PROJ_DIR)\main\debugger_uart_cdc.c
+!ELSE
+!IF "$(USE_USB)"=="2"
+DEBUGGER_SRC_FILE = $(PROJ_DIR)\main\debugger_cdc.c
+!ELSE
+DEBUGGER_SRC_FILE = $(PROJ_DIR)\main\debugger_uart.c
+!ENDIF
+!ENDIF
+!ENDIF
+!ENDIF
+
 PARTITIONS_BIN = partition-table.bin
 PARTITIONS_PATH = $(BLD_DIR)\partition_table\$(PARTITIONS_BIN)
 
 PROJ_DIR_FILES = \
+	$(DEBUGGER_SRC_FILE) \
 	$(PROJ_DIR)\main\main.c	\
 	$(PROJ_DIR)\main\component.mk	\
 	$(PROJ_DIR)\main\CMakeLists.txt \
@@ -463,7 +510,7 @@ PROJ_DIR_FILES = $(PROJ_DIR_FILES) \
 !ENDIF
 !ENDIF
 
-.PHONY: all
+.PHONY: all dependencies
 
 all: $(LAUNCH)
 
@@ -482,14 +529,18 @@ clean:
 	if exist $(PROJ_DIR) del /s/q/f $(PROJ_DIR)\*.* > NUL
 	if exist $(PROJ_DIR) rmdir /s/q $(PROJ_DIR)
 
-precursor: idfVersionCheck $(BLE) $(SDKCONFIG_H) $(LIB_DIR) $(BIN_DIR)\xs_$(ESP32_SUBCLASS).a
+dependencies: $(PROJ_DIR) $(PROJ_DIR_FILES) $(PROJ_DIR)\..\xs_idf_deps.txt
+	if exist $(TMP_DIR)\xsProj-$(ESP32_SUBCLASS)\main\idf_component.yml del $(TMP_DIR)\xsProj-$(ESP32_SUBCLASS)\main\idf_component.yml
+	echo "# Configure dependencies..." & cd $(PROJ_DIR) & $(BUILD_DEPENDENCIES)
+
+precursor: idfVersionCheck $(BLE) dependencies $(SDKCONFIG_H) $(LIB_DIR) $(BIN_DIR)\xs_$(ESP32_SUBCLASS).a
 	copy $(BIN_DIR)\xs_$(ESP32_SUBCLASS).a $(BLD_DIR)\.
 
 debug: precursor
 	$(KILL_SERIAL2XSBUG)
 	$(START_XSBUG)
 	copy $(BIN_DIR)\xs_$(ESP32_SUBCLASS).a $(BLD_DIR)\.
-	-cd $(PROJ_DIR) & python %IDF_PATH%\tools\idf.py $(IDF_PY_LOG_FLAG) $(PORT_COMMAND) -b $(UPLOAD_SPEED) build flash -D INSTRUMENT=$(INSTRUMENT) -D TMP_DIR="$(TMP_DIR)" -D mxDebug=1 -D SDKCONFIG_HEADER="$(SDKCONFIG_H)" -D CMAKE_MESSAGE_LOG_LEVEL=$(CMAKE_LOG_LEVEL) -D DEBUGGER_SPEED=$(DEBUGGER_SPEED) -D ESP32_SUBCLASS=$(ESP32_SUBCLASS) -D SDKCONFIG_DEFAULTS="$(SDKCONFIG_FILE)" -D USE_USB=$(USE_USB)
+	-cd $(PROJ_DIR) & python %IDF_PATH%\tools\idf.py $(IDF_PY_LOG_FLAG) $(PORT_COMMAND) -b $(UPLOAD_SPEED) build flash -D TMP_DIR="$(TMP_DIR)" -D mxDebug=1 -D SDKCONFIG_HEADER="$(SDKCONFIG_H)" -D CMAKE_MESSAGE_LOG_LEVEL=$(CMAKE_LOG_LEVEL) -D DEBUGGER_SPEED=$(DEBUGGER_SPEED) -D SDKCONFIG_DEFAULTS="$(SDKCONFIG_FILE)" $(IDF_BUILD_OPTIONS)
 	-copy $(BLD_DIR)\xs_esp32.map $(BIN_DIR)\. > nul 2>&1
 	-copy $(BLD_DIR)\xs_esp32.bin $(BIN_DIR)\. > nul 2>&1
 	-copy $(BLD_DIR)\partition_table\partition-table.bin $(BIN_DIR)\. > nul 2>&1
@@ -503,7 +554,7 @@ release: precursor
 	if exist $(BLD_DIR)\xs_esp32.elf del $(BLD_DIR)\xs_esp32.elf
 	if not exist $(BLD_DIR) mkdir $(BLD_DIR)
 	copy $(BIN_DIR)\xs_$(ESP32_SUBCLASS).a $(BLD_DIR)\.
-	cd $(PROJ_DIR) & python %IDF_PATH%\tools\idf.py $(IDF_PY_LOG_FLAG) $(PORT_COMMAND) -b $(UPLOAD_SPEED) build flash -D INSTRUMENT=$(INSTRUMENT) -D TMP_DIR="$(TMP_DIR)" -D mxDebug=0 -D SDKCONFIG_HEADER="$(SDKCONFIG_H)" -D CMAKE_MESSAGE_LOG_LEVEL=$(CMAKE_LOG_LEVEL) -D DEBUGGER_SPEED=$(DEBUGGER_SPEED) -D ESP32_SUBCLASS=$(ESP32_SUBCLASS) -D SDK_CONFIG_DEFAULTS=$(SDKCONFIG_FILE) -D USE_USB=$(USE_USB)
+	cd $(PROJ_DIR) & python %IDF_PATH%\tools\idf.py $(IDF_PY_LOG_FLAG) $(PORT_COMMAND) -b $(UPLOAD_SPEED) build flash -D TMP_DIR="$(TMP_DIR)" -D mxDebug=0 -D SDKCONFIG_HEADER="$(SDKCONFIG_H)" -D CMAKE_MESSAGE_LOG_LEVEL=$(CMAKE_LOG_LEVEL) -D DEBUGGER_SPEED=$(DEBUGGER_SPEED) -D SDK_CONFIG_DEFAULTS=$(SDKCONFIG_FILE) $(IDF_BUILD_OPTIONS)
 	copy $(BLD_DIR)\xs_esp32.map $(BIN_DIR)\.
 	copy $(BLD_DIR)\xs_esp32.bin $(BIN_DIR)\.
 	copy $(BLD_DIR)\partition_table\partition-table.bin $(BIN_DIR)
@@ -511,8 +562,6 @@ release: precursor
 	python %IDF_PATH%\tools\idf.py $(IDF_PY_LOG_FLAG) $(PORT_COMMAND) -b $(UPLOAD_SPEED) monitor
 
 prepare:
-	$(KILL_SERIAL2XSBUG)
-	$(START_XSBUG)
 	if exist $(BLD_DIR)\xs_esp32.elf del $(BLD_DIR)\xs_esp32.elf
 	if not exist $(BLD_DIR) mkdir $(BLD_DIR)
 	copy $(BIN_DIR)\xs_$(ESP32_SUBCLASS).a $(BLD_DIR)\.
@@ -528,6 +577,7 @@ build: precursor prepare
 	if exist $(BLD_DIR)\ota_data_initial.bin copy $(BLD_DIR)\ota_data_initial.bin $(BIN_DIR)
 	copy $(BLD_DIR)\xs_esp32.bin $(BIN_DIR)
 	copy $(BLD_DIR)\xs_esp32.map $(BIN_DIR)
+	echo Build complete.
 
 xsbug:
 	$(KILL_SERIAL2XSBUG)
@@ -566,8 +616,7 @@ DEPLOY_END:
 deploy: DEPLOY_PRE DEPLOY_START DEPLOY_END
 
 idfVersionCheck:
-	python $(PROJ_DIR_TEMPLATE)\versionCheck.py $(EXPECTED_ESP_IDF) $(IDF_VERSION) || (echo "Expected ESP IDF $(EXPECTED_ESP_IDF), found $(IDF_VERSION) - continuing")
-#	python $(PROJ_DIR_TEMPLATE)\versionCheck.py $(EXPECTED_ESP_IDF) $(IDF_VERSION) || (echo "Expected ESP IDF $(EXPECTED_ESP_IDF), found $(IDF_VERSION)" && exit 1)
+	python $(PROJ_DIR_TEMPLATE)\versionCheck.py $(EXPECTED_ESP_IDF) $(IDF_VERSION) || (echo "Expected ESP-IDF $(EXPECTED_ESP_IDF), found $(IDF_VERSION)" && exit 1)
 
 xidfVersionCheck:
 	python $(PROJ_DIR_TEMPLATE)\versionCheck.py $(EXPECTED_ESP_IDF) $(IDF_VERSION)
@@ -576,10 +625,7 @@ xidfVersionCheck:
 		exit 1
 	)
 
-$(PROJ_DIR)\managed_components:
-	echo "# Configure tinyusb..."; cd $(PROJ_DIR) ; idf.py add-dependency "espressif/esp_tinyusb"
-
-$(SDKCONFIG_H): $(SDKCONFIG_FILE) $(PROJ_DIR_FILES) $(TINY_USB_BITS)
+$(SDKCONFIG_H): $(SDKCONFIG_FILE) $(PROJ_DIR_FILES)
 	@echo Reconfiguring ESP-IDF...
 	if exist $(PROJ_DIR)\sdkconfig del $(PROJ_DIR)\sdkconfig
 	cd $(PROJ_DIR) 
@@ -604,8 +650,23 @@ $(PROJ_DIR) : $(PROJ_DIR_TEMPLATE)
 $(PROJ_DIR)\main:
 	mkdir $(PROJ_DIR)\main
 
-$(PROJ_DIR)\main\main.c: $(PROJ_DIR)\main $(PROJ_DIR_TEMPLATE)\main\main.c
-	copy $(PROJ_DIR_TEMPLATE)\main\main.c $@
+$(PROJ_DIR)\main\debugger_none.c: $(PROJ_DIR)\main $(PLATFORM_DIR)\lib\debugger\debugger_none.c
+	copy $(PLATFORM_DIR)\lib\debugger\debugger_none.c $@
+
+$(PROJ_DIR)\main\debugger_uart.c: $(PROJ_DIR)\main $(PLATFORM_DIR)\lib\debugger\debugger_uart.c
+	copy $(PLATFORM_DIR)\lib\debugger\debugger_uart.c $@
+
+$(PROJ_DIR)\main\debugger_uart_cdc.c: $(PROJ_DIR)\main $(PLATFORM_DIR)\lib\debugger\debugger_uart_cdc.c
+	copy $(PLATFORM_DIR)\lib\debugger\debugger_uart_cdc.c $@
+
+$(PROJ_DIR)\main\debugger_cdc.c: $(PROJ_DIR)\main $(PLATFORM_DIR)\lib\debugger\debugger_cdc.c
+	copy $(PLATFORM_DIR)\lib\debugger\debugger_cdc.c $@
+
+$(PROJ_DIR)\main\debugger_tinyusb.c: $(PROJ_DIR)\main $(PLATFORM_DIR)\lib\debugger\debugger_tinyusb.c
+	copy $(PLATFORM_DIR)\lib\debugger\debugger_tinyusb.c $@
+
+$(PROJ_DIR)\main\main.c: $(PROJ_DIR)\main $(BUILD_DIR)\devices\esp32\lib\main\main.c
+	copy $(BUILD_DIR)\devices\esp32\lib\main\main.c $@
 
 $(PROJ_DIR)\main\component.mk: $(PROJ_DIR)\main $(PROJ_DIR_TEMPLATE)\main\component.mk
 	copy $(PROJ_DIR_TEMPLATE)\main\component.mk $@

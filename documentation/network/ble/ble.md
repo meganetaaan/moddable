@@ -1,6 +1,6 @@
 # BLE
-Copyright 2017-2022 Moddable Tech, Inc.<BR>
-Revised: June 20, 2022
+Copyright 2017-2025 Moddable Tech, Inc.<BR>
+Revised: January 15, 2025
 
 ## About This Document
 This document describes the Moddable SDK Bluetooth Low Energy (BLE) modules. Both client (master) and server (slave) roles are supported on Espressif ESP32, Silicon Labs Blue Gecko, Qualcomm QCA4020, and Nordic nRF52 devices.
@@ -37,17 +37,21 @@ Pre-made manifests are available for the BLE client and BLE server. Add them to 
 
 To add the BLE client to a project:
 
-	"include": [
-		/* other includes here */
-		"$(MODDABLE)/modules/network/ble/manifest_client.json",
-	],
+```jsonc
+"include": [
+	/* other includes here */
+	"$(MODDABLE)/modules/network/ble/manifest_client.json"
+],
+```
 
 To add the BLE server to a project:
 
-	"include": [
-		/* other includes here */
-		"$(MODDABLE)/modules/network/ble/manifest_server.json",
-	],
+```jsonc
+"include": [
+	/* other includes here */
+	"$(MODDABLE)/modules/network/ble/manifest_server.json"
+],
+```
 
 <a id="usingble"></a>
 ## Using BLE
@@ -93,11 +97,13 @@ let htm = new HealthThermometerService;
 ## BLE Client
 A BLE client can connect to one or more BLE peripherals. The maximum number of concurrent connections is defined at build time and ultimately limited by what the underlying embedded platform supports. To override the default maximum of two connections, override the `max_connections` value in the manifest `defines` section:
 
-	"defines": {
-		"ble": {
-			"max_connections": 3
-		}
-	},
+```json
+"defines": {
+	"ble": {
+		"max_connections": 3
+	}
+},
+```
 
 A BLE client typically performs the following steps to receive notifications from a BLE peripheral:
 
@@ -576,6 +582,7 @@ The `Characteristic` class provides access to a single service characteristic.
 | `name` | `string` | Characteristic name defined in the optional service JSON. When the characteristic is not defined in the service JSON, this property is `undefined`.
 | `type` | `string` | Characteristic type defined in the optional service JSON. When the characteristic is not defined in the service JSON, this property is `undefined`.
 | `descriptors` | `array` | Array of characteristic descriptors discovered.
+| `properties` | `number` | Bit field of GATT Characteristic Properties (`read` = 2, `writeNoResponse` = 4, `write` = 8, `notify` = 16, `indicate` = 32, `extended` = 128)
 
 ### Functions
 
@@ -877,7 +884,7 @@ To identify an advertised device with the complete name "Zip":
 ```javascript
 onDiscovered(device) {
 	let completeName = device.scanResponse.completeName;
-	if (completeName == "ZIP")
+	if (completeName == "ZIP") {
 		trace("Found ZIP device\n");
 	}
 }
@@ -907,7 +914,7 @@ To search for the "TX Power Level" advertisement data type in the scan response 
 onDiscovered(device) {
 	let scanResponse = device.scanResponse;
 	let index = scanResponse.findIndex(GAP.ADType.TX_POWER_LEVEL);
-	if (-1 !== index)
+	if (-1 !== index) {
 		trace(`Found advertisement tx power level data at index ${index}\n`);
 		const bytes = new Uint8Array(scanResponse.buffer);
 		const txPowerLevel = bytes[index + 2];
@@ -1080,11 +1087,9 @@ let advertiser = new BLEServer;
 The read-only `localAddress` property accessor function returns the Bluetooth peripheral's local address as a [Bytes](#classbytes) object.
 
 ```javascript
-import Hex from "hex";
-
 class Advertiser extends BLEServer {
 	onReady() {
-		trace(`device address: ${Hex.toString(this.localAddress, ":")}\n`);
+		trace(`device address: ${(new Uint8Array(this.localAddress)).toHex()}\n`);
 	}
 }
 ```
@@ -1740,7 +1745,7 @@ onDisconnected() {
 	this.stopMeasurements();
 	this.startAdvertising({
 		filterPolicy: GAP.AdvFilterPolicy.WHITELIST_SCANS_CONNECTIONS,
-		advertisingData: {flags: 6, completeName: this.deviceName, completeUUID16List: [HEART_RATE_SERVIE_UUID, BATTERY_SERVICE_UUID]
+		advertisingData: {flags: 6, completeName: this.deviceName, completeUUID16List: [HEART_RATE_SERVICE_UUID, BATTERY_SERVICE_UUID]
 	});
 }
 ```

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023 Moddable Tech, Inc
+ * Copyright (c) 2020-2026 Moddable Tech, Inc
  *
  *   This file is part of the Moddable SDK Tools.
  *
@@ -35,14 +35,14 @@ interface ArrayBufferTypes {
 	HostBuffer: HostBuffer;
 }
 
-interface BufferTypes extends ArrayBufferTypes  {
+interface ByteBufferTypes extends ArrayBufferTypes  {
 	Uint8Array: Uint8Array,
 	Uint8ClampedArray: Uint8ClampedArray,
 	Int8Array: Int8Array,
 	DataView: DataView
 }
 
-type BufferLike = BufferTypes[keyof BufferTypes];
+type ByteBuffer = ByteBufferTypes[keyof ByteBufferTypes];
 
 interface ObjectConstructor {
 	freeze<T>(obj: T, freeze?: boolean | number): Readonly<T>;
@@ -58,16 +58,32 @@ interface StringConstructor {
 
 interface ArrayBufferConstructor {
 	fromString(string: string): ArrayBuffer;
-	fromBigInt(value: BigInt): ArrayBuffer;
+	fromBigInt(value: bigint): ArrayBuffer;
 }
 
 interface ArrayBuffer {
 	concat(...buffers: ArrayBufferLike[]): ArrayBuffer;
 }
 
+interface Uint8Array {
+	toHex(): string;
+	toBase64(): string
+}
+
+interface FromBase64Options {
+	alphabet?: "base64url" | "base64";
+	lastChunkHandling?: "stop-before-partial" | "strict" | "loose";
+	omitPadding?: boolean;
+}
+
+interface Uint8ArrayConstructor {
+	fromBase64(base64: string, options?: FromBase64Options): Uint8Array;
+	fromHex(string: string): Uint8Array;
+}
+
 interface BigIntConstructor {
-	bitLength(value: BigInt): number
-	fromArrayBuffer(buffer: ArrayBufferLike): BigInt
+	bitLength(value: bigint): number
+	fromArrayBuffer(buffer: ArrayBufferLike): bigint
 }
 
 // integer math proposal
@@ -80,10 +96,8 @@ interface Math {
 	mod(a: number, b: number): number
 }
 
-// already defined by TypeScript (because Web)
-// interface Error {
-// 	stack: string
-// }
-
+// xs host objects, host functions
+declare function Native(name: string): new (...args: any[]) => any;
+declare function native(name: string): (...args: any[]) => any;
 
 // Compartment?

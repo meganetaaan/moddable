@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017  Moddable Tech, Inc.
+ * Copyright (c) 2016-2025  Moddable Tech, Inc.
  *
  *   This file is part of the Moddable SDK Runtime.
  * 
@@ -97,7 +97,7 @@ void fx_isFinite(txMachine* the)
 	mxResult->kind = XS_BOOLEAN_KIND;
     mxResult->value.boolean = 0;
 	fpclass = c_fpclassify(number);
-	if ((fpclass != FP_NAN) && (fpclass != FP_INFINITE))
+	if ((fpclass != C_FP_NAN) && (fpclass != C_FP_INFINITE))
 		mxResult->value.boolean = 1;
 }
 
@@ -108,7 +108,7 @@ void fx_isNaN(txMachine* the)
 	mxResult->kind = XS_BOOLEAN_KIND;
     mxResult->value.boolean = 0;
 	fpclass = c_fpclassify(number);
-	if (fpclass == FP_NAN)
+	if (fpclass == C_FP_NAN)
 		mxResult->value.boolean = 1;
 }
 
@@ -244,7 +244,7 @@ void fx_Number_isFinite(txMachine* the)
 			mxResult->value.boolean = 1;
     	else if (slot->kind == XS_NUMBER_KIND) {
 			fpclass = c_fpclassify(slot->value.number);
-			if ((fpclass != FP_NAN) && (fpclass != FP_INFINITE))
+			if ((fpclass != C_FP_NAN) && (fpclass != C_FP_INFINITE))
 				mxResult->value.boolean = 1;
 		}
 	}
@@ -261,7 +261,7 @@ void fx_Number_isInteger(txMachine* the)
 			mxResult->value.boolean = 1;
     	else if (slot->kind == XS_NUMBER_KIND) {
 			fpclass = c_fpclassify(slot->value.number);
-			if ((fpclass != FP_NAN) && (fpclass != FP_INFINITE)) {
+			if ((fpclass != C_FP_NAN) && (fpclass != C_FP_INFINITE)) {
 				txNumber check = c_trunc(slot->value.number);
 				if (slot->value.number == check)
 					mxResult->value.boolean = 1;
@@ -279,7 +279,7 @@ void fx_Number_isNaN(txMachine* the)
     if (slot) {
     	if (slot->kind == XS_NUMBER_KIND) {
 			fpclass = c_fpclassify(slot->value.number);
-			if (fpclass == FP_NAN)
+			if (fpclass == C_FP_NAN)
 				mxResult->value.boolean = 1;
 		}
 	}
@@ -296,7 +296,7 @@ void fx_Number_isSafeInteger(txMachine* the)
 			mxResult->value.boolean = 1;
     	else if (slot->kind == XS_NUMBER_KIND) {
 			fpclass = c_fpclassify(slot->value.number);
-			if ((fpclass != FP_NAN) && (fpclass != FP_INFINITE)) {
+			if ((fpclass != C_FP_NAN) && (fpclass != C_FP_INFINITE)) {
 				txNumber check = c_trunc(slot->value.number);
 				if (slot->value.number == check) {
 					if ((C_MIN_SAFE_INTEGER <= check) && (check <= C_MAX_SAFE_INTEGER))
@@ -314,7 +314,7 @@ void fx_Number_prototype_toExponential(txMachine* the)
 	txNumber precision = 0;
 	txNumber value;
 	txSlot* slot = fxCheckNumber(the, mxThis);
-	if (!slot) mxTypeError("this is no number");
+	if (!slot) mxTypeError("this: not a number");
 	value = slot->value.number;
 	if ((mxArgc > 0) && !mxIsUndefined(mxArgv(0))) {
 		precision = fxToNumber(the, mxArgv(0));
@@ -347,7 +347,7 @@ void fx_Number_prototype_toFixed(txMachine* the)
 	txNumber precision = 0;
 	txNumber value;
 	txSlot* slot = fxCheckNumber(the, mxThis);
-	if (!slot) mxTypeError("this is no number");
+	if (!slot) mxTypeError("this: not a number");
 	value = slot->value.number;
 	if ((mxArgc > 0) && !mxIsUndefined(mxArgv(0))) {
 		precision = fxToNumber(the, mxArgv(0));
@@ -371,7 +371,7 @@ void fx_Number_prototype_toFixed(txMachine* the)
 void fx_Number_prototype_toLocaleString(txMachine* the)
 {
 	txSlot* slot = fxCheckNumber(the, mxThis);
-	if (!slot) mxTypeError("this is no number");
+	if (!slot) mxTypeError("this: not a number");
 	mxResult->kind = slot->kind;
 	mxResult->value = slot->value;
 	fxToString(the, mxResult);
@@ -384,7 +384,7 @@ void fx_Number_prototype_toPrecision(txMachine* the)
 	txNumber precision = 0;
 	txNumber value;
 	txSlot* slot = fxCheckNumber(the, mxThis);
-	if (!slot) mxTypeError("this is no number");
+	if (!slot) mxTypeError("this: not a number");
 	value = slot->value.number;
 	if ((mxArgc > 0) && !mxIsUndefined(mxArgv(0))) {
 		precision = fxToNumber(the, mxArgv(0));
@@ -410,7 +410,7 @@ void fx_Number_prototype_toString(txMachine* the)
 {
 	txInteger radix;
 	txSlot* slot = fxCheckNumber(the, mxThis);
-	if (!slot) mxTypeError("this is no number");
+	if (!slot) mxTypeError("this: not a number");
 	if ((mxArgc > 0) && (!mxIsUndefined(mxArgv(0)))) {
 		radix = fxToInteger(the, mxArgv(0));
 		if ((radix < 2) || (36 < radix))
@@ -536,7 +536,7 @@ void fx_Number_prototype_toString(txMachine* the)
 void fx_Number_prototype_valueOf(txMachine* the)
 {
 	txSlot* slot = fxCheckNumber(the, mxThis);
-	if (!slot) mxTypeError("this is no number");
+	if (!slot) mxTypeError("this: not a number");
 	mxResult->kind = slot->kind;
 	mxResult->value = slot->value;
 }

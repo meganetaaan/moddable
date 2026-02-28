@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2022 Shinya Ishikawa
+* Copyright (c) 2022-2025 Shinya Ishikawa
 *
 *   This file is part of the Moddable SDK Tools.
 *
@@ -19,7 +19,6 @@
 */
 
 declare module "embedded:io/socket/udp" {
-  import type { Buffer } from "embedded:io/_common";
   class UDP {
     constructor(options: {
       port?: number;
@@ -32,12 +31,11 @@ declare module "embedded:io/socket/udp" {
       multicast: string;
       timeToLive: number;
     }))
-    write(buffer: Buffer, address: string, port: number): void;
+    write(buffer: ByteBuffer, address: string, port: number): void;
     read(): ArrayBuffer & {
       address: string;
       port: number;
     };
-    read(buffer: Buffer);
     get format(): "buffer"
     set format(value: "buffer")
   }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017  Moddable Tech, Inc.
+ * Copyright (c) 2016-2025  Moddable Tech, Inc.
  *
  *   This file is part of the Moddable SDK Runtime.
  * 
@@ -151,11 +151,7 @@
 #endif /* !INCLUDE_XSPLATFORM */
 
 #ifndef mxBoundsCheck
-	#ifdef mxDebug
-		#define mxBoundsCheck 1
-	#else
-		#define mxBoundsCheck 0
-	#endif
+	#define mxBoundsCheck 1
 #endif
 #ifndef NULL
 	#define NULL 0
@@ -265,6 +261,9 @@ typedef txU4 xsUnsignedValue;
 
 #define xsString(_VALUE) \
 	(fxString(the, &the->scratch, (xsStringValue)(_VALUE)), \
+	the->scratch)
+#define xsStringX(_VALUE) \
+	(fxStringX(the, &the->scratch, (xsStringValue)(_VALUE)), \
 	the->scratch)
 #define xsStringBuffer(_BUFFER,_SIZE) \
 	(fxStringBuffer(the, &the->scratch, _BUFFER ,_SIZE), \
@@ -885,7 +884,31 @@ typedef txU4 xsIndex;
 	fxPush(_SLOT7), \
 	fxRunCount(the, 8), \
 	fxPop())
-	
+
+#define xsNewFunction0(_FUNCTION) \
+	(xsOverflow(-XS_FRAME_COUNT-0), \
+	fxPush(_FUNCTION), \
+	fxNew(the), \
+	fxRunCount(the, 0), \
+	fxPop())
+
+#define xsNewFunction1(_FUNCTION,_SLOT0) \
+	(xsOverflow(-XS_FRAME_COUNT-1), \
+	fxPush(_FUNCTION), \
+	fxNew(the), \
+	fxPush(_SLOT0), \
+	fxRunCount(the, 1), \
+	fxPop())
+
+#define xsNewFunction2(_FUNCTION,_SLOT0,_SLOT1) \
+	(xsOverflow(-XS_FRAME_COUNT-2), \
+	fxPush(_FUNCTION), \
+	fxNew(the), \
+	fxPush(_SLOT0), \
+	fxPush(_SLOT1), \
+	fxRunCount(the, 2), \
+	fxPop())
+
 #define xsTest(_SLOT) \
 	(xsOverflow(-1), \
 	fxPush(_SLOT), \
@@ -1132,6 +1155,7 @@ struct xsJumpRecord {
 	#define xsURIError(...) fxThrowMessage(the, NULL, 0, XS_URI_ERROR, __VA_ARGS__)
 #endif
 
+
 /* Platform */
 
 #ifdef mxDebug
@@ -1198,6 +1222,7 @@ struct xsMachineRecord {
 	void* archive;
 	xsSlot scratch;
 	xsSlot* stackPrototypes;
+	int exitStatus;
 #ifndef __XSALL__
 	xsMachinePlatform
 #endif
@@ -1216,6 +1241,7 @@ struct xsCreationRecord {
 	xsIntegerValue parserBufferSize;
 	xsIntegerValue parserTableModulo;
 	xsIntegerValue staticSize;
+	xsIntegerValue nativeStackSize;
 };
 
 #define xsCreateMachine(_CREATION,_NAME,_CONTEXT) \
@@ -1304,6 +1330,38 @@ struct xsCreationRecord {
 	#define xsEndMetering(_THE)
 #endif
 
+#define xsNormalExit (-1)
+
+#define xsBeginHostExit(_THE) \
+	do { \
+		xsMachine* __HOST_THE__ = _THE; \
+		xsJump __HOST_JUMP__; \
+		__HOST_JUMP__.nextJump = (__HOST_THE__)->firstJump; \
+		__HOST_JUMP__.stack = (__HOST_THE__)->stack; \
+		__HOST_JUMP__.scope = (__HOST_THE__)->scope; \
+		__HOST_JUMP__.frame = (__HOST_THE__)->frame; \
+		__HOST_JUMP__.environment = NULL; \
+		__HOST_JUMP__.code = (__HOST_THE__)->code; \
+		__HOST_JUMP__.flag = 0; \
+		(__HOST_THE__)->firstJump = &__HOST_JUMP__; \
+		(__HOST_THE__)->exitStatus = xsNormalExit; \
+		if (setjmp(__HOST_JUMP__.buffer) == 0) { \
+			xsMachine* the = fxBeginHost(__HOST_THE__)
+
+#define xsEndHostExit(_THE) \
+			fxEndHost(the); \
+			the = NULL; \
+		} \
+		else if ((__HOST_THE__)->exitStatus == xsNormalExit) \
+			(__HOST_THE__)->exitStatus = xsUnhandledExceptionExit; \
+		(__HOST_THE__)->stack = __HOST_JUMP__.stack, \
+		(__HOST_THE__)->scope = __HOST_JUMP__.scope, \
+		(__HOST_THE__)->frame = __HOST_JUMP__.frame, \
+		(__HOST_THE__)->code = __HOST_JUMP__.code, \
+		(__HOST_THE__)->firstJump = __HOST_JUMP__.nextJump; \
+		break; \
+	} while(1)
+
 enum {	
 	xsNoID = 0,
 	xsDefault = 0,
@@ -1383,13 +1441,14 @@ typedef unsigned char xsAttribute;
 enum {
 	xsDebuggerExit = 0,
 	xsNotEnoughMemoryExit,
-	xsStackOverflowExit,
+	xsJavaScriptStackOverflowExit,
 	xsFatalCheckExit,
 	xsDeadStripExit,
 	xsUnhandledExceptionExit,
 	xsNoMoreKeysExit,
 	xsTooMuchComputationExit,
 	xsUnhandledRejectionExit,
+	xsNativeStackOverflowExit,
 };
 
 #ifndef __XSALL__
@@ -1417,6 +1476,10 @@ mxImport xsStringValue fxToStringBuffer(xsMachine*, xsSlot*, xsStringValue, xsIn
 mxImport xsStringValue fxToStringX(xsMachine*, xsSlot*);
 mxImport void fxUnsigned(xsMachine*, xsSlot*, xsUnsignedValue);
 mxImport xsUnsignedValue fxToUnsigned(xsMachine*, xsSlot*);
+mxImport void fxFromBigInt64(xsMachine* the, xsSlot* slot, int64_t value);
+mxImport int64_t fxToBigInt64(xsMachine* the, xsSlot* slot);
+mxImport void fxFromBigUint64(xsMachine* the, xsSlot* slot, uint64_t value);
+mxImport uint64_t fxToBigUint64(xsMachine* the, xsSlot* slot);
 
 mxImport void *fxArrayBuffer(xsMachine*, xsSlot*, void*, xsIntegerValue, xsIntegerValue);
 mxImport void fxGetArrayBufferData(xsMachine*, xsSlot*, xsIntegerValue, void*, xsIntegerValue);
@@ -1439,9 +1502,9 @@ mxImport void fxArrayCacheEnd(xsMachine*, xsSlot*);
 mxImport void fxArrayCacheItem(xsMachine*, xsSlot*, xsSlot*);
 
 mxImport void fxBuildHosts(xsMachine*, xsIntegerValue, xsHostBuilder*);
-mxImport void fxNewHostConstructor(xsMachine*, xsCallback, xsIntegerValue, xsIntegerValue);
-mxImport void fxNewHostFunction(xsMachine*, xsCallback, xsIntegerValue, xsIntegerValue, xsIntegerValue);
-mxImport void fxNewHostInstance(xsMachine*);
+mxImport xsSlot* fxNewHostConstructor(xsMachine*, xsCallback, xsIntegerValue, xsIntegerValue);
+mxImport xsSlot* fxNewHostFunction(xsMachine*, xsCallback, xsIntegerValue, xsIntegerValue, xsIntegerValue);
+mxImport xsSlot* fxNewHostInstance(xsMachine*);
 mxImport xsSlot* fxNewHostObject(xsMachine*, xsDestructor);
 mxImport xsIntegerValue fxGetHostBufferLength(xsMachine*, xsSlot*);
 mxImport void* fxGetHostChunk(xsMachine*, xsSlot*);
@@ -1528,7 +1591,7 @@ mxImport xsStringValue fxUTF8Decode(xsStringValue string, xsIntegerValue* charac
 mxImport xsStringValue fxUTF8Encode(xsStringValue string, xsIntegerValue character);
 mxImport xsIntegerValue fxUTF8Length(xsIntegerValue character);
 mxImport xsIntegerValue fxUTF8ToUnicodeOffset(xsStringValue theString, xsIntegerValue theOffset);
-mxImport xsIntegerValue fxUnicodeLength(xsStringValue theString);
+mxImport xsIntegerValue fxUnicodeLength(xsStringValue theString, xsIntegerValue* byteLength);
 mxImport xsIntegerValue fxUnicodeToUTF8Offset(xsStringValue theString, xsIntegerValue theOffset);
 
 mxImport xsStringValue fxIntegerToString(xsMachine*, xsIntegerValue, xsStringValue, xsIntegerValue);
@@ -1558,6 +1621,7 @@ mxImport void fxDeleteRegExp(xsMachine* the, xsIntegerValue* code, xsIntegerValu
 mxImport xsBooleanValue fxMatchRegExp(xsMachine* the, xsIntegerValue* code, xsIntegerValue* data, xsStringValue subject, xsIntegerValue offset);
 
 mxImport void fxAbort(xsMachine* the, int status);
+mxImport xsStringValue fxAbortString(int status);
 
 #ifdef __cplusplus
 }

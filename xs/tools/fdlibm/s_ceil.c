@@ -1,15 +1,16 @@
-
-/* @(#)s_ceil.c 1.3 95/01/18 */
+/* @(#)s_ceil.c 5.1 93/09/24 */
 /*
  * ====================================================
  * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
  *
- * Developed at SunSoft, a Sun Microsystems, Inc. business.
+ * Developed at SunPro, a Sun Microsystems, Inc. business.
  * Permission to use, copy, modify, and distribute this
- * software is freely granted, provided that this notice 
+ * software is freely granted, provided that this notice
  * is preserved.
  * ====================================================
  */
+
+//__FBSDID("$FreeBSD: src/lib/msun/src/s_ceil.c,v 1.11 2008/02/15 07:01:40 bde Exp $");
 
 /*
  * ceil(x)
@@ -20,30 +21,21 @@
  *	Inexact flag raised if x not equal to ceil(x).
  */
 
-#include "fdlibm.h"
+#include "math_private.h"
 
-#ifdef __STDC__
 static const double huge = 1.0e300;
-#else
-static double huge = 1.0e300;
-#endif
 
-#ifdef __STDC__
-	double s_ceil(double x)
-#else
-	double s_ceil(x)
-	double x;
-#endif
+double
+s_ceil(double x)
 {
-	int i0,i1,j0;
-	unsigned i,j;
-	i0 =  __HI(x);
-	i1 =  __LO(x);
+	int32_t i0,i1,j0;
+	u_int32_t i,j;
+	EXTRACT_WORDS(i0,i1,x);
 	j0 = ((i0>>20)&0x7ff)-0x3ff;
 	if(j0<20) {
 	    if(j0<0) { 	/* raise inexact if x != 0 */
 		if(huge+x>0.0) {/* return 0*sign(x) if |x|<1 */
-		    if(i0<0) {i0=0x80000000;i1=0;} 
+		    if(i0<0) {i0=0x80000000;i1=0;}
 		    else if((i0|i1)!=0) { i0=0x3ff00000;i1=0;}
 		}
 	    } else {
@@ -58,21 +50,20 @@ static double huge = 1.0e300;
 	    if(j0==0x400) return x+x;	/* inf or NaN */
 	    else return x;		/* x is integral */
 	} else {
-	    i = ((unsigned)(0xffffffff))>>(j0-20);
+	    i = ((u_int32_t)(0xffffffff))>>(j0-20);
 	    if((i1&i)==0) return x;	/* x is integral */
 	    if(huge+x>0.0) { 		/* raise inexact flag */
 		if(i0>0) {
-		    if(j0==20) i0+=1; 
+		    if(j0==20) i0+=1;
 		    else {
 			j = i1 + (1<<(52-j0));
-			if(j<i1) i0+=1;	/* got a carry */
+			if(j<(u_int32_t)i1) i0+=1;	/* got a carry */
 			i1 = j;
 		    }
 		}
 		i1 &= (~i);
 	    }
 	}
-	__HI(x) = i0;
-	__LO(x) = i1;
+	INSERT_WORDS(x,i0,i1);
 	return x;
 }

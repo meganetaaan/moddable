@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022  Moddable Tech, Inc.
+ * Copyright (c) 2021-2025  Moddable Tech, Inc.
  *
  *   This file is part of the Moddable SDK Runtime.
  * 
@@ -50,11 +50,10 @@ class EventSource {
 	#headers;
 	#body;
 	
-	constructor(href, options) {
+	constructor(href, options = {}) {
 		const url = new URL(href);
 		const protocol = url.protocol;
 		this.#host = url.hostname;
-		let config, port;
 		if (protocol == "http:") {
 			this.#config = device.network.http;
 			this.#port = url.port || 80;
@@ -64,7 +63,7 @@ class EventSource {
 			this.#port = url.port || 443;
 		}
 		else
-			throw new URLError("only http or https")
+			throw new URIError("only http or https")
 		this.#origin = url.origin;
 		let path = url.pathname;
 		let query = url.search;
@@ -72,14 +71,14 @@ class EventSource {
 			path += query;
 		this.#path = path;
 		this.#url = url.href;
-		this.#method = options.method || "GET";
+		this.#method = options.method ?? "GET";
 		this.#headers = new Headers();
 		this.#headers.set("accept", "text/event-stream");
 		options.headers?.forEach((value, name) => this.#headers.set(name.toLowerCase(), value));
 		if ((this.#method == "POST") || (this.#method == "PUT")) {
 			let body = options.body;
 			if (!body) 
-				rejectResponse(new URLError(this.#method + " no body"));
+				throw new URIError(this.#method + " no body");
 			else if (!(body instanceof ArrayBuffer)) {
 				body = body.toString();
 				body = ArrayBuffer.fromString(body);
@@ -164,7 +163,7 @@ class EventSource {
 		let method = this.#method;
 		let headers = this.#headers;
 		let body = this.#body;
-		let length = body.byteLength;
+		let length = body?.byteLength ?? 0;
 		let offset = 0;
 		let buffer = null;
 		let index = 0, nameStart, nameStop, valueStart, valueStop;
@@ -173,7 +172,7 @@ class EventSource {
 			method,
 			path,
 			headers,
-			onHeaders: (status, headers) => {
+			onHeaders: (status, headers, statusText) => {
 				if ((status == 200) && (headers.get("content-type").indexOf("text/event-stream") >= 0)) {
 					this.#readystate = this.OPEN;
 					const event = { type:"open" };
@@ -181,7 +180,7 @@ class EventSource {
 				}
 				else {
 					client.close();
-					this.#onError();
+					this.#onError({status, statusText});
 				}
 			},
 			onWritable(count) {
@@ -213,7 +212,7 @@ class EventSource {
 						 state = BODY;
 						 if (c == 0x0A)
 						 	break;
-						 // continue
+						 // fall through
 					case BODY:
 						if ((c == 0x0A) || (c == 0x0D)) {
 							this.#dispatchEvent();
@@ -248,7 +247,7 @@ class EventSource {
 							valueStart++;
 						 	break;
 						 }
-						 // continue
+						 // fall through
 					case VALUE:
 						if ((c == 0x0A) || (c == 0x0D)) {
 							valueStop = index;
@@ -288,10 +287,10 @@ class EventSource {
 			this.#callEventListeners(event);
 		}
 	}
-	#onError() {
+	#onError(error) {
 		this.#client = null;
 		this.#readystate = this.CLOSED;
-		const event = { type:"error" };
+		const event = { type:"error", ...error };
 		this.#callEventListeners(event);
 	}
 	#processField(name, value) {
@@ -303,7 +302,7 @@ class EventSource {
 			this.#data += value + "\n";
 			break;
 		case "id":
-			if (value.index("\0") < 0)
+			if (value.indexOf("\0") < 0)
 				this.#lastEventID = value;
 			break;
 		case "retry":

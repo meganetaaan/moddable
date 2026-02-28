@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2022  Moddable Tech, Inc.
+ * Copyright (c) 2016-2026  Moddable Tech, Inc.
  *
  *   This file is part of the Moddable SDK Tools.
  * 
@@ -19,6 +19,7 @@
  */
 
 import { MakeFile as MAKEFILE, TSConfigFile, PrerequisiteFile, FormatFile, RotationFile, Tool } from "mcmanifest";
+import { FILE } from "tool";
 
 var formatStrings = {
 	gray16: "Gray16",
@@ -42,6 +43,11 @@ var formatValues = {
 	x: 0,
 };
 
+function replaceBackSlashes(value) {
+	value = value.replace(/\\/g, "/");
+	return value;
+}
+
 class MakeFile extends MAKEFILE {
 	constructor(path) {
 		super(path)
@@ -61,7 +67,8 @@ class MakeFile extends MAKEFILE {
 				creation.parser.buffer, ",",
 				creation.parser.table, ",",
 				creation.static, ",", 
-				creation.main);
+				creation.main, ",",
+				creation.nativeStack);
 		this.line("");
 		this.write("MANIFEST =");
 		for (var result in tool.manifests.already) {
@@ -90,7 +97,7 @@ class MakeFile extends MAKEFILE {
 		for (var result of [].concat(tool.jsFiles, tool.tsFiles)) {
 			this.write("\\\n\t$(MODULES_DIR)");
 			this.write(tool.slash);
-			this.write(result.target.replaceAll('#', '\\#'));
+			this.write(result.target.replaceAll('#', tool.windows ? '^#' : "\\#"));
 		}	
 		for (var result of tool.cFiles) {
 			var sourceParts = tool.splitPath(result.source);
@@ -107,11 +114,12 @@ class MakeFile extends MAKEFILE {
 			this.write(sourceParts.name);
 			this.write(".h.xsi");
 		}
+
 		this.line("");
 		this.write("PRELOADS =");
 		for (var result of tool.preloads) {
 			this.write("\\\n\t-p ");
-			this.write(result);
+			this.write(result.replaceAll('#', tool.escapedHash));
 		}	
 		this.line("");
 		this.line("");
@@ -185,6 +193,147 @@ class MakeFile extends MAKEFILE {
 	}
 }
 
+class ZephyrMakeFile extends MAKEFILE {
+	generateManifestDefinitions(tool) {
+		let creation = tool.creation;
+		this.line("set(mCREATION -c ", 
+				creation.chunk.initial, ",", 
+				creation.chunk.incremental, ",", 
+				creation.heap.initial, ",", 
+				creation.heap.incremental, ",", 
+				creation.stack, ",", 
+				creation.keys.initial, ",", 
+				creation.keys.incremental, ",", 
+				creation.keys.name, ",", 
+				creation.keys.symbol, ",",
+				creation.parser.buffer, ",",
+				creation.parser.table, ",",
+				creation.static, ",", 
+				creation.main, ",",
+				creation.nativeStack, ")");
+		this.line("");
+		for (let result in tool.manifests.already) {
+			this.line("list(APPEND mMANIFEST ", result, ")");
+		}	
+		this.line("");
+		if (tool.strip) {
+			for (let result of tool.strip) {
+				this.line("list(APPEND mSTRIPS ", result, ")");
+			}
+		}
+		this.line("");
+	}
+	generateModulesDefinitions(tool) {
+		for (var result of [].concat(tool.nodered2mcuFiles, tool.cdvFiles)) {
+			this.write("list(APPEND mMODULES " + tool.modulesPath);
+			this.write(tool.slash);
+			this.write(result.target + ".xsb)");
+			this.line("");
+		}
+		for (var result of [].concat(tool.jsFiles, tool.tsFiles)) {
+			this.write("list(APPEND mMODULES ${MODULES_DIR}");
+			this.write(tool.slash);
+			this.write(result.target.replaceAll('#', tool.windows ? '^#' : "\\#"));
+			this.write(")");
+			this.line("");
+		}	
+		for (var result of tool.cFiles) {
+			var sourceParts = tool.splitPath(result.source);
+			this.write("list(APPEND mMODULES ${TMP_DIR}");
+			this.write(tool.slash);
+			this.write(sourceParts.name);
+			this.write(sourceParts.extension);
+			this.write(".xsi");
+			this.write(")");
+			this.line("");
+		}
+		for (var result of tool.hFiles) {
+			var sourceParts = tool.splitPath(result);
+
+			this.write("list(APPEND mMODULES ${TMP_DIR}");
+			this.write(tool.slash);
+			this.write(sourceParts.name);
+			this.write(".h.xsi");
+			this.write(")");
+			this.line("");
+		}
+
+		this.line("");
+		for (var result of tool.preloads) {
+			this.write("list (APPEND mPRELOADS ");
+			this.write("-p ");
+			this.write(result.replaceAll('#', tool.escapedHash));
+			this.write(")");
+			this.line("");
+		}
+		this.line("");
+	}
+	generateModulesRules(tool) {
+		let result, source, sourceParts;
+		super.generateModulesRules(tool);
+		for (result of tool.cFiles) {
+			source = result.source;
+			sourceParts = tool.splitPath(result.source);
+
+			this.line(`cmake_path(CONVERT "${source}" TO_NATIVE_PATH_LIST the_source)`);
+			this.line("add_custom_command(");
+			this.line("  OUTPUT ${TMP_DIR}", tool.slash, sourceParts.name, sourceParts.extension, ".xsi\n");
+			this.line("  COMMAND xsid ${the_source} -o ${NATIVE_TMP_DIR}");
+			this.line("  DEPENDS ", source);
+			this.line("  VERBATIM)");
+			this.line();
+		}
+		for (result of tool.hFiles) {
+			source = result;
+			sourceParts = tool.splitPath(source);
+
+			this.line(`cmake_path(CONVERT "${source}" TO_NATIVE_PATH_LIST the_source)`);
+			this.line("add_custom_command(");
+			this.line("  OUTPUT ${TMP_DIR}", tool.slash, sourceParts.name, sourceParts.extension, ".xsi");
+			this.line("  COMMAND xsid ${the_source} -o ${NATIVE_TMP_DIR}");
+			this.line("  DEPENDS ", source);
+			this.line("  VERBATIM)");
+			this.line();
+		}
+	}
+	generateObjectsDefinitions(tool) {
+		this.line("zephyr_library_include_directories(");
+		for (var folder of tool.cFolders) {
+			this.line("\t", folder);
+		}
+		this.line("\t", tool.tmpPath);
+		this.line(")");
+		if (tool.format) {
+			this.line("zephyr_library_compile_definitions(\"-DkCommodettoBitmapFormat=", formatValues[tool.format], "\")");
+			this.line("zephyr_library_compile_definitions(\"-DkPocoRotation=", tool.rotation, "\")");
+		}
+		for (var header of tool.hFiles) {
+			this.line("list(APPEND mINCLUDES ", header, ")");
+		}	
+		if (tool.format) {
+			this.line("list(APPEND mINCLUDES ${TMP_DIR}", tool.slash, "mc.defines.h)");
+			this.line("list(APPEND mINCLUDES ${TMP_DIR}", tool.slash, "mc.format.h)");
+			this.line("list(APPEND mINCLUDES ${TMP_DIR}", tool.slash, "mc.rotation.h)");
+		}
+		this.line("");
+		for (var result of tool.cFiles) {
+			this.line("list(APPEND mOBJECTS ", result.source, ")");
+		}	
+		this.line("");
+	}
+	generateObjectsRules(tool) {
+		for (var result of tool.cFiles) {
+			var source = result.source;
+			var target = result.target;
+			this.line("list(APPEND mOBJECTS ", source, ")");
+			if (result.recipe) {
+				throw new Error("don't know what to do with the recipe: " + result.recipe);
+//				this.write(tool.recipes[result.recipe]);
+			}
+		}
+	}
+}
+
 class AndroidMakeFile extends MakeFile {
 	constructor(path) {
 		super(path)
@@ -245,7 +394,7 @@ class IOSMakeFile extends MakeFile {
 			task = "xcode"
 		this.line("TASK = ", task);
 	}
-	generateObjectsRules(tool) {
+	generateObjectsRules(/* tool */) {
 	}
 }
 
@@ -364,7 +513,7 @@ class CMakeListsFile extends PrerequisiteFile {
 	generate(tool) {
 		this.line('# WARNING: This file is automatically generated. Do not edit.');
 		this.line("");
-		this.line("cmake_minimum_required(VERSION 3.4.1)");
+		this.line("cmake_minimum_required(VERSION 3.13)");
 		this.line("");
 		this.line("add_library(tech-moddable-piu SHARED");
 		this.line("\t", tool.moddablePath, "/../moddableprojects/xs/platforms/android_xs.c");
@@ -388,12 +537,6 @@ class CMakeListsFile extends PrerequisiteFile {
 			this.line("\tmxDebug=1");
 			this.line("\tmxInstrument=1");
 		}
-		this.line("\tmxRun=1");
-		this.line("\tmxParse=1");
-		this.line("\tmxNoFunctionLength=1");
-		this.line("\tmxNoFunctionName=1");
-		this.line("\tmxHostFunctionPrimitive=1");
-		this.line("\tmxFewGlobalsTable=1");
 		this.line(")");
 		
 		this.line("target_include_directories(tech-moddable-piu PUBLIC");
@@ -443,6 +586,19 @@ class ConfigFile extends PrerequisiteFile {
 			}
 		}
 		this.line("}, true);");
+		this.close();
+	}
+}
+
+class ZephyrConfigFile extends PrerequisiteFile {
+	generate(tool) {
+		this.line('# WARNING: This file is automatically generated. Do not edit. ');
+		this.line("");
+
+		for (let name in tool.manifest.zephyrConfig) {
+			this.line(name + "=" + tool.manifest.zephyrConfig[name]);
+		}
+
 		this.close();
 	}
 }
@@ -613,12 +769,6 @@ class XcodeFile extends PrerequisiteFile {
 			this.line("\t\t\t\t\t\"mxDebug=1\",");
 			this.line("\t\t\t\t\t\"mxInstrument=1\",");
 		}
-		this.line("\t\t\t\t\t\"mxRun=1\",");
-		this.line("\t\t\t\t\t\"mxParse=1\",");
-		this.line("\t\t\t\t\t\"mxNoFunctionLength=1\",");
-		this.line("\t\t\t\t\t\"mxNoFunctionName=1\",");
-		this.line("\t\t\t\t\t\"mxHostFunctionPrimitive=1\",");
-		this.line("\t\t\t\t\t\"mxFewGlobalsTable=1\",");
 		template = template.replace(/#GCC_PREPROCESSOR_DEFINITIONS#/g, this.current);
 		
 		this.current = ""
@@ -801,7 +951,7 @@ export default class extends Tool {
 			this.createDirectory(path);
 		}
 		else {
-			path += this.slash + this.platform;
+			path += this.slash + platform;
 			this.createDirectory(path);
 			if (this.subplatform) {
 				path += this.slash + this.subplatform;
@@ -823,6 +973,8 @@ export default class extends Tool {
 			path += this.slash + last;
 			this.createDirectory(path);
 		}
+		if (this.platform == "zephyr")
+			this.createDirectory(path + this.slash + "build");
 		return path;
 	}
 	filterCommonjs(commonjs) {
@@ -887,6 +1039,18 @@ export default class extends Tool {
 		}
 		this.config = config;
 	}
+	filterZephyrConfig(config) {
+		if (this.platform == "zephyr")
+			this.mergeProperties(config, this.zephyrConfig);
+	}
+	filterZephyrShields(config) {
+		if (this.platform == "zephyr")
+			this.mergeProperties(config, this.zephyrShields);
+	}
+	filterZephyrOverlay(config) {
+		if (this.platform == "zephyr")
+			this.mergeProperties(config, this.zephyrOverlay);
+	}
 	filterCreation(creation) {
 		creation.chunk ??= {};
 		if (!creation.chunk.initial) creation.chunk.initial = 32768;
@@ -917,6 +1081,7 @@ export default class extends Tool {
 		if ((this.platform == "x-android") || (this.platform == "x-android-simulator") || (this.platform == "x-ios") || (this.platform == "x-ios-simulator")) {
 			creation.main = this.ipAddress;
 		}
+		creation.nativeStack ??= 0;
 		this.creation = creation;
 	}
 	filterPreload(preload) {
@@ -1042,6 +1207,68 @@ export default class extends Tool {
 		}
 	}
 	run() {
+		if (this.platform === "esp") {
+			let base;
+			if (this.windows) {
+				base = this.environment.BASE_DIR ?? this.getenv("BASE_DIR") ?? this.getenv("USERPROFILE");
+				this.environment.BASE_DIR = base;
+				this.setenv("BASE_DIR", base);
+				base = this.resolveDirectoryPath(base + this.slash + "esp" + this.slash); 
+				if (!base)
+					throw new Error("esp directory not found");
+			}
+			else {
+				base = this.environment.ESP_BASE ?? this.getenv("ESP_BASE");
+				if (!base) {
+					base = this.resolveDirectoryPath(this.getenv("HOME") + "/esp/");
+					if (!base)
+						throw new Error("esp directory not found");
+				}
+				this.environment.ESP_BASE = base;
+				this.setenv("ESP_BASE", base);
+			}
+		
+			this.environment.ARDUINO_ROOT = base + this.slash + "esp8266-2.3.0";
+			this.setenv("ARDUINO_ROOT", this.environment.ARDUINO_ROOT);
+		}
+		else if (this.platform === "zephyr") {
+			let temp = this.environment.ZEPHYR_BASE ?? this.getenv("ZEPHYR_BASE");
+			if (!temp)
+				throw new Error ("$ZEPHYR_BASE not set. See set-up instructions at https://github.com/Moddable-OpenSource/moddable/blob/public/documentation/devices/zephyr.md");
+
+			this.environment.ZEPHYR_BASE = temp;
+
+			temp = this.environment.UPLOAD_PORT ?? this.getenv("UPLOAD_PORT");
+			if (!temp) {
+				if (this.currentPlatform === "mac") {
+					if (this.environment.ZEPHYR_PID && this.environment.ZEPHYR_VID)
+						temp = this.environment.ZEPHYR_VID + ":" + this.environment.ZEPHYR_PID;
+					else
+						temp = "0483:374b";		// STMicroelectronics dev boards
+				}
+				else if (this.currentPlatform === "win")
+					temp = "COM3";
+				else
+					temp = "/dev/ttyACM0";
+				this.setenv("UPLOAD_PORT", temp);
+				trace(`$UPLOAD_PORT not set. Using "${temp}".\n`);
+			}
+			this.environment.UPLOAD_PORT = temp;
+
+			temp = this.environment.DEBUGGER_PORT ?? this.getenv("DEBUGGER_PORT");
+			if (!temp)
+				temp = this.environment.UPLOAD_PORT;
+			this.environment.DEBUGGER_PORT = temp;
+			this.setenv("DEBUGGER_PORT", temp);
+			trace(`$DEBUGGER_PORT set to "${temp}".\n`);
+
+			temp = this.environment.DEBUGGER_SPEED ?? this.getenv("DEBUGGER_SPEED");
+			if (!temp)
+				temp = "115200";
+			this.environment.DEBUGGER_SPEED = temp;
+			this.setenv("DEBUGGER_SPEED", temp);
+		}
+
 		this.localsName = "locals";
 		super.run();
 
@@ -1060,6 +1287,9 @@ export default class extends Tool {
 		this.filterRecipes(this.manifest.recipes);
 		this.strip = this.manifest.strip;
 		this.typescript = this.manifest.typescript;
+		this.filterZephyrConfig(this.manifest.zephyrConfig);
+		this.filterZephyrShields(this.manifest.zephyrShields);
+		this.filterZephyrOverlay(this.manifest.zephyrOverlay);
 		
 		var name = this.environment.NAME
 		if (this.platform == "x-mac")
@@ -1144,6 +1374,12 @@ export default class extends Tool {
 			this.jsFiles.push({ source, target });
 			if (this.preloads.length)
 				this.preloads.push("mc" + this.slash + "config.xsb");
+			if (this.platform == "zephyr") {
+				this.jsFiles.push({ source: this.tmpPath + this.slash + "mc.devicetree.js", target: folder + this.slash + "devicetree.xsb" });
+				if (this.preloads.length)
+					this.preloads.push(`mc${this.slash}devicetree.xsb`);
+			}
+
 			file = new ConfigFile(source, this);
 			file.generate(this);
 			file = new DefinesFile(this.tmpPath + this.slash + "mc.defines.h", this);
@@ -1154,6 +1390,10 @@ export default class extends Tool {
 			file.generate(this);
 			this.dataPath = this.resourcesPath = this.tmpPath + this.slash + "resources";
 			this.createDirectory(this.resourcesPath);
+			if (this.platform == "zephyr") {
+				file = new ZephyrConfigFile(this.tmpPath + this.slash + "zephyr.conf", this);
+				file.generate(this);
+			}
 		}
 		for (var folder of this.dataFolders)
 			this.createFolder(this.dataPath, folder);
@@ -1165,7 +1405,11 @@ export default class extends Tool {
 
 		this.writeFileString(this.tmpPath + this.slash + "manifest_flat.json", JSON.stringify(this.manifest, undefined, "\t")); 
 
-		var path = this.tmpPath + this.slash + "makefile", file;
+		var path;
+		if (this.platform == "zephyr")
+			path = this.tmpPath + this.slash + "CMakeLists.txt";
+		else
+			path = this.tmpPath + this.slash + "makefile";
 		if (this.windows) {
 			if (this.platform == "synergy")
 				file = new SynergyNMakeFile(path);
@@ -1175,6 +1419,8 @@ export default class extends Tool {
 				file = new esp32NMakeFile(path);
 			else if (this.platform == "nrf52")
 				file = new nrf52NMakeFile(path);
+			else if (this.platform == "zephyr")
+				file = new ZephyrMakeFile(path);
 			else
 				file = new NMakeFile(path);
 		}
@@ -1183,28 +1429,113 @@ export default class extends Tool {
 				file = new AndroidMakeFile(path);
 			else if ((this.platform == "x-ios") || (this.platform == "x-ios-simulator"))
 				file = new IOSMakeFile(path);
+			else if (this.platform == "zephyr")
+				file = new ZephyrMakeFile(path);
 			else
 				file = new MakeFile(path);
 		}
 		file.generate(this);
 
+		if (this.platform == "zephyr") {
+			let infile = this.readFileString(path);
+			if (this.windows)
+				infile = replaceBackSlashes(infile);
+			const outfile = new FILE(path, "w");
+			outfile.line(`##### Generated file: ${(new Date(Date.now()).toString())}`);
+			for (var result of this.preloads) {
+				outfile.write("list(APPEND preloadsNATIVE -p ");
+				outfile.write(result.replaceAll('#', this.escapedHash).replaceAll('\\', "\\\\"));
+				outfile.line(")");
+			}
+			outfile.line(`set(NATIVE_RESOURCES_DIR ${this.resourcesPath.replaceAll('\\', "\\\\")})`);
+			outfile.line(`set(NATIVE_MODDABLE_DIR ${this.moddablePath.replaceAll('\\', "\\\\")})`);
+			outfile.line(`set(NATIVE_MODULES_DIR ${this.modulesPath.replaceAll('\\', "\\\\")})`);
+			outfile.line(`set(NATIVE_TMP_DIR ${this.tmpPath.replaceAll('\\', "\\\\")})`);
+			outfile.line("#####");
+			outfile.line();
+			
+			outfile.write(infile);
+			outfile.close();
+		}
+
 		if (this.tsFiles.length) {
 			file = new TSConfigFile(this.modulesPath + this.slash + "tsconfig.json");
-			file.generate(this);
+			file.generate(this, true, false);
+		}
+
+		if (this.jsFiles.length) {
+			file = new TSConfigFile(this.modulesPath + this.slash + "tsconfig-js.json");
+			file.generate(this, false, true);
 		}
 
 		if (this.make) {
-			let cmd;
-			if (this.buildTarget) {
-				if (this.windows)
-					cmd = ["nmake", "/nologo", "/f", path, this.buildTarget];
-				else 
-					cmd = ["make", "-f", path, this.buildTarget];
-			} else {
-				if (this.windows)
-					cmd = ["nmake", "/nologo", "/f", path];
+			let cmd, overlay = "";
+			if (this.platform == "zephyr") {
+				if (this.zephyrOverlayFiles.length) {
+					overlay = "-DEXTRA_DTC_OVERLAY_FILE=\"";
+					for (var result of this.zephyrOverlayFiles)
+						overlay += result + " ";
+					overlay += "\"";
+				}
+				let command = `cd ${this.moddablePath} && `;
+				path = `${this.moddablePath}${this.slash}build${this.slash}devices${this.slash}zephyr${this.slash}app`;
+				if (this.buildTarget == "clean") {
+					if (this.windows)
+						command += `del /s/q/f build\\bin\\zephyr\\${this.subplatform}\\*.* build\\tmp\\zephyr\\${this.subplatform}\\*.* ${this.environment.ZEPHYR_BASE}\\build\\*.*`;
+					else
+						command += `rm -rf build/bin/zephyr/${this.subplatform} build/tmp/zephyr/${this.subplatform} ${this.environment.ZEPHYR_BASE}${this.slash}build`;
+				}
+				else if (this.buildTarget == "deploy")
+					command += `west flash -d ${this.tmpPath}${this.slash}build`;
+				else if (this.buildTarget == "debug")
+					command += `west debug --build ${this.tmpPath}${this.slash}build`;
+				else {
+					let action, secondary = "";
+					if (undefined === this.environment.ZEPHYR_BOARD)
+						throw new Error("ZEPHYR_BOARD undefined");
+						
+					action = "build";
+					if (this.buildTarget == "build")
+						secondary = `${path} -d ${this.tmpPath}${this.slash}build -- -DEXTRA_CONF_FILE=${this.tmpPath}${this.slash}zephyr.conf -DMODDABLE_BUILD_DIR=${this.tmpPath} ${overlay}`
+					else if (this.buildTarget == "all" || undefined === this.buildTarget)  					/* all */
+						secondary = `${path} -d ${this.tmpPath}${this.slash}build -- -DEXTRA_CONF_FILE=${this.tmpPath}${this.slash}zephyr.conf -DMODDABLE_BUILD_DIR=${this.tmpPath} ${overlay} && west -z ${this.environment.ZEPHYR_BASE} flash -d ${this.tmpPath}${this.slash}build && serial2xsbug ${this.environment.DEBUGGER_PORT} ${this.environment.DEBUGGER_SPEED} 8N1`;
+					else
+						throw new Error("unknown target: " + this.buildTarget);
+
+					command = `cd ${this.moddablePath} && west -v -z ${this.environment.ZEPHYR_BASE} ${action} -b ${this.environment.ZEPHYR_BOARD} -d ${this.tmpPath}${this.slash}build`;
+
+					let shieldName;
+					for (shieldName in this.manifest.zephyrShields) {
+						command += ` --shield ${this.manifest.zephyrShields[shieldName]}`
+					}
+
+					command += ` ${secondary}`;
+				}
+				if (this.windows) {
+					const buildCmdPath = this.tmpPath + "\\doBuild.bat";
+					const buildCmdFile = new FILE(buildCmdPath, "w");
+					buildCmdFile.line(`@echo on`);
+					buildCmdFile.line('tasklist /nh /fi "imagename eq xsbug.exe" | find /i "xsbug.exe" > nul || (start xsbug)');
+					buildCmdFile.line(`bash -c "${replaceBackSlashes(command)}"`);
+					buildCmdFile.line(`echo Build done`);
+					buildCmdFile.close();
+					cmd = [ "cmd", "/C", buildCmdPath ];
+				}
 				else
-					cmd = ["make", "-f", path];
+					cmd = [ "bash", "-c", command ];
+			}
+			else {
+				if (this.buildTarget) {
+					if (this.windows)
+						cmd = ["nmake", "/nologo", "/f", path, this.buildTarget];
+					else 
+						cmd = ["make", "-f", path, this.buildTarget];
+				} else {
+					if (this.windows)
+						cmd = ["nmake", "/nologo", "/f", path];
+					else
+						cmd = ["make", "-f", path];
+				}
 			}
 
 			if ("esp32" === this.platform) {
@@ -1216,6 +1547,15 @@ export default class extends Tool {
 						cmd = ["cmd", "/C", `set IDF_EXPORT_QUIET=1 && pushd %IDF_PATH% && "%IDF_TOOLS_PATH%\\idf_cmd_init.bat" && popd && ${cmd.join(" ")}`];
 					else
 						cmd = ["bash", "-c", `export IDF_EXPORT_QUIET=1 && source $IDF_PATH/export.sh && ${cmd.join(" ")}`];
+				}
+			}
+
+			if ("zephyr" === this.platform) {
+				if (this.spawn(this.windows ? "where" : "which", "west") !== 0) { // installed but not activated
+					if (this.windows)
+						throw new Error("Zephyr SDK not activated");
+					else
+						cmd = ["bash", "-c", `source $ZEPHYR_BASE/../.venv/bin/activate && ${cmd.join(" ")}`];
 				}
 			}
 

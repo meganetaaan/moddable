@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023  Moddable Tech, Inc.
+ * Copyright (c) 2019-2025  Moddable Tech, Inc.
  *
  *   This file is part of the Moddable SDK Runtime.
  *
@@ -24,7 +24,7 @@
 #include "xsHost.h"
 #include "builtinCommon.h"
 
-#if kPinBanks
+#ifdef kPinBanks
 
 #if ESP32
 	#include "soc/soc_caps.h"
@@ -36,7 +36,7 @@
 		SOC_GPIO_VALID_GPIO_MASK >> 32
 #endif
 	};
-#elif defined(__ets__)
+#elif defined(__ets__) && !defined(__ZEPHYR__)
 	static uint32_t gDigitalAvailable[kPinBanks] = {
 		(1 <<  0) |
 		(1 <<  1) |
@@ -51,6 +51,7 @@
 		(1 << 16)
 	};
 #elif nrf52
+	#include "nrf_drv_gpiote.h"
 	static uint32_t gDigitalAvailable[kPinBanks] = {
 		0xFFFFFFFF,
 		0x0000FFFF
@@ -67,6 +68,9 @@
 		0x00000000		//@@
 #endif
 	};
+#elif __ZEPHYR__
+	static uint8_t builtinInitialized = 0;
+	static uint32_t gDigitalAvailable[kPinBanks];
 #endif
 
 uint8_t builtinArePinsFree(uint32_t bank, uint32_t pins)
@@ -85,8 +89,16 @@ uint8_t builtinUsePins(uint32_t bank, uint32_t pins)
 
 void builtinFreePins(uint32_t bank, uint32_t pins)
 {
-	if (bank < kPinBanks)
+	if (bank < kPinBanks) {
+#if nrf52
+		int i;
+		for (i=0; i<32; i++) {
+			if (pins & (1 << i))
+				nrf_gpio_cfg_default((bank * 32) + i);
+		}
+#endif
 		gDigitalAvailable[bank] |= pins;
+	}
 }
 #endif /* kPinBanks */
 
@@ -97,37 +109,45 @@ xsSlot *builtinGetCallback(xsMachine *the, xsIdentifier id)
 	return fxToReference(the, &slot);
 }
 
+static const char *gFormats[] = {
+	"number",
+	"buffer",
+	"string",
+	"socket/tcp",
+
+	"uint8",
+	"int8",
+	"uint16",
+	"int16",
+	"uint32",
+	"int32",
+	"uint64",
+	"int64",
+
+	"buffer/disposable",
+
+	C_NULL
+};
+
 void builtinGetFormat(xsMachine *the, uint8_t format)
 {
-	if (kIOFormatNumber == format)
-		xsmcSetString(xsResult, "number");
-	else if (kIOFormatBuffer == format)
-		xsmcSetString(xsResult, "buffer");
-	else if (kIOFormatStringASCII == format)
-		xsmcSetString(xsResult, "string;ascii");
-	else if (kIOFormatStringUTF8 == format)
-		xsmcSetString(xsResult, "string;utf8");
-	else if (kIOFormatSocketTCP == format)
-		xsmcSetString(xsResult, "socket/tcp");
-	else
+	if ((0 == format) || (format > kIOFormatBufferDisposable))
 		xsRangeError("bad format");
+
+	xsmcSetStringX(xsResult, (char *)gFormats[format - 1]);
 }
 
 uint8_t builtinSetFormat(xsMachine *the)
 {
 	char *format = xsmcToString(xsArg(0));
+	uint8_t i;
+	
+	for (i = 0; i < kIOFormatBufferDisposable; i++) {
+		if (!c_strcmp(gFormats[i], format))
+			return i + 1;
+	}
 
-	if (!c_strcmp("number", format))
-		return kIOFormatNumber;
-	if (!c_strcmp("buffer", format))
-		return kIOFormatBuffer;
-	if (!c_strcmp("string;ascii", format))
-		return kIOFormatStringASCII;
-	if (!c_strcmp("string;utf8", format))
-		return kIOFormatStringUTF8;
-	if (!c_strcmp("socket/tcp", format))
-		return kIOFormatSocketTCP;
-	xsRangeError("unimplemented");
+	xsRangeError("unknown");
 }
 
 void builtinInitializeTarget(xsMachine *the)
@@ -144,23 +164,18 @@ uint8_t builtinInitializeFormat(xsMachine *the, uint8_t format)
 {
 	if (xsmcHas(xsArg(0), xsID_format)) {
 		xsSlot slot;
-		char *fmt;
 
 		xsmcGet(slot, xsArg(0), xsID_format);
 		if (!xsmcTest(slot))
 			return format;
 
-		fmt = xsmcToString(slot);
-		if (!c_strcmp("number", fmt))
-			return kIOFormatNumber;
-		if (!c_strcmp("buffer", fmt))
-			return kIOFormatBuffer;
-		if (!c_strcmp("string;ascii", fmt))
-			return kIOFormatStringASCII;
-		if (!c_strcmp("string;utf8", fmt))
-			return kIOFormatStringUTF8;
-		if (!c_strcmp("socket/tcp", fmt))
-			return kIOFormatSocketTCP;
+		char *fmt = xsmcToString(slot);
+		uint8_t i;
+		for (i = 0; i < kIOFormatBufferDisposable; i++) {
+			if (!c_strcmp(gFormats[i], fmt))
+				return i + 1;
+		}
+
 		return kIOFormatInvalid;
 	}
 
@@ -193,10 +208,20 @@ uint32_t builtinGetUnsignedInteger(xsMachine *the, xsSlot *slot)
 }
 
 #if defined(PICO_BUILD)
-uint8_t builtinInitIO()
+void builtinInitIO()
 {
 	if (!builtinInitialized) {
 		critical_section_init(&gCommonCriticalMux);
+		builtinInitialized = 1;
+	}
+}
+#elif defined(__ZEPHYR__)
+void builtinInitIO()
+{
+	if (!builtinInitialized) {
+		int i;
+		for (i=0; i<kPinBanks; i++)
+			gDigitalAvailable[i] = 0xffffffff;
 		builtinInitialized = 1;
 	}
 }

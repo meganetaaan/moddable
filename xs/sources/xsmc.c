@@ -154,6 +154,7 @@ void _xsDelete(txMachine *the, txSlot *self, txID id)
 	mxOverflow(-1);
 	fxPush(*self);
 	mxDeleteID(id);
+	mxPop();
 }
 
 void _xsDeleteAt(txMachine *the, txSlot *self, txSlot *at)
@@ -162,6 +163,7 @@ void _xsDeleteAt(txMachine *the, txSlot *self, txSlot *at)
 	fxPush(*self);
 	fxPush(*at);
 	fxDeleteAt(the);
+	mxPop();
 }
 
 void _xsCall(txMachine *the, txSlot *res, txSlot *self, txUnsigned id, ...)
@@ -335,6 +337,6 @@ txInteger _xsmcGetBuffer(txMachine *the, txSlot *slot, void **data, txUnsigned *
 	}
 
 bail:
-	mxTypeError("this is no buffer");
+	mxTypeError("invalid buffer");
 	return xsBufferNonrelocatable;
 }

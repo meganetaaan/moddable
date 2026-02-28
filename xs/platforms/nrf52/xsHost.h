@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2022  Moddable Tech, Inc.
+ * Copyright (c) 2016-2025  Moddable Tech, Inc.
  *
  *   This file is part of the Moddable SDK Runtime.
  *
@@ -99,8 +99,6 @@ extern void ESP_putc(int c);
 #define xmodLogVar(msg)
 #define xmodLogInt(msg)
 #define xmodLogHex(msg)
-
-extern const char *gXSAbortStrings[];
 
 /* RESERVED MEMORY */
 
@@ -308,6 +306,7 @@ extern void *pvPortRealloc(void *ptr, size_t size);
 
 #define c_exit(n) { nrf52_reset(); }
 #define c_qsort qsort
+#define c_bsearch bsearch
 #define c_strtod strtod
 #define c_strtol strtol
 #define c_strtoul strtoul
@@ -373,6 +372,10 @@ extern void *pvPortRealloc(void *ptr, size_t size);
 #define C_NAN NAN
 #define C_RAND_MAX RAND_MAX
 
+#define C_FP_ILOGB0 FP_ILOGB0
+#define C_FP_ILOGBNAN FP_ILOGBNAN
+#define C_INT_MAX INT_MAX
+
 #define c_acos acos
 #define c_acosh acosh
 #define c_asin asin
@@ -391,6 +394,7 @@ extern void *pvPortRealloc(void *ptr, size_t size);
 #define c_fmod fmod
 #define c_fpclassify fpclassify
 #define c_hypot hypot
+#define c_ilogb ilogb
 #define c_isfinite isfinite
 #define c_isnormal isnormal
 #define c_isnan isnan

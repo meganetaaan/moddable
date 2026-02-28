@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2016-2023  Moddable Tech, Inc.
+# Copyright (c) 2016-2025  Moddable Tech, Inc.
 #
 #   This file is part of the Moddable SDK Tools.
 # 
@@ -144,6 +144,7 @@ MODULES = \
 	$(MOD_DIR)/mcpack.xsb \
 	$(MOD_DIR)/mcprintski.xsb \
 	$(MOD_DIR)/mcrez.xsb \
+	$(MOD_DIR)/mcdevicetree.xsb \
 	$(MOD_DIR)/nodered2mcu.xsb \
 	$(MOD_DIR)/png2bmp.xsb \
 	$(MOD_DIR)/resampler.xsb \
@@ -212,6 +213,7 @@ HEADERS = \
 	$(INSTRUMENTATION)/modInstrumentation.h
 OBJECTS = \
 	$(TMP_DIR)/adpcm-lib.c.o \
+	$(TMP_DIR)/adpcm-dns.c.o \
 	$(TMP_DIR)/modBase64.c.o \
 	$(TMP_DIR)/commodettoBitmap.c.o \
 	$(TMP_DIR)/commodettoBufferOut.c.o \
@@ -258,6 +260,7 @@ COMMANDS = \
 	$(BIN_DIR)/mcpack \
 	$(BIN_DIR)/mcprintski \
 	$(BIN_DIR)/mcrez \
+	$(BIN_DIR)/mcdevicetree \
 	$(BIN_DIR)/nodered2mcu \
 	$(BIN_DIR)/png2bmp \
 	$(BIN_DIR)/rle4encode \
@@ -277,12 +280,7 @@ C_DEFINES = \
 	-DINCLUDE_XSPLATFORM=1 \
 	-DXSPLATFORM=\"mac_xs.h\" \
 	-DXSTOOLS=1 \
-	-DmxRun=1 \
-	-DmxParse=1 \
-	-DmxNoFunctionLength=1 \
-	-DmxNoFunctionName=1 \
-	-DmxHostFunctionPrimitive=1 \
-	-DmxFewGlobalsTable=1 \
+	-DmxStringInfoCacheLength=4 \
 	-DkModdableToolsVersion=\"$(TOOLS_VERSION)\"
 ifeq ($(GOAL),debug)
 	C_DEFINES += -DMODINSTRUMENTATION=1 -DmxInstrument=1
@@ -402,6 +400,11 @@ $(BIN_DIR)/mchex: $(MAKEFILE_LIST)
 	@echo "#" $(NAME) $(GOAL) ": mchex"
 	echo '#!/bin/bash\nDIR=$$(cd "$$(dirname "$$BASH_SOURCE")"; cd -P "$$(dirname "$$(readlink "$$BASH_SOURCE" || echo .)")"; pwd)\n$$DIR/tools mchex "$$@"' > $(BIN_DIR)/mchex
 	chmod +x $(BIN_DIR)/mchex
+
+$(BIN_DIR)/mcdevicetree: $(MAKEFILE_LIST)
+	@echo "#" $(NAME) $(GOAL) ": mcdevicetree"
+	echo '#!/bin/bash\nDIR=$$(cd "$$(dirname "$$BASH_SOURCE")"; cd -P "$$(dirname "$$(readlink "$$BASH_SOURCE" || echo .)")"; pwd)\n$$DIR/tools mcdevicetree "$$@"' > $(BIN_DIR)/mcdevicetree
+	chmod +x $(BIN_DIR)/mcdevicetree
 
 $(BIN_DIR)/colorcellencode: $(MAKEFILE_LIST)
 	@echo "#" $(NAME) $(GOAL) ": colorcellencode"

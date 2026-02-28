@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017  Moddable Tech, Inc.
+ * Copyright (c) 2016-2025  Moddable Tech, Inc.
  *
  *   This file is part of the Moddable SDK Runtime.
  * 
@@ -157,8 +157,7 @@ void PiuShapeMark(xsMachine* the, void* it, xsMarkRoot markRoot)
 void PiuShapeMeasureHorizontally(void* it) 
 {
 	PiuShape* self = it;
-	PiuAlignment horizontal = (*self)->coordinates.horizontal;
-	if (!(horizontal & piuWidth)) {
+	if (((*self)->coordinates.horizontal & piuLeftRightWidth) < piuLeftRight) {
 		PiuDimension fillWidth = 0;
 		PiuDimension strokeWidth = 0;
 		PocoOutline outline;
@@ -189,8 +188,7 @@ void PiuShapeMeasureHorizontally(void* it)
 void PiuShapeMeasureVertically(void* it) 
 {
 	PiuShape* self = it;
-	PiuAlignment vertical = (*self)->coordinates.vertical;
-	if (!(vertical & piuHeight)) {
+	if (((*self)->coordinates.vertical & piuTopBottomHeight) < piuTopBottom) {
 		PiuDimension fillHeight = 0;
 		PiuDimension strokeHeight = 0;
 		PocoOutline outline;
@@ -233,6 +231,7 @@ void PiuShape_create(xsMachine* the)
 	(*self)->reference = xsToReference(xsThis);
 	xsSetHostHooks(xsThis, (xsHostHooks*)&PiuShapeHooks);
 	(*self)->dispatch = (PiuDispatch)&PiuShapeDispatchRecord;
+	(*self)->recordSize = PiuRecordSize(sizeof(PiuShapeRecord));
 	(*self)->flags = piuVisible | piuClip;
 	PiuContentDictionary(the, self);
 	PiuShapeDictionary(the, self);
@@ -259,14 +258,20 @@ void PiuShape_set_fillOutline(xsMachine *the)
 {
 	PiuShape* self = PIU(Shape, xsThis);
 	(*self)->fillOutline = xsToReference(xsArg(0));
-	PiuContentReflow(self, piuSizeChanged);
+	if ((((*self)->coordinates.horizontal & piuLeftRightWidth) < piuLeftRight) || (((*self)->coordinates.vertical & piuTopBottomHeight) < piuTopBottom))
+		PiuContentReflow(self, piuSizeChanged);
+	else
+		PiuContentInvalidate(self, NULL);
 }
 
 void PiuShape_set_strokeOutline(xsMachine *the)
 {
 	PiuShape* self = PIU(Shape, xsThis);
 	(*self)->strokeOutline = xsToReference(xsArg(0));
-	PiuContentReflow(self, piuSizeChanged);
+	if ((((*self)->coordinates.horizontal & piuLeftRightWidth) < piuLeftRight) || (((*self)->coordinates.vertical & piuTopBottomHeight) < piuTopBottom))
+		PiuContentReflow(self, piuSizeChanged);
+	else
+		PiuContentInvalidate(self, NULL);
 }
 
 

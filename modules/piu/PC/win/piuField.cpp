@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017  Moddable Tech, Inc.
+ * Copyright (c) 2016-2025  Moddable Tech, Inc.
  *
  *   This file is part of the Moddable SDK Runtime.
  * 
@@ -210,6 +210,7 @@ void PiuField_create(xsMachine* the)
 	(*self)->reference = xsToReference(xsThis);
 	xsSetHostHooks(xsThis, (xsHostHooks*)&PiuFieldHooks);
 	(*self)->dispatch = (PiuDispatch)&PiuFieldDispatchRecord;
+	(*self)->recordSize = PiuRecordSize(sizeof(PiuFieldRecord));
 	(*self)->flags = piuVisible;
 	PiuContentDictionary(the, self);
 	PiuFieldDictionary(the, self);
@@ -256,9 +257,11 @@ void PiuField_set_string(xsMachine *the)
 	xsSlot* string = PiuString(xsArg(0));
 	(*self)->string = string;
 	if ((*self)->application) {
+		DWORD selection = Edit_GetSel((*self)->control);
 		wchar_t* buffer = xsToStringCopyW(*string);
 		SetWindowTextW((*self)->control, buffer);
 		c_free(buffer);
+		Edit_SetSel((*self)->control, LOWORD(selection), HIWORD(selection));
 	}
 }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2023  Moddable Tech, Inc.
+ * Copyright (c) 2016-2025  Moddable Tech, Inc.
  *
  *   This file is part of the Moddable SDK Runtime.
  * 
@@ -183,8 +183,6 @@ extern void ESP_put(uint8_t *c, int count);
 #define xmodLogInt(msg)
 #define xmodLogHex(msg)
 
-extern const char *gXSAbortStrings[];
-
 /*
 	start-up
 */
@@ -205,14 +203,15 @@ extern uint8_t ESP_setBaud(int baud);
 */
 
 #if ESP32
-	#define modMilliseconds() ((uint32_t)xTaskGetTickCount())
+	// we prefer CONFIG_FREERTOS_HZ of 1000, but should work work other values, such as the default of 100
+	#define modMilliseconds() ((uint32_t)pdTICKS_TO_MS(xTaskGetTickCount()))
 	#define modMicroseconds() ((uint32_t)esp_timer_get_time())
 
 	extern volatile uint32_t gCPUTime;
 	#define modMicrosecondsInstrumentation() (gCPUTime)
 
-	#define modDelayMilliseconds(ms) vTaskDelay(ms)
-	#define modDelayMicroseconds(us) vTaskDelay(((us) + 500) / 1000)
+	#define modDelayMilliseconds(ms) vTaskDelay(pdMS_TO_TICKS(ms))
+	#define modDelayMicroseconds(us) vTaskDelay(pdMS_TO_TICKS(((us) + 500) / 1000))
 
 #else
 	#define modMilliseconds() ((uint32_t)(millis()))
@@ -390,6 +389,7 @@ typedef va_list c_va_list;
 #define c_malloc malloc
 void selectionSort(void *base, size_t num, size_t width, int (*compare )(const void *, const void *));
 #define c_qsort selectionSort
+#define c_bsearch bsearch
 #define c_realloc realloc
 #define c_strtod strtod
 #define c_strtol strtol
@@ -447,12 +447,11 @@ void selectionSort(void *base, size_t num, size_t width, int (*compare )(const v
 #define C_MAX_SAFE_INTEGER (double)9007199254740991
 #define C_MIN_SAFE_INTEGER (double)-9007199254740991
 #define C_NAN NAN
-#if ESP32
-	#define C_RAND_MAX UINT32_MAX
-#else
-//	#define C_RAND_MAX RAND_MAX
-	#define C_RAND_MAX (0xFFFFFFFF)
-#endif
+#define C_RAND_MAX INT32_MAX
+
+#define C_FP_ILOGB0 FP_ILOGB0
+#define C_FP_ILOGBNAN FP_ILOGBNAN
+#define C_INT_MAX INT_MAX
 
 #define c_acos acos
 #define c_acosh acosh
@@ -477,6 +476,7 @@ void selectionSort(void *base, size_t num, size_t width, int (*compare )(const v
 #endif
 #define c_fpclassify fpclassify
 #define c_hypot hypot
+#define c_ilogb ilogb
 #define c_isfinite isfinite
 #define c_isnormal isnormal
 #define c_isnan isnan
@@ -493,9 +493,9 @@ void selectionSort(void *base, size_t num, size_t width, int (*compare )(const v
 	#define c_pow pow
 #endif
 #if ESP32
-	#define c_rand esp_random
+	#define c_rand() (0x7fffffff & esp_random())
 #else
-	#define c_rand() (*(volatile uint32_t *)0x3FF20E44)
+	#define c_rand() (0x7fffffff & (*(volatile uint32_t *)0x3FF20E44))
 #endif
 #define c_round round
 #define c_signbit signbit
@@ -524,7 +524,11 @@ void selectionSort(void *base, size_t num, size_t width, int (*compare )(const v
 
 /* STRING */
 
-#define c_memcpy espMemCpy
+#if ESP32
+	#define c_memcpy memcpy
+#else
+	#define c_memcpy espMemCpy
+#endif	
 #define c_memmove memmove
 #define c_memset memset
 #define c_memcmp espMemCmp

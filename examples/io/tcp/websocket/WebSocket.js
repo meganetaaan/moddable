@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022  Moddable Tech, Inc.
+ * Copyright (c) 2021-2025  Moddable Tech, Inc.
  *
  *   This file is part of the Moddable SDK Runtime.
  * 
@@ -40,12 +40,13 @@ class WebSocket {
 	#keepalive;
 	
 	constructor(href, protocol) {
-		let options, keepalive;
+		let options, keepalive, headers;
 		if (href instanceof Object) {
 			options = href;
 			href = options.url;
 			protocol = options.protocol;
 			keepalive = options.keepalive; 
+			headers = options.headers; 
 		}
 		if (href) {
 			let url = new URL(href);
@@ -53,11 +54,11 @@ class WebSocket {
 			let port, config;
 			if (scheme == "ws:") {
 				port = url.port || 80;
-				config = device.network.ws;
+				config = {...(options?.ws ?? device.network.ws)};
 			}
 			else if (scheme == "wss:") {
 				port = url.port || 443;
-				config = device.network.wss;
+				config = {...(options?.wss ?? device.network.wss)};
 			}
 			else
 				throw new URIError("only ws or wss");
@@ -69,13 +70,15 @@ class WebSocket {
 			this.#url = href;
 			if (protocol)
 				this.#protocol = protocol;
-			options = { ...config, host, port, path, protocol }
+			options = { ...config, host, port, path, protocol, headers }
 		}
+		else if (!options?.attach)
+			throw new URIError("no URL");
 		this.#client = new device.network.ws.io({
 			...options,
 			onControl: (opcode, data) => {
 				switch (opcode) {
-					case this.#client.constructor.close: 
+					case this.#client.constructor.close: {
 						this.#state = 3;
 						data = new Uint8Array(data);
 						const event = {
@@ -83,12 +86,11 @@ class WebSocket {
 							reason: String.fromArrayBuffer(data.buffer.slice(2)),
 							wasClean: true,
 						};
-						this.onclose(event);
+						this.onclose?.(event);
 						this.#eventListeners.close.forEach(listener => listener.call(null, event));
-						break;
+						} break;
 
 					case this.#client.constructor.ping:
-						trace("PING!\n");
 						break;
 
 					case this.#client.constructor.pong:
@@ -120,7 +122,7 @@ class WebSocket {
 							data,
 							// ??
 						};
-						this.onmessage(event);
+						this.onmessage?.(event);
 						this.#eventListeners.message.forEach(listener => listener.call(null, event));
 					}
 				}
@@ -135,7 +137,7 @@ class WebSocket {
 					const event = {
 						// ?? 
 					};
-					this.onopen(event);
+					this.onopen?.(event);
     				this.#eventListeners.open.forEach(listener => listener.call(null, event));
 					return;
 				}
@@ -183,7 +185,7 @@ class WebSocket {
 						message: "no pong response to keepalive" 
 					};
 					trace(event.message, "\n");
-					this.onerror(event);
+					this.onerror?.(event);
 					this.#eventListeners.error.forEach(listener => listener.call(null, event));
 					this.close();
 					return;
@@ -254,6 +256,7 @@ class WebSocket {
 			this.#state = 2;
 		}
 	}
+/*
 	onclose(event) {
 	}
 	onerror(event) {
@@ -262,6 +265,7 @@ class WebSocket {
 	}
 	onopen(event) {
 	}
+*/
 	removeEventListener(event, listener) {
 		let listeners = this.#eventListeners[event];
 		if (!listeners)

@@ -45,23 +45,10 @@ C_OPTIONS = \
 	/D YAML_DECLARE_STATIC \
 	/D INCLUDE_XSPLATFORM \
 	/D XSPLATFORM=\"xst.h\" \
-	/D mxAliasInstance=0 \
-	/D mxCanonicalNaN=1 \
 	/D mxDebug=1 \
-	/D mxExplicitResourceManagement=1 \
-	/D mxKeysGarbageCollection=1 \
-	/D mxLockdown=1 \
 	/D mxNoConsole=1 \
-	/D mxParse=1 \
 	/D mxProfile=1 \
-	/D mxRun=1 \
-	/D mxSloppy=1 \
-	/D mxSnapshot=1 \
-	/D mxRegExpUnicodePropertyEscapes=1 \
-	/D mxStringNormalize=1 \
-	/D mxMinusZero=1 \
-	/D _IEEE_LIBM=1 \
-	/D __LITTLE_ENDIAN=1 \
+	/D mxStringInfoCacheLength=4 \
 	/I$(INC_DIR) \
 	/I$(PLT_DIR) \
 	/I$(SRC_DIR) \
@@ -151,6 +138,8 @@ OBJECTS = \
 	$(TMP_DIR)\textencoder.obj \
 	$(TMP_DIR)\modBase64.obj \
 	$(TMP_DIR)\xst.obj \
+	$(TMP_DIR)\xst262.obj \
+	$(TMP_DIR)\xstFuzz.obj \
 	$(TMP_DIR)\e_acos.obj \
 	$(TMP_DIR)\e_acosh.obj \
 	$(TMP_DIR)\e_asin.obj \
@@ -166,20 +155,22 @@ OBJECTS = \
 	$(TMP_DIR)\e_rem_pio2.obj \
 	$(TMP_DIR)\e_sinh.obj \
 	$(TMP_DIR)\k_cos.obj \
+	$(TMP_DIR)\k_exp.obj \
 	$(TMP_DIR)\k_rem_pio2.obj \
 	$(TMP_DIR)\k_sin.obj \
 	$(TMP_DIR)\k_tan.obj \
 	$(TMP_DIR)\s_asinh.obj \
 	$(TMP_DIR)\s_atan.obj \
+	$(TMP_DIR)\s_cbrt.obj \
+	$(TMP_DIR)\s_ceil.obj \
 	$(TMP_DIR)\s_cos.obj \
 	$(TMP_DIR)\s_expm1.obj \
-	$(TMP_DIR)\s_ilogb.obj \
 	$(TMP_DIR)\s_log1p.obj \
-	$(TMP_DIR)\s_logb.obj \
 	$(TMP_DIR)\s_scalbn.obj \
 	$(TMP_DIR)\s_sin.obj \
 	$(TMP_DIR)\s_tan.obj \
-	$(TMP_DIR)\s_tanh.obj
+	$(TMP_DIR)\s_tanh.obj \
+	$(TMP_DIR)\s_trunc.obj
 
 build : $(TMP_DIR) $(BIN_DIR) $(BIN_DIR)\$(NAME).exe
 
@@ -198,6 +189,7 @@ $(BIN_DIR)\$(NAME).exe : $(OBJECTS)
 		/out:$(BIN_DIR)\$(NAME).exe
 
 $(OBJECTS) : $(TLS_DIR)\xst.h
+$(OBJECTS) : $(TLS_DIR)\fdlibm\math_private.h
 $(OBJECTS) : $(PLT_DIR)\xsPlatform.h
 $(OBJECTS) : $(SRC_DIR)\xsCommon.h
 $(OBJECTS) : $(SRC_DIR)\xsAll.h

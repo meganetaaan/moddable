@@ -72,6 +72,49 @@
 				]
 			}
 		},
+		"esp32/moddable_six": {
+			"build": {
+				"ESP32_SUBCLASS": "esp32s3",
+				"EXPECTED_ESP_IDF": "v5.5.1",
+				"USE_USB": "2",
+				"SDKCONFIGPATH": "$(MODDABLE)/build/devices/esp32/targets/moddable_six/sdkconfig"
+			},
+			"creation": {
+				"static": 0,
+				"chunk": {
+					"initial": 3670016,
+					"incremental": 0 
+				},
+				"heap": {
+					"initial": 229376,
+					"incremental": 0 
+				},
+				"stack": 16384,
+				"keys": {
+					"available": 16386,
+					"name": 127,
+					"symbol": 127
+				},
+				"parser": {
+					"buffer": 32768,
+					"table": 127
+				},
+				"main": "main"
+			},
+			"defines": {
+				"XS_TEST": 1,
+				"softreset": 1
+			},
+			"modules": {
+				"*": [
+					"$(MODULES)/base/timer/*",
+					"$(MODULES)/base/timer/mc/*",
+					"$(MODULES)/network/socket/lwip/modLwipSafe",
+					"$(MODULES)/files/preference/*",
+					"$(MODULES)/files/preference/esp32/*"
+				]
+			}
+		},
 		"lin": {
 			"build": {
 				"SIMULATOR": "$(BUILD)/bin/lin/debug/mcsim"
@@ -109,6 +152,22 @@
 					"$(MODULES)/base/time/win/*",
 					"$(MODULES)/base/timer/*",
 					"$(MODULES)/base/timer/win/*"
+				]
+			}
+		},
+		"zephyr": {
+			"build": {
+				"MAKE_FRAGMENT": "$(MODDABLE)/build/devices/zephyr/config/CMakeLists.txt",
+				"ZEPHYR_BOARD": "$(SUBPLATFORM)"
+			},
+			"defines": {
+				"XS_TEST": 1
+			},
+			"modules": {
+				"*": [
+					"$(MODULES)/base/timer/*",
+					"$(MODULES)/base/timer/mc/*",
+					"$(MODULES)/files/resource/Resource"
 				]
 			}
 		}

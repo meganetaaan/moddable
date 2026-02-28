@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2022 Shinya Ishikawa
+* Copyright (c) 2022-2025  Shinya Ishikawa
 *
 *   This file is part of the Moddable SDK Tools.
 *
@@ -19,7 +19,7 @@
 */
 
 declare module "embedded:io/serial" {
-  import { Buffer, PinSpecifier, PortSpecifier } from "embedded:io/_common";
+  import { PinSpecifier, PortSpecifier } from "embedded:io/_common";
   class Serial {
     constructor(options: ({
       receive: PinSpecifier;
@@ -44,15 +44,15 @@ declare module "embedded:io/serial" {
     close(): void;
     read(): number | ArrayBuffer | undefined;
     read(byteLength: number): ArrayBuffer | undefined;
-    read(buffer: Buffer): number | undefined;
-    write(value: number | Buffer): void;
+    read(buffer: ByteBuffer): number | undefined;
+    write(value: number | ByteBuffer): void;
     flush(): void;
     flush(input: number, output: number): void;
     set(options: {
       dataTerminalReady?: PinSpecifier;
       requestToSend?: PinSpecifier;
       break?: boolean;
-    })
+    }): void
     get format(): "number" | "buffer"
     set format(value: "number" | "buffer")
   }

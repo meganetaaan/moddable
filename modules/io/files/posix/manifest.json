@@ -1,0 +1,19 @@
+{
+	"platforms": {
+		"mac": {
+			"modules": {
+				"embedded:x-files-implementation": "./files-posix",
+				"embedded:storage/files": "./files"
+			}
+		},
+		"lin": {
+			"modules": {
+				"embedded:x-files-implementation": "./files-posix",
+				"embedded:storage/files": "./files"
+			}
+		}
+	},
+	"preload": [
+		"embedded:x-files-implementation"
+	]
+}

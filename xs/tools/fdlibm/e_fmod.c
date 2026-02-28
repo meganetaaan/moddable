@@ -1,5 +1,4 @@
 
-/* @(#)e_fmod.c 1.3 95/01/18 */
 /*
  * ====================================================
  * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
@@ -17,59 +16,46 @@
  * Method: shift and subtract
  */
 
-#include "fdlibm.h"
+#include <float.h>
 
-#ifdef __STDC__
+#include "math.h"
+#include "math_private.h"
+
 static const double one = 1.0, Zero[] = {0.0, -0.0,};
-#else
-static double one = 1.0, Zero[] = {0.0, -0.0,};
-#endif
 
-#ifdef __STDC__
-	double __ieee754_fmod(double x, double y)
-#else
-	double __ieee754_fmod(x,y)
-	double x,y ;
-#endif
+double
+__ieee754_fmod(double x, double y)
 {
-	int n,hx,hy,hz,ix,iy,sx,i;
-	unsigned lx,ly,lz;
+	int32_t hx, hy, hz, ix, iy, n, sx;
+	u_int32_t lx, ly, lz;
 
-	hx = __HI(x);		/* high word of x */
-	lx = __LO(x);		/* low  word of x */
-	hy = __HI(y);		/* high word of y */
-	ly = __LO(y);		/* low  word of y */
+	EXTRACT_WORDS(hx,lx,x);
+	EXTRACT_WORDS(hy,ly,y);
 	sx = hx&0x80000000;		/* sign of x */
-	hx ^=sx;		/* |x| */
-	hy &= 0x7fffffff;	/* |y| */
+	hx ^= sx;			/* |x| */
+	hy &= 0x7fffffff;		/* |y| */
 
     /* purge off exception values */
 	if((hy|ly)==0||(hx>=0x7ff00000)||	/* y=0,or x not finite */
 	  ((hy|((ly|-ly)>>31))>0x7ff00000))	/* or y is NaN */
-	    return (x*y)/(x*y);
+	    return nan_mix_op(x, y, *)/nan_mix_op(x, y, *);
 	if(hx<=hy) {
 	    if((hx<hy)||(lx<ly)) return x;	/* |x|<|y| return x */
 	    if(lx==ly) 
-		return Zero[(unsigned)sx>>31];	/* |x|=|y| return x*0*/
+		return Zero[(u_int32_t)sx>>31];	/* |x|=|y| return x*0*/
 	}
 
     /* determine ix = ilogb(x) */
-	if(hx<0x00100000) {	/* subnormal x */
-	    if(hx==0) {
-		for (ix = -1043, i=lx; i>0; i<<=1) ix -=1;
-	    } else {
-		for (ix = -1022,i=(hx<<11); i>0; i<<=1) ix -=1;
-	    }
-	} else ix = (hx>>20)-1023;
+	if(hx<0x00100000)
+	    ix = subnormal_ilogb(hx, lx);
+	else
+	    ix = (hx>>20)-1023;
 
     /* determine iy = ilogb(y) */
-	if(hy<0x00100000) {	/* subnormal y */
-	    if(hy==0) {
-		for (iy = -1043, i=ly; i>0; i<<=1) iy -=1;
-	    } else {
-		for (iy = -1022,i=(hy<<11); i>0; i<<=1) iy -=1;
-	    }
-	} else iy = (hy>>20)-1023;
+	if(hy<0x00100000)
+	    iy = subnormal_ilogb(hy, ly);
+	else
+	    iy = (hy>>20)-1023;
 
     /* set up {hx,lx}, {hy,ly} and align y to x */
 	if(ix >= -1022) 
@@ -104,7 +90,7 @@ static double one = 1.0, Zero[] = {0.0, -0.0,};
 	    if(hz<0){hx = hx+hx+(lx>>31); lx = lx+lx;}
 	    else {
 	    	if((hz|lz)==0) 		/* return sign(x)*0 */
-		    return Zero[(unsigned)sx>>31];
+		    return Zero[(u_int32_t)sx>>31];
 	    	hx = hz+hz+(lz>>31); lx = lz+lz;
 	    }
 	}
@@ -113,27 +99,25 @@ static double one = 1.0, Zero[] = {0.0, -0.0,};
 
     /* convert back to floating value and restore the sign */
 	if((hx|lx)==0) 			/* return sign(x)*0 */
-	    return Zero[(unsigned)sx>>31];	
+	    return Zero[(u_int32_t)sx>>31];
 	while(hx<0x00100000) {		/* normalize x */
 	    hx = hx+hx+(lx>>31); lx = lx+lx;
 	    iy -= 1;
 	}
 	if(iy>= -1022) {	/* normalize output */
 	    hx = ((hx-0x00100000)|((iy+1023)<<20));
-	    __HI(x) = hx|sx;
-	    __LO(x) = lx;
+	    INSERT_WORDS(x,hx|sx,lx);
 	} else {		/* subnormal output */
 	    n = -1022 - iy;
 	    if(n<=20) {
-		lx = (lx>>n)|((unsigned)hx<<(32-n));
+		lx = (lx>>n)|((u_int32_t)hx<<(32-n));
 		hx >>= n;
 	    } else if (n<=31) {
 		lx = (hx<<(32-n))|(lx>>n); hx = sx;
 	    } else {
 		lx = hx>>(n-32); hx = sx;
 	    }
-	    __HI(x) = hx|sx;
-	    __LO(x) = lx;
+	    INSERT_WORDS(x,hx|sx,lx);
 	    x *= one;		/* create necessary signal */
 	}
 	return x;		/* exact output */

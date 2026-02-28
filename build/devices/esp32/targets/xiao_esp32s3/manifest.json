@@ -3,7 +3,7 @@
 		"ESP32_SUBCLASS": "esp32s3",
 		"USE_USB": "2",
 		"SDKCONFIGPATH": "./sdkconfig",
-		"PARTITIONS_FILE": "./sdkconfig/partitions.csv",
+		"PARTITIONS_FILE_FOR_TARGET": "./sdkconfig/partitions.csv",
         "PROGRAMMING_MODE_MESSAGE": "INSTRUCTIONS: Hold the B button and press then release the R button.",
         "BEFORE_DEBUGGING_MESSAGE": "Press and release the R button."
 	},
@@ -19,6 +19,18 @@
 	"config": {
 		"screen": "",
 		"led_pin": 21
+	},
+	"creation": {
+		"static": 0,
+		"chunk": {
+			"initial": 78848,
+			"incremental": 0
+		},
+		"heap": {
+			"initial": 4928,
+			"incremental": 0
+		},
+		"stack": 512
 	},
 	"defines": {
 		"i2c": {

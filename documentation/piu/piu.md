@@ -1,6 +1,6 @@
 # Piu JavaScript Reference
-Copyright 2017-2023 Moddable Tech, Inc.<BR>
-Revised: August 31, 2023
+Copyright 2017-2025 Moddable Tech, Inc.<BR>
+Revised: October 9, 2025
 
 ## About This Document
 
@@ -51,7 +51,7 @@ Figure 1 summarizes the inheritance hierarchy for the objects described in this 
 
 **Figure 1.** Piu Inheritance Hierarchy
 
-![](../assets/piu/inheritanceHierarchy.png)
+![This image shows a prototype inheritance diagram for a UI component system. At the root is Object.prototype, which branches out to eight main prototype objects: Behavior, Content, Skin, Sound, Style, Texture, Timeline, and Transition. Content.prototype further connects to Container.prototype, which links to four components: Image, Label, Port, and Text. Container.prototype also connects to Application, Column, Layout, and Row. Layout.prototype connects to Die.prototype, and Row.prototype connects to Scroller.prototype. All nodes are represented as rectangular boxes with blue borders connected by lines showing the inheritance relationships.](../assets/piu/inheritanceHierarchy.png)
 
 The basic relationship between these objects in the context of a Piu application is as follows:
 
@@ -341,7 +341,7 @@ trace(`sampleVariable value is: ${sampleVariable}\n`);    // "sampleVariable val
 
 ### Adding Additional Properties
 
-Additional properites can be added by setting a property of the global object.
+Additional properties can be added by setting a property of the global object.
 
 ```javascript
 global.application = new Application(null, {
@@ -699,7 +699,7 @@ The `states` and `variants` properties of `texture` objects should not be confus
 
 The `state` and `variant` of a `content` can be updated at any time. This is often done when an event is triggered.
 
-```javscript
+```javascript
 let WiFiStatusIcon = Content.template($ => ({
     skin: wiFiSkin, state: $.passwordProtected, variant: 0,
     interval: 500, duration: 2500, loop: true,
@@ -2119,7 +2119,7 @@ Copies the work region into the current region, and invalidates only the differe
 
 Unbind this `die` object from the content hierarchy by removing the first `content` object from this `die` object and replacing this `die` object in its container with the removed `content` object.
 
-```
+```javascript
 let whiteScreen = new Content(null, {
 	active: true, left:0, right:0, top:0, bottom:0,
 	skin: new Skin({ fill: "white" }),
@@ -2321,7 +2321,7 @@ Image assets may be a GIF, JPEG, or PNG file, or a folder of JPEG and PNG files.
 
 Assets must be defined in the resources of your manifest. The quality of JPEG and PNG files can be set to a value between 1 and 100; higher numbers correspond to higher quality.
 
-```javascript
+```json
 "resources":{
 	"*-image(100)": [
 		"$(MODDABLE)/examples/assets/images/screen1",
@@ -2334,7 +2334,7 @@ Assets must be defined in the resources of your manifest. The quality of JPEG an
 
 Images in a folder are used as frames of a single animated image. The frame rate is determined by the name of the folder. For example, the `fish.15fps` folder from [the example images folder](../../examples/assets/images) tells the application to run at 15 frames per second. In the manifest, the `.15fps` is dropped from the path.
 
-```javascript
+```json
 "resources":{
 	"*-image": [
 		"$(MODDABLE)/examples/assets/images/fish",
@@ -4052,7 +4052,7 @@ let timeline = new Timeline();
 | Argument | Type | Description |
 | --- | --- | :--- |
 | `target` | `object` | The object that will have its properties tweened by the timeline.
-| `fromProperties` | `object` | The keys of this object are the properties of the `target` object that will be tweened by the timeline. Their values are the starting values the properties of the `target` object will have at the begining of the tween.
+| `fromProperties` | `object` | The keys of this object are the properties of the `target` object that will be tweened by the timeline. Their values are the starting values the properties of the `target` object will have at the beginning of the tween.
 | `duration` | `number` | The duration of the tween in ms.
 | `easing` | `number` | An easing function to use for the tween. If `null` is provided, the tween will use a linear easing function.
 | `delay` | `number` | The number of ms after the previous tween in the timeline completes that this one should begin. If this number is negative, the tween will begin before the prior tween completes. If no duration is provided, the tween will begin immediately upon completion of the prior tween.
@@ -4097,7 +4097,7 @@ application.add(sampleColumn);
 | `target` | `object` | The object that will have its properties tweened by the timeline.
 | `onProperties` | `object` | The keys of this object are the properties of the `target` object that will be tweened by the timeline. Their values are arrays of values that the tween will ease between over the duration of the timeline.
 | `duration` | `number` | The duration of the tween in ms.
-| `easing` | `number` | An easing function to use for the tween. If `null` is provided, the tween will use a linear easing function.
+| `easing` | `function` | An easing function to use for the tween. If `null` is provided, the tween will use a linear easing function.
 | `delay` | `number` | The number of ms after the previous tween in the timeline completes that this one should begin. If this number is negative, the tween will begin before the prior tween completes. If no duration is provided, the tween will begin immediately upon completion of the prior tween.
 
 Adds an "on tween" to the timeline. An "on tween" eases the values of the `target` object through a sequence of steps as specified by arrays in the `onProperties` object over `duration` ms.

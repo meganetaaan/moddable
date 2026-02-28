@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2023  Moddable Tech, Inc.
+ * Copyright (c) 2016-2026  Moddable Tech, Inc.
  *
  *   This file is part of the Moddable SDK Tools.
  * 
@@ -324,7 +324,25 @@ class ToDoFile extends FILE {
 
 export default class extends Tool {
 	constructor(argv) {
+		let checkModule = true;
+		let argi = argv.indexOf("-noCheckModule");
+		if (argi >= 0) {
+			checkModule = false;
+			argv.splice(argi, 1);
+		}
+		else {
+			argi = argv.indexOf("-f");
+			if (argi >= 0) {
+				argi++;
+				if (argi < argv.length) {
+					const name = argv[argi].toLowerCase();
+					if (name == "x")
+						checkModule = false;
+				}
+			}
+		}
 		super(argv);
+		this.checkModule = checkModule;
 		if (this.platform == "wasm") {
 			this.fragmentPath = null;
 		}
@@ -386,6 +404,7 @@ export default class extends Tool {
 		}
 	}
 	run() {
+		this.toolName = "mcrun";
 		this.localsName = "modLocals";
 		super.run();
 
@@ -440,7 +459,7 @@ export default class extends Tool {
 			this.createFolder(path, folder);
 		
 		var file;
-		if (check) {
+		if (this.checkModule) {
 			var target = "check.xsb";
 			if (!this.jsFiles.find(file => file.target == target)) {
 				var source = this.tmpPath + this.slash + "check.js";
@@ -466,8 +485,14 @@ export default class extends Tool {
 
 			if (this.tsFiles.length) {
 				file = new TSConfigFile(this.modulesPath + this.slash + "tsconfig.json");
-				file.generate(this);
+				file.generate(this, true, false);
 			}
+
+			if (this.jsFiles.length) {
+				file = new TSConfigFile(this.modulesPath + this.slash + "tsconfig-js.json");
+				file.generate(this, false, true);
+			}
+
 			var path = this.tmpPath + this.slash + "makefile";
 			file = new MakeFile(path);
 			file.generate(this);

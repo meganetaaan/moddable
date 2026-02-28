@@ -22,6 +22,24 @@
 
 static yaml_node_t *fxGetMappingValue(yaml_document_t* document, yaml_node_t* mapping, char* name);
 
+#define mxFeaturesCount 14
+static char* gxFeatures[mxFeaturesCount] = { 
+	"Atomics.pause",
+	"FinalizationRegistry.prototype.cleanupSome",
+ 	"ShadowRealm",
+	"Temporal",
+	"arbitrary-module-namespace-names",
+	"canonical-tz",
+	"decorators",
+	"import-assertions",
+	"import-defer",
+	"joint-iteration",
+	"nonextensible-applies-to-private",
+	"source-phase-imports",
+	"source-phase-imports-module-source",
+	"regexp-unicode-property-escapes"
+};
+
 yaml_node_t *fxGetMappingValue(yaml_document_t* document, yaml_node_t* mapping, char* name)
 {
 	yaml_node_pair_t* pair = mapping->data.mapping.pairs.start;
@@ -48,9 +66,9 @@ void Test262Context_getMetadata(xsMachine* the)
 	yaml_document_t* document = NULL;
 	yaml_node_t* root;
 	yaml_node_t* value;
-	int sloppy = 0;
-	int strict = 0;
-	int module = 1;
+	int sloppy = 1;
+	int strict = 1;
+	int module = 0;
 	int async = 0;
 	int pending = 0;
 	xsVars(1);
@@ -84,9 +102,6 @@ void Test262Context_getMetadata(xsMachine* the)
 	root = yaml_document_get_root_node(document);
 	if (!root) goto bail;
 		
-	sloppy = 1;	
-	strict = 1;	
-	module = 0;	
 	value = fxGetMappingValue(document, root, "includes");
 	if (value) {
 		yaml_node_item_t* item = value->data.sequence.items.start;
@@ -104,7 +119,6 @@ void Test262Context_getMetadata(xsMachine* the)
 	}
 	else
 		xsSet(xsResult, xsID_negative, xsNull);
-
 
 	value = fxGetMappingValue(document, root, "flags");
 	if (value) {
@@ -143,28 +157,15 @@ void Test262Context_getMetadata(xsMachine* the)
 		yaml_node_item_t* item = value->data.sequence.items.start;
 		while (item < value->data.sequence.items.top) {
 			yaml_node_t* node = yaml_document_get_node(document, *item);
-			if (0
- 			||	!strcmp((char*)node->data.scalar.value, "Array.fromAsync")
- 			||	!strcmp((char*)node->data.scalar.value, "Atomics.waitAsync")
- 			||	!strcmp((char*)node->data.scalar.value, "FinalizationRegistry.prototype.cleanupSome")
-  			||	!strcmp((char*)node->data.scalar.value, "ShadowRealm")
- 			||	!strcmp((char*)node->data.scalar.value, "Temporal")
- 			||	!strcmp((char*)node->data.scalar.value, "arbitrary-module-namespace-names")
- 			||	!strcmp((char*)node->data.scalar.value, "decorators")
- 			||	!strcmp((char*)node->data.scalar.value, "import-assertions")
-  			||	!strcmp((char*)node->data.scalar.value, "import-attributes")
- 			||	!strcmp((char*)node->data.scalar.value, "iterator-helpers")
-			||	!strcmp((char*)node->data.scalar.value, "json-modules")
- 			||	!strcmp((char*)node->data.scalar.value, "regexp-duplicate-named-groups")
-#ifndef mxRegExpUnicodePropertyEscapes
- 			||	!strcmp((char*)node->data.scalar.value, "regexp-unicode-property-escapes")
-#endif
- 			||	!strcmp((char*)node->data.scalar.value, "set-methods")
-			) {
-				sloppy = 0;
-				strict = 0;
-				module = 0;
-				pending = 1;
+			int i;
+			for (i = 0; i < mxFeaturesCount; i++) {
+				if (!strcmp((char*)node->data.scalar.value, gxFeatures[i])) {
+					sloppy = 0;
+					strict = 0;
+					module = 0;
+					pending = 1;
+					break;
+				}
 			}
 			item++;
 		}

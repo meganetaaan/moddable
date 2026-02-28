@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2023  Moddable Tech, Inc.
+ * Copyright (c) 2016-2025  Moddable Tech, Inc.
  *
  *   This file is part of the Moddable SDK Runtime.
  * 
@@ -34,13 +34,19 @@
 	#include "freertos/FreeRTOS.h"
 	#include "freertos/task.h"
 	#include "freertos/semphr.h"
-
+	//#include <esp_log.h>
+	//static const char *TAG = "modWorker";
 	static void workerLoop(void *pvParameter);
 #elif qca4020 || nrf52
 	#include "FreeRTOS.h"
 	#include "task.h"
 	#include "semphr.h"
 	static void workerLoop(void *pvParameter);
+#elif __ZEPHYR__
+	#include <zephyr/kernel.h>
+	#include <zephyr/drivers/gpio.h>
+
+	static void workerLoop(void *a, void *b, void *c);
 #endif
 
 struct modWorkerRecord {
@@ -56,6 +62,11 @@ struct modWorkerRecord {
 	xsBooleanValue			shared;
 #ifdef INC_FREERTOS_H
 	TaskHandle_t			task;
+#elif __ZEPHYR__
+	struct k_thread		thread;
+	k_thread_stack_t		*stack;
+	k_tid_t					threadID;
+	struct k_sem			semaphore;
 #endif
 	char					module[1];
 };
@@ -109,6 +120,11 @@ void xs_worker_destructor(void *data)
 				worker->task = NULL;
 				vTaskDelay(1);	// necessary to allow idle task to run so task memory is freed. perhaps there's a better solution?
 			}
+#elif __ZEPHYR__
+			if (worker->threadID)
+				k_thread_abort(worker->threadID);
+			if (worker->stack)
+				k_thread_stack_free(worker->stack);
 #endif
 			if (worker->the)
 				xsDeleteMachine(worker->the);
@@ -148,6 +164,9 @@ static void workerConstructor(xsMachine *the, xsBooleanValue shared)
 	modCriticalSectionDeclare;
 	modWorker worker;
 	char *module = xsmcToString(xsArg(0));
+#ifdef INC_FREERTOS_H
+	xsIntegerValue priority = 0, core = -1;   // core tskNO_AFFINITY
+#endif
 
 	xsmcVars(2);
 
@@ -191,6 +210,10 @@ static void workerConstructor(xsMachine *the, xsBooleanValue shared)
 			worker->the = target->the;
 #ifdef INC_FREERTOS_H
 			worker->task = target->task;
+#elif __ZEPHYR__
+			worker->thread = target->thread;		//@@
+			worker->stack = target->stack;
+			worker->threadID = target->threadID;
 #endif
 			doModMessagePostToMachine(the, worker->the, NULL, (modMessageDeliver)workerDeliverConnect, worker);
 			goto done;
@@ -221,9 +244,6 @@ static void workerConstructor(xsMachine *the, xsBooleanValue shared)
 			xsmcGet(xsVar(0), xsArg(1), xsID_keyCount);
 			keyCount = xsmcToInteger(xsVar(0));
 
-			if (allocation)
-				worker->creation.staticSize = allocation;
-
 			if (stackCount)
 				worker->creation.stackCount = stackCount;
 
@@ -232,6 +252,19 @@ static void workerConstructor(xsMachine *the, xsBooleanValue shared)
 			
 			if (keyCount)
 				worker->creation.initialKeyCount = keyCount;
+
+			if (allocation) {
+				worker->creation.staticSize = allocation;
+				int available = worker->creation.staticSize - (worker->creation.stackCount * sizeof(xsSlot)) - 1024; 
+				if (worker->creation.initialChunkSize > (available / 2)) {
+					worker->creation.initialChunkSize = 512;
+					worker->creation.incrementalChunkSize = 512;
+				}
+				if (worker->creation.initialHeapCount > (available / (2 * sizeof(xsSlot))))
+					worker->creation.initialHeapCount = available / (2 * sizeof(xsSlot));
+				if (worker->creation.incrementalHeapCount > (worker->creation.initialHeapCount / 8) || !worker->creation.incrementalHeapCount)
+					worker->creation.incrementalHeapCount = 8;
+			}
 		}
 		else {
 			getIntegerProperty(the, &xsArg(1), xsID_static, &worker->creation.staticSize);
@@ -253,36 +286,57 @@ static void workerConstructor(xsMachine *the, xsBooleanValue shared)
 				getIntegerProperty(the, &xsVar(0), xsID_name, &worker->creation.nameModulo);
 				getIntegerProperty(the, &xsVar(0), xsID_symbol, &worker->creation.symbolModulo);
 			}
+			getIntegerProperty(the, &xsArg(1), xsID_nativeStack, &worker->creation.nativeStackSize);
+#ifdef INC_FREERTOS_H
+#if ESP32	// Multicore only supported on ESP32
+			getIntegerProperty(the, &xsArg(1), xsID_core, &core);
+#endif
+#define kWorkerTaskPriority		(tskIDLE_PRIORITY + 1) // Default priority is tskIDLE_PRIORITY + 1
+			getIntegerProperty(the, &xsArg(1), xsID_priority, &priority);
+			if (priority == 0)
+				priority = kWorkerTaskPriority;
+#endif
 		}
 	}
 
 #ifdef INC_FREERTOS_H
 #if ESP32
 	#if 0 == CONFIG_LOG_DEFAULT_LEVEL
-		#define kStack (((5 * 1024) + XT_STACK_EXTRA_CLIB) / sizeof(StackType_t))
+		#define kStack ((5 * 1024) + XT_STACK_EXTRA_CLIB)
 	#else
-		#define kStack (((6 * 1024) + XT_STACK_EXTRA_CLIB) / sizeof(StackType_t))
+		#define kStack ((6 * 1024) + XT_STACK_EXTRA_CLIB)
 	#endif
-
-	xTaskCreate(workerLoop, worker->module, kStack, worker, 8, &worker->task);
 #elif qca4020
-	#if 0 == CONFIG_LOG_DEFAULT_LEVEL
-		#define kStack ((9 * 1024) / sizeof(StackType_t))
-	#else
-		#define kStack ((10 * 1024) / sizeof(StackType_t))
-	#endif
-
-	xTaskCreate(workerLoop, worker->module, kStack, worker, 10, &worker->task);
+	#define kStack ((9 * 1024)
 #elif nrf52
-	#define kWorkerTaskPriority		(tskIDLE_PRIORITY + 1) 
-	#define kStack ((10 * 1024) / sizeof(StackType_t))
-
-	xTaskCreate(workerLoop, worker->module, kStack, worker, kWorkerTaskPriority, &worker->task);
+	#define kStack (10 * 1024)
 #endif
+	// FreeRTOS Task Creation. If we are specifying a core, use that, otherwise use the FreeRTOS xTaskCreate.
+	if (core != -1) {	// Use specified core, only for ESP32 for now
+		//ESP_LOGI(TAG, "Creating worker task on core %d with priority %d\n", core, worker->creation.priority);
+		xTaskCreatePinnedToCore(workerLoop, worker->module, (worker->creation.nativeStackSize ? worker->creation.nativeStackSize : kStack) / sizeof(StackType_t),
+							worker, priority, &worker->task, core);
+	}
+	else {	// Use default core
+		//ESP_LOGI(TAG, "Creating worker task with default core and priority %d\n", worker->creation.priority);
+		xTaskCreate(workerLoop, worker->module, (worker->creation.nativeStackSize ? worker->creation.nativeStackSize : kStack) / sizeof(StackType_t),
+							worker, priority, &worker->task);
+	}
 
 	modMachineTaskWait(the);
+#elif __ZEPHYR__
+	k_sem_init(&worker->semaphore, 0, 1);
 
-#else // !INC_FREERTOS_H
+	size_t nativeStackSize = worker->creation.nativeStackSize ? worker->creation.nativeStackSize : 4096;
+	worker->stack = k_thread_stack_alloc(nativeStackSize, 0);
+    if (C_NULL == worker->stack)
+		xsUnknownError("stack alloc failed");
+
+    worker->threadID = k_thread_create(&worker->thread, worker->stack, nativeStackSize,
+								workerLoop, worker, C_NULL, C_NULL, 5, 0, K_NO_WAIT);
+	k_thread_name_set(worker->threadID, worker->module);
+	k_sem_take(&worker->semaphore, K_FOREVER);
+#else // !INC_FREERTOS_H && !__ZEPHYR__
 	workerStart(worker);
 #endif
 
@@ -292,6 +346,9 @@ static void workerConstructor(xsMachine *the, xsBooleanValue shared)
 			vTaskDelete(worker->task);
 			worker->task = NULL;
 		}
+#elif __ZEPHYR__
+		k_thread_abort(worker->threadID);
+		k_thread_stack_free(worker->stack);
 #endif
 		xsUnknownError("unable to instantiate worker");
 	}
@@ -377,7 +434,6 @@ void workerDeliverMarshall(xsMachine *the, modWorker worker, uint8_t *message, u
 
 	xsBeginHost(the);
 
-	xsCollectGarbage();
 	xsResult = xsDemarshall(*(char **)message);
 	c_free(*(char **)message);
 
@@ -404,11 +460,11 @@ void workerDeliverConnect(xsMachine *the, modWorker worker, uint8_t *message, ui
 	xsCall1(xsVar(0), xsID_push, xsVar(1));
 
 	xsVar(2) = xsmcNewObject();									// e = {}
-	xsmcSet(xsVar(2), xsID_ports, xsVar(0));						// e.ports = ports
+	xsmcSet(xsVar(2), xsID_ports, xsVar(0));					// e.ports = ports
 
 	xsVar(3) = xsNewHostFunction(xs_worker_postfromworker, 1);	// postMessage
 	xsmcSet(xsVar(1), xsID_postMessage, xsVar(3));				// port.postMessage = postMessage
-	xsCall1(xsGlobal, xsID_onconnect, xsVar(2));					// onconnect(e)
+	xsCall1(xsGlobal, xsID_onconnect, xsVar(2));				// onconnect(e)
 
 	//@@ this eats any exception in onconnect... should be propagated?
 	xsEndHost(the);
@@ -523,7 +579,6 @@ void workerLoop(void *pvParameter)
 	}
 	modMachineTaskWake(worker->parent);
 
-
 	while (true) {
 		modTimersExecute();
 		modMessageService(worker->the, modTimersNext());
@@ -534,6 +589,26 @@ void workerLoop(void *pvParameter)
 #endif
 	}
 }
+#elif __ZEPHYR__
+
+void workerLoop(void *a, void *b, void *c)
+{
+	modWorker worker = (modWorker)a;
+
+	if (workerStart(worker)) {
+		k_sem_give(&worker->semaphore);
+		while (true)		// wait: caller deletes task
+			k_msleep(1000);
+	}
+	k_sem_give(&worker->semaphore);
+
+	while (true) {
+		modTimersExecute();
+		modMessageService(worker->the, modTimersNext());
+		modInstrumentationAdjust(Turns, +1);
+	}
+}
+
 #endif
 
 #ifdef mxInstrument
@@ -545,6 +620,9 @@ void workerSampleInstrumentation(modTimer timer, void *refcon, int refconSize)
 #ifdef INC_FREERTOS_H
 	extern SemaphoreHandle_t gInstrumentMutex;
 	xSemaphoreTake(gInstrumentMutex, portMAX_DELAY);
+#elif __ZEPHYR__
+	extern struct k_mutex gInstrumentMutex;
+	k_mutex_lock(&gInstrumentMutex, K_FOREVER);
 #endif
 
 	fxSampleInstrumentation(the, 0, NULL);
@@ -552,6 +630,8 @@ void workerSampleInstrumentation(modTimer timer, void *refcon, int refconSize)
 
 #ifdef INC_FREERTOS_H
 	xSemaphoreGive(gInstrumentMutex);
+#elif __ZEPHYR__
+	k_mutex_unlock(&gInstrumentMutex);
 #endif
 }
 #endif

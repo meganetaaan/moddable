@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023  Moddable Tech, Inc.
+ * Copyright (c) 2021-2025  Moddable Tech, Inc.
  *
  *   This file is part of the Moddable SDK Runtime.
  * 
@@ -20,6 +20,8 @@
  
 import Timer from "timer";
 
+const more = Object.freeze({more: true});
+
 class HTTPClient {
 	static #Request = class {
 		#client;
@@ -39,13 +41,14 @@ class HTTPClient {
 			if ("object" === typeof count) {
 				buffer = count;
 				count = buffer.byteLength;
+
+				if (buffer.BYTES_PER_ELEMENT > 1)		// allows ArrayBuffer, SharedArrayBuffer, Uint8Array, Int8Array, DataView. disallows multi-byte element arrays.
+					throw new Error("invalid buffer");
 			}			
-			const available = Math.min(client.#readable, (undefined === client.#chunk) ? client.#remaining : client.#chunk);
+			const available = Math.min(client.#readable, client.#chunk ?? ((Infinity === client.#remaining) ? client.#readable : client.#remaining));
 			if (count > available) {
 				count = available;
 				if (buffer) {
-					if (buffer.BYTES_PER_ELEMENT > 1)		// allows ArrayBuffer, SharedArrayBuffer, Uint8Array, Int8Array, DataView. disallows multi-byte element arrays.
-						throw new Error("invalid buffer");
 					if (ArrayBuffer.isView(buffer))
 						buffer = new Uint8Array(buffer.buffer, buffer.byteOffset, count);
 					else
@@ -98,17 +101,17 @@ class HTTPClient {
 			const byteLength = data.byteLength;
 			if (true === client.#requestBody) {
 				if ((byteLength + 8) > client.#writable)
-					throw new Error("too much");
+					throw new Error("would block");
 
-				client.#write(ArrayBuffer.fromString(byteLength.toString(16) + "\r\n"));
-				client.#write(data);
+				client.#write(ArrayBuffer.fromString(byteLength.toString(16) + "\r\n"), more);
+				client.#write(data, more);
 				client.#write(ArrayBuffer.fromString("\r\n"));
 
 				return (client.#writable > 8) ? (client.#writable - 8) : 0 
 			}
 			else {
 				if ((byteLength > client.#writable) || (byteLength > client.#requestBody))
-					throw new Error("too much");
+					throw new Error("would block");
 
 				client.#write(data);
 
@@ -117,9 +120,10 @@ class HTTPClient {
 					client.#state = "receiveResponseStatus";
 					client.#line = "";
 					client.#requestBody = false;
+					return 0;		// no more writable after request body has been sent
 				}
 
-				return client.#writable;
+				return Math.min(client.#writable, client.#requestBody);
 			}
 		}
 	}
@@ -135,6 +139,7 @@ class HTTPClient {
 	#headers;
 	#line;
 	#status;
+	#statusText;
 	#remaining;
 	#requestBody;
 	#chunk;
@@ -200,15 +205,50 @@ class HTTPClient {
 	#onReadable(count) {
 		this.#readable = count;
 
-		while (this.#readable) {
+		do {
 			if (undefined !== this.#line) {
 				this.#socket.format = "number";
+			readable:
 				while (this.#readable--) {
 					const c = this.#socket.read();
-					this.#line += String.fromCharCode(c);
-					if (10 === c)
-						break;
+					switch (this.#state) {
+						case "receiveHeader":
+							if (58 === c) {		// :
+								const name = this.#line = this.#line.toLowerCase();
+
+								if ((name !== "content-length") && (name !== "transfer-encoding") && (false === this.#current.headersMask?.includes(name))) {
+									this.#headers.name = -1;
+									this.#line = 0;
+									this.#state = "skipHeaderValue";
+								}
+								else {
+									this.#headers.name = name;
+									this.#line = "";
+									this.#state = "receiveHeaderValue";
+								}
+							}
+							else {
+								this.#line += String.fromCharCode(c);
+								if (10 === c)
+									break readable;		// this is a malformed request (end of line with no colon) – maybe error?
+							}
+							break;
+						case "skipHeaderValue":
+							if ((10 === c) && (13 === this.#line)) {
+								this.#line = "";
+								this.#state = "receiveHeader";		// on to next header
+							}
+							else
+								this.#line = c;
+							break;
+						default:		// includes "receiveHeaderValue"
+							this.#line += String.fromCharCode(c);
+							if (10 === c)
+								break readable;
+							break;
+					}
 				}
+
 				this.#socket.format = "buffer";
 
 				if (!this.#line.endsWith("\r\n"))
@@ -217,31 +257,36 @@ class HTTPClient {
 
 			switch (this.#state) {
 				case "receiveResponseStatus": {
-					const status = this.#line.split(" ");
-					if (status.length < 3)
-						throw new Error("");
-					this.#status = parseInt(status[1]);
+					let i = this.#line.indexOf(" ");
+					let j = this.#line.indexOf(" ", i + 1);
+					if ((i < 0) || (j < 0))
+						this.#error(new Error("bad response"));
+					this.#status = parseInt(this.#line.slice(i + 1, j));
+					this.#statusText = this.#line.slice(j + 1); 
 					this.#line = "";
 					this.#state = "receiveHeader";
 					this.#headers = new Map;
 					} break;
 
 				case "receiveHeader":
+				case "receiveHeaderValue":
 					if ("\r\n" !== this.#line) {
-						const position = this.#line.indexOf(":");
-						const name = this.#line.substring(0, position).trim().toLowerCase();
-						let data = this.#line.substring(position + 1).trim();
-						this.#headers.set(name, data);
+						const name = this.#headers.name;
+						if (-1 !== name) {
+							const value = this.#line.trim();
+							if (false !== this.#current.headersMask?.includes(name))
+								this.#headers.set(name, value);
 
-						if ("content-length" === name)
-							this.#remaining = parseInt(data);
-						else if ("transfer-encoding" === name) {
-							data = data.toLowerCase();
-							if ("chunked" === data)
-								this.#chunk = 0;
+							if ("content-length" === name)
+								this.#remaining = parseInt(value);
+							else if ("transfer-encoding" === name) {
+								if ("chunked" === value.toLowerCase())
+									this.#chunk = 0;
+							}
 						}
 
 						this.#line = "";
+						this.#state = "receiveHeader";
 					}
 					else {					
 						if ((204 === this.#status) || (205 === this.#status))
@@ -251,7 +296,8 @@ class HTTPClient {
 						else if (undefined === this.#remaining)
 							this.#remaining = Infinity;
 
-						this.#current.onHeaders?.call(this.#current.request, this.#status, this.#headers);
+						delete this.#headers.name;
+						this.#current.onHeaders?.call(this.#current.request, this.#status, this.#headers, this.#statusText);
 						if (!this.#current) return;			// closed in callback
 
 						this.#headers = undefined;
@@ -282,7 +328,7 @@ class HTTPClient {
 							this.#current.onReadable?.call(this.#current.request, min);
 					}
 					else
-						this.#current.onReadable?.call(this.#current.request, Math.min(this.#readable, this.#remaining));
+						this.#current.onReadable?.call(this.#current.request, (this.#remaining === Infinity) ? this.#readable : Math.min(this.#readable, this.#remaining));
 					return;
 				
 				case "receiveChunkTrailer":
@@ -295,21 +341,19 @@ class HTTPClient {
 				default:
 					throw new Error;		//@@ unexpected
 			}
-		}
+		} while (this.#readable);
 	}
 	#onWritable(count) {
 		this.#writable = count;
 
 		do {
 			if (this.#pendingWrite) {
-				let use = this.#pendingWrite.byteLength - this.#writePosition;
-				if (use > count) {
-					this.#write(new Uint8Array(this.#pendingWrite, this.#writePosition, count));
-					this.#writePosition += count;
+				const use = Math.min(this.#pendingWrite.byteLength - this.#writePosition, this.#writable);
+				this.#write(new Uint8Array(this.#pendingWrite, this.#writePosition, use));
+				this.#writePosition += use;
+				if (this.#writePosition !== this.#pendingWrite.byteLength)
 					return;
-				}
-				
-				this.#write(this.#pendingWrite);
+
 				this.#pendingWrite = undefined;
 			}
 
@@ -319,7 +363,8 @@ class HTTPClient {
 					this.#next();
 					if ("sendRequest" !== this.#state)
 						break;
-				
+                    // fall through
+
 				case "sendRequest":
 					this.#pendingWrite = (this.#current.method ?? "GET") + " " + (this.#current.path || "/") + " HTTP/1.1\r\n";
 					this.#pendingWrite += "host: " + this.#host + "\r\n";
@@ -359,6 +404,8 @@ class HTTPClient {
 							if (writable <= 0)
 								return;
 						}
+						else
+							writable = Math.min(writable, this.#requestBody);
 						this.#current.onWritable?.call(this.#current.request, writable);
 					}
 					else {
@@ -371,9 +418,7 @@ class HTTPClient {
 					return;
 			}
 			
-			if (!this.#pendingWrite || !this.#writable)
-				break;
-		} while (true);
+		} while (this.#pendingWrite && this.#writable);
 	}
 	#error(e) {
 		if (("receivedBody" === this.#state) && this.#timer) {		// completion not reported yet. report before handling error.
@@ -395,14 +440,16 @@ class HTTPClient {
 			this.#onError?.(e);
 		}
 		catch {
+			/* this space intentionally left blank */
 		}
 		this.close();
 	}
 	#done() {
 		this.#timer = undefined;
 
-		this.#state = "connected";
+		this.#state = "completing";
 		this.#current.onDone?.call(this.#current.request, null);
+		this.#state = "connected";
 		this.#next();
 		if (this.#current)
 			this.#onWritable(this.#writable);
@@ -420,12 +467,8 @@ class HTTPClient {
 		this.#chunk = undefined;
 		this.#requestBody = false;
 	}
-	#write(data) {
-		const result = this.#socket.write(data);
-		if (undefined !== result)
-			this.#writable = result;
-		else
-			this.#writable -= data.byteLength;
+	#write(data, options) {
+		this.#writable = this.#socket.write(data, options);
 	}
 }
 

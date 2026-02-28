@@ -248,7 +248,6 @@ void fxDebugCommand(txMachine* the)
 
 void fxDebugEval(txMachine* the, txSlot* frame, txString buffer, txInteger index)
 {
-// #if mxDebugEval
 	txSlot* result;
 	txSlot* expression;
 	mxHostInspectors.value.list.first = C_NULL;
@@ -293,13 +292,6 @@ void fxDebugEval(txMachine* the, txSlot* frame, txString buffer, txInteger index
 	}
 	mxPop();
 	mxPop();
-// #else
-// 	fxEchoStart(the);
-// 	fxEcho(the, "<result line=\"");
-// 	fxEchoInteger(the, index);
-// 	fxEcho(the, "\">not available</result>");
-// 	fxEchoStop(the);
-// #endif
 }
 
 txU1* fxDebugEvalAtom(txMachine* the, txU1* p, Atom* atom, txString t)
@@ -367,8 +359,6 @@ txBoolean fxDebugEvalExpression(txMachine* the, txSlot* frame, txSlot* expressio
 {
 	txBoolean success = 0;
 	if (mxIsFunction(expression->value.reference)) {
-	// #if mxDebugEval
-		
 		txSlot* scope = C_NULL;
 		if (frame == the->frame)
 			scope = the->scope;
@@ -415,15 +405,15 @@ txBoolean fxDebugEvalExpression(txMachine* the, txSlot* frame, txSlot* expressio
 		mxPushUndefined();
 		closures = fxNewEnvironmentInstance(the, C_NULL);
 		if (scope) {
-			txSlot* local = environment;
+			txSlot* local = scope;
 			txID id;
 			property = closures->next;
-			while (local > scope) {
-				local--;
+			while (local < environment) {
 				id = local->ID;
 				if ((0 < id) && (id < the->keyCount)) {
 					property = fxNextSlotProperty(the, property, local, id, local->flag);
 				}
+				local++;
 			}
 		}
 		the->scope = the->stack;
@@ -472,11 +462,10 @@ txBoolean fxDebugEvalExpression(txMachine* the, txSlot* frame, txSlot* expressio
 		property->value.home.module = C_NULL;
 		
 		if (scope) {
-			txSlot* local = environment;
+			txSlot* local = scope;
 			txID id;
 			property = closures->next->next;
-			while (local > scope) {
-				local--;
+			while (local < environment) {
 				id = local->ID;
 				if ((0 < id) && (id < the->keyCount)) {
 					if (property->kind != XS_CLOSURE_KIND) {
@@ -485,13 +474,13 @@ txBoolean fxDebugEvalExpression(txMachine* the, txSlot* frame, txSlot* expressio
 					}
 					property = property->next;
 				}
+				local++;
 			}		
 		}
 	
 		fxEndHost(the);
 	
 		the->debugEval = 0;
-	// #endif
 	}
 	else {
 		mxPushSlot(expression);
@@ -1384,17 +1373,7 @@ void fxEchoException(txMachine* the, txSlot* exception)
 		txSlot* instance = exception->value.reference;
 		txSlot* internal = instance->next;
 		if (internal && (internal->kind == XS_ERROR_KIND)) {
-			switch (internal->value.error.which) {
-			case XS_UNKNOWN_ERROR: fxEcho(the, "Error"); break;
-			case XS_EVAL_ERROR: fxEcho(the, "EvalError"); break;
-			case XS_RANGE_ERROR: fxEcho(the, "RangeError"); break;
-			case XS_REFERENCE_ERROR: fxEcho(the, "ReferenceError"); break;
-			case XS_SYNTAX_ERROR: fxEcho(the, "SyntaxError"); break;
-			case XS_TYPE_ERROR: fxEcho(the, "TypeError"); break;
-			case XS_URI_ERROR: fxEcho(the, "URIError"); break;
-			case XS_AGGREGATE_ERROR: fxEcho(the, "AggregateError"); break;
-			case XS_SUPPRESSED_ERROR: fxEcho(the, "SuppressedError"); break;
-			}
+			fxEcho(the, (txString)gxErrorNames[internal->value.error.which]);
 			fxEcho(the, ": ");
 			internal = internal->next;
 			if (internal && ((internal->kind == XS_STRING_KIND) || (internal->kind == XS_STRING_X_KIND))) {
@@ -1655,6 +1634,25 @@ void fxEchoInstance(txMachine* the, txSlot* theInstance, txInspectorNameList* th
 			fxEchoProperty(the, aProperty, theList, "(export)", -1, C_NULL);
 			aProperty = aProperty->next;
 			break;
+#if mxModuleStuff
+		case XS_MODULE_STUFF_KIND:
+			aProperty = aProperty->next;
+			fxEchoProperty(the, aProperty, theList, "(namespace)", -1, C_NULL);
+			aProperty = aProperty->next;
+			fxEchoProperty(the, aProperty, theList, "(imports)", -1, C_NULL);
+			aProperty = aProperty->next;
+			fxEchoProperty(the, aProperty, theList, "(source)", -1, C_NULL);
+			aProperty = aProperty->next;
+			fxEchoProperty(the, aProperty, theList, "(handler)", -1, C_NULL);
+			aProperty = aProperty->next;
+			fxEchoProperty(the, aProperty, theList, "(importHook)", -1, C_NULL);
+			aProperty = aProperty->next;
+			fxEchoProperty(the, aProperty, theList, "(importMetaHook)", -1, C_NULL);
+			aProperty = aProperty->next;
+			fxEchoProperty(the, aProperty, theList, "(importNowHook)", -1, C_NULL);
+			aProperty = aProperty->next;
+			break;
+#endif
 		case XS_PROGRAM_KIND:
 			aSlot = aProperty->value.module.realm;
 			fxEchoProperty(the, mxRealmGlobal(aSlot), theList, "(globals)", -1, C_NULL);
@@ -1888,7 +1886,7 @@ void fxEchoProperty(txMachine* the, txSlot* theProperty, txInspectorNameList* th
 			}
 			fxEcho(the, "\"/>");
 			break;
-	#ifdef mxHostFunctionPrimitive
+	#if mxHostFunctionPrimitive
 		case XS_HOST_FUNCTION_KIND:
 			fxEcho(the, " value=\"(host function)\"/>");
 			break;
@@ -2526,12 +2524,7 @@ void fxLogin(txMachine* the)
 	fxEcho(the, "LE ");
 #endif
 	fxEchoInteger(the, (txInteger)(sizeof(txID)*8));
-	fxEcho(the, "-bit ID\" flags=\"");
-#if mxDebugEval
-	fxEcho(the, "e");
-#else	
-	fxEcho(the, "E");
-#endif
+	fxEcho(the, "-bit ID\" flags=\"e");
 	fxEcho(the, "\"/>");
 	fxEchoStop(the);
 #if mxAliasInstance
@@ -2936,8 +2929,11 @@ void fxVReport(void* console, txString theFormat, c_va_list theArguments)
 		fxEcho(the, "</log>");
 		fxEchoStop(the);
 	}
-#endif
-#if defined(DEBUG_EFM)
+#elif defined(nrf52) && defined(mxInstrument)
+	char buf[256];
+	vsnprintf(buf, 256, theFormat, theArguments);
+	modLog_transmit(buf);
+#elif defined(DEBUG_EFM)
 	memmove(_lastDebugStrBuffer, _debugStrBuffer, 256);
 	vsprintf(_debugStrBuffer, theFormat, theArguments);
 	_debugStrBuffer[255] = '\0';
@@ -2957,8 +2953,16 @@ void fxVReportException(void* console, txString thePath, txInteger theLine, txSt
 		fxEcho(the, "!\n</log>");
 		fxEchoStop(the);
 	}
-#endif
-#if defined(DEBUG_EFM)
+#elif defined(nrf52) && defined(mxInstrument)
+	char buf[256];
+	if (thePath && theLine)
+		c_snprintf(buf, 256, "%s:%d: exception: ", thePath, (int)theLine);
+	else
+		c_snprintf(buf, 256, "# exception: ");
+	modLog_transmit(buf);
+	c_snprintf(buf, 256, theFormat, theArguments);
+	modLog_transmit(buf);
+#elif defined(DEBUG_EFM)
 	if (thePath && theLine)
 		sprintf(_debugStrBuffer, "%s:%d: exception: ", thePath, (int)theLine);
 	else
@@ -2982,8 +2986,16 @@ void fxVReportError(void* console, txString thePath, txInteger theLine, txString
 		fxEcho(the, "!\n</log>");
 		fxEchoStop(the);
 	}
-#endif
-#if defined(DEBUG_EFM)
+#elif defined(nrf52) && defined(mxInstrument)
+	char buf[256];
+	if (thePath && theLine)
+		c_snprintf(buf, 256, "%s:%d: error: ", thePath, (int)theLine);
+	else
+		c_snprintf(buf, 256, "# error: ");
+	modLog_transmit(buf);
+	c_snprintf(buf, 256, theFormat, theArguments);
+	modLog_transmit(buf);
+#elif defined(DEBUG_EFM)
 	if (thePath && theLine)
 		sprintf(_debugStrBuffer, "%s:%d: error: ", thePath, (int)theLine);
 	else
@@ -3277,7 +3289,7 @@ txID fxFrameToProfilerID(txMachine* the, txSlot* frame)
 			id = mxFunctionInstanceHome(function)->ID;
 		}
 	}
-#ifdef mxHostFunctionPrimitive
+#if mxHostFunctionPrimitive
 	else if (function->kind == XS_HOST_FUNCTION_KIND)
 		id = function->value.hostFunction.profileID;
 #endif

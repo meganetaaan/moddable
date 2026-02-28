@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2016-2023  Moddable Tech, Inc.
+# Copyright (c) 2016-2025  Moddable Tech, Inc.
 #
 #   This file is part of the Moddable SDK Tools.
 #
@@ -26,7 +26,6 @@ USE_USB ?= 0
 FTDI_TRACE ?= -DUSE_FTDI_TRACE=0
 
 NRF_ROOT ?= $(HOME)/nrf5
-NRFJPROG_ARGS ?= -f nrf52 --qspiini $(QSPI_INI_PATH)
 
 UPLOAD_SPEED ?= 921600
 DEBUGGER_SPEED ?= 921600
@@ -54,6 +53,10 @@ UF2_VOLUME_NAME ?= MODDABLE4
 M4_VID ?= beef
 M4_PID ?= cafe
 
+XSBUG_HOST ?= localhost
+XSBUG_PORT ?= 5002
+XSBUG_LOG_PORT ?= 5002
+
 ifeq ($(USE_USB),0)
 	ifeq ($(HOST_OS),Darwin)
 		VERS = $(shell sw_vers -productVersion | cut -f1 -d.)
@@ -77,7 +80,7 @@ ifeq ($(HOST_OS),Darwin)
 	UF2_VOLUME_PATH = /Volumes/$(UF2_VOLUME_NAME)
 
 	SET_PROGRAMMING_MODE = $(PLATFORM_DIR)/config/programmingMode $(M4_VID) $(M4_PID) $(UF2_VOLUME_PATH)
-	START_NODE = cd $(MODDABLE)/tools/xsbug-log && XSBUG_PORT=$(XSBUG_PORT) XSBUG_HOST=$(XSBUG_HOST) node xsbug-log
+	START_NODE = cd $(MODDABLE)/tools/xsbug-log && XSBUG_LOG_PORT=$(XSBUG_LOG_PORT) XSBUG_PORT=$(XSBUG_PORT) XSBUG_HOST=$(XSBUG_HOST) node xsbug-log
 
 	ifeq ($(USE_USB),1)
 		START_SERIAL2XSBUG = serial2xsbug $(M4_VID):$(M4_PID) 921600 8N1
@@ -106,7 +109,7 @@ ifeq ($(HOST_OS),Darwin)
 		SET_PROGRAMMING_MODE = @echo Use the target installDFU or debugDFU.
 		DO_PROGRAM =
 	else
-		DO_PROGRAM = @echo Programming: $(BIN_DIR)/xs_nrf52.hex to $(UF2_VOLUME_NAME) ; cp $(BIN_DIR)/xs_nrf52.uf2 $(UF2_VOLUME_PATH) ; $(WAIT_FOR_COPY_COMPLETE)
+		DO_PROGRAM = @echo Programming: $(BIN_DIR)/xs_nrf52.hex to $(UF2_VOLUME_NAME) ; cp -X $(BIN_DIR)/xs_nrf52.uf2 $(UF2_VOLUME_PATH) ; $(WAIT_FOR_COPY_COMPLETE)
 	endif
 
 # END of Darwin
@@ -130,7 +133,7 @@ else
 		else
 			# not usb
 			ifeq ($(XSBUG_LOG),1)
-				CONNECT_XSBUG = XSBUG_PORT=$(XSBUG_PORT) XSBUG_HOST=$(XSBUG_HOST) cd $(MODDABLE)/tools/xsbug-log && node xsbug-log $(MODDABLE_TOOLS_DIR)/serial2xsbug $(DEBUGGER_PORT) $(DEBUGGER_SPEED) 8N1
+				CONNECT_XSBUG = XSBUG_LOG_PORT=$(XSBUG_LOG_PORT) XSBUG_PORT=$(XSBUG_PORT) XSBUG_HOST=$(XSBUG_HOST) cd $(MODDABLE)/tools/xsbug-log && node xsbug-log $(MODDABLE_TOOLS_DIR)/serial2xsbug $(DEBUGGER_PORT) $(DEBUGGER_SPEED) 8N1
 			else
 				CONNECT_XSBUG = XSBUG_PORT=$(XSBUG_PORT) XSBUG_HOST=$(XSBUG_HOST) $(MODDABLE_TOOLS_DIR)/serial2xsbug $(DEBUGGER_PORT) $(DEBUGGER_SPEED) 8N1
 			endif
@@ -409,10 +412,16 @@ SDK_GLUE_OBJ = \
 	$(TMP_DIR)/xsmain.c.o \
 	$(TMP_DIR)/systemclock.c.o \
 	$(TMP_DIR)/main.c.o \
+	$(TMP_DIR)/ftdi_trace.c.o
+
+ifeq ($(USE_USB),1)
+SDK_GLUE_OBJ += \
 	$(TMP_DIR)/debugger_usbd.c.o \
-	$(TMP_DIR)/ftdi_trace.c.o \
-	$(TMP_DIR)/app_usbd_vendor.c.o \
+	$(TMP_DIR)/app_usbd_vendor.c.o
+else
+SDK_GLUE_OBJ += \
 	$(TMP_DIR)/debugger.c.o
+endif
 
 #	$(TMP_DIR)/nrf52_serial.c.o 
 
@@ -601,8 +610,13 @@ OBJECTS += \
 	$(NRF_HW_CRYPTO_BACKEND_OBJECTS) \
 	$(NRF_DRIVERS) \
 	$(NRF_LIBRARIES) \
-	$(NRF_SOFTDEVICE) \
+	$(NRF_SOFTDEVICE)
+
+ifeq ($(USE_USB),1)
+OBJECTS += \
 	$(NRF_USBD)
+endif
+
 
 #	$(NRF_LOG_OBJECTS)
 
@@ -668,7 +682,6 @@ C_DEFINES = \
 	$(NRF_C_DEFINES) \
 	$(NET_CONFIG_FLAGS) \
 	-DmxUseDefaultSharedChunks=1 \
-	-DmxRun=1 \
 	-DkCommodettoBitmapFormat=$(COMMODETTOBITMAPFORMAT) \
 	-DkPocoRotation=$(POCOROTATION) \
 	-DMODGCC=1 \
@@ -722,6 +735,10 @@ else
 endif
 ifeq ($(INSTRUMENT),1)
 	C_DEFINES += -DMODINSTRUMENTATION=1 -DmxInstrument=1
+endif
+
+ifeq ($(NRF52_CUSTOM_PWM_FREQ),1)
+	C_DEFINES += -DNRF52_CUSTOM_PWM_FREQ=1
 endif
 
 ifeq ($(USE_WDT),1)
@@ -849,6 +866,10 @@ flash: precursor $(BIN_DIR)/xs_nrf52.hex
 	"$(NRFJPROG)" $(NRFJPROG_ARGS) --program $(BIN_DIR)/xs_nrf52.hex $(NRFJPROG_ERASE)
 	"$(NRFJPROG)" $(NRFJPROG_ARGS) --verify $(BIN_DIR)/xs_nrf52.hex
 	"$(NRFJPROG)" --reset
+
+readuicr:
+	@echo Read UICR
+	"$(NRFJPROG)" $(NRFJPROG_ARGS) --readuicr $(BIN_DIR)/uicr.bin
 
 debugger:
 	@echo Starting xsbug. Reset device to connect.
@@ -1002,6 +1023,10 @@ $(TMP_DIR)/mc.xs.c: $(MODULES) $(MANIFEST)
 $(TMP_DIR)/mc.resources.c: $(DATA) $(RESOURCES) $(MANIFEST)
 	@echo "# mcrez resources"
 	$(MCREZ) $(DATA) $(RESOURCES) -o $(TMP_DIR) -p nrf52 -r mc.resources.c
+
+$(TMP_DIR)/xsmain.c.o: $(BUILD_DIR)/devices/nrf52/base/xsmain.c $(TMP_DIR)/mc.xs.c
+	@echo "# application: $(@F)"
+	$(CC) $(C_FLAGS) $(C_DEFINES) $(C_INCLUDES) $< -o $@
 
 MAKEFLAGS += $(MAKEFLAGS_JOBS)
 ifneq ($(VERBOSE),1)

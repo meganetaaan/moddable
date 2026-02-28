@@ -1,6 +1,6 @@
 # XS Platforms
-Copyright 2016-2023 Moddable Tech, Inc.<BR>
-Revised: August 31, 2023
+Copyright 2016-2024 Moddable Tech, Inc.<BR>
+Revised: April 22, 2024
 
 ## History
 
@@ -22,26 +22,30 @@ Consequently, it is now much simpler to build an XS platform. This document desc
 
 XS uses a few basic types that the interface file has to define.
 
-	#include <stdint.h>
-	typedef int8_t txS1;
-	typedef uint8_t txU1;
-	typedef int16_t txS2;
-	typedef uint16_t txU2;
-	typedef int32_t txS4;
-	typedef uint32_t txU4;
+```c
+#include <stdint.h>
+typedef int8_t txS1;
+typedef uint8_t txU1;
+typedef int16_t txS2;
+typedef uint16_t txU2;
+typedef int32_t txS4;
+typedef uint32_t txU4;
+```
 
 ### C defines and includes
 
 XS mostly relies on constants and functions from the C standard library, accessed thru macros with `C_` or `c_` prefixes:
 
-	#include <math.h>
-	#define C_NAN NAN
-	//...
+```c
+#include <math.h>
+#define C_NAN NAN
+//...
 
-	#include <stdlib.h>
-	#define c_free free
-	#define c_malloc malloc
-	//...
+#include <stdlib.h>
+#define c_free free
+#define c_malloc malloc
+//...
+```
 
 Such definitions, and the corresponding includes, are the most significant part of the interface file. The macros allows a platform to provide its own constants and functions. See any of the provided `xsPlatform.h` for the list of macros to define.
 
@@ -49,17 +53,19 @@ Such definitions, and the corresponding includes, are the most significant part 
 
 The Xtensa instruction set and architecture, used most notably in microcontrollers by Espressif, requires special macros to locate certain constant data in ROM and to read that data. On other platforms these macros are trivially defined:
 
-	#define c_read8(POINTER) *((txU1 *)(POINTER))
-	#define c_read16(POINTER) *((txU2 *)(POINTER))
-	#define c_read32(POINTER) *((txU4 *)(POINTER))
+```c
+#define c_read8(POINTER) *((txU1 *)(POINTER))
+#define c_read16(POINTER) *((txU2 *)(POINTER))
+#define c_read32(POINTER) *((txU4 *)(POINTER))
 
-	#define ICACHE_FLASH_ATTR
-	#define ICACHE_RODATA_ATTR
-	#define ICACHE_XS6RO_ATTR
-	#define ICACHE_XS6RO2_ATTR
-	#define ICACHE_XS6STRING_ATTR
-	#define mxGetKeySlotID(SLOT) (SLOT)->ID
-	#define mxGetKeySlotKind(SLOT) (SLOT)->kind
+#define ICACHE_FLASH_ATTR
+#define ICACHE_RODATA_ATTR
+#define ICACHE_XS6RO_ATTR
+#define ICACHE_XS6RO2_ATTR
+#define ICACHE_XS6STRING_ATTR
+#define mxGetKeySlotID(SLOT) (SLOT)->ID
+#define mxGetKeySlotKind(SLOT) (SLOT)->kind
+```
 
 
 ###  `mxMachinePlatform`
@@ -68,20 +74,24 @@ The platform can add fields to the machine record by defining the `mxMachinePlat
 
 For instance, on Mac, the `mxMachinePlatform` macro adds references to a socket and a run loop source for the communication with **xsbug**, and another run loop source for promises.
 
-	#include <CoreServices/CoreServices.h>
+```c
+#include <CoreServices/CoreServices.h>
 
-	#define mxMachinePlatfom \
-		CFSocketRef connection; \
-		CFRunLoopSourceRef connectionSource; \
-		CFRunLoopSourceRef promiseSource;
+#define mxMachinePlatform \
+	CFSocketRef connection; \
+	CFRunLoopSourceRef connectionSource; \
+	CFRunLoopSourceRef promiseSource;
+```
 
 On Windows, the `mxMachinePlatform` macro adds the socket and message window handles that are used for the same purposes.
 
-	#include <winsock2.h>
+```c
+#include <winsock2.h>
 
-	#define mxMachinePlatfom \
-		SOCKET connection; \
-		HWND window;
+#define mxMachinePlatform \
+	SOCKET connection; \
+	HWND window;
+```
 
 ## xsPlatform.c
 
@@ -107,11 +117,13 @@ The functions are grouped into meaningful sections. The xsPlatform.c file can al
 
 ### Debug
 
-The functions in this section are only necessary for the debug version of XS. They can be condtionally defined within:
+The functions in this section are only necessary for the debug version of XS. They can be conditionally defined within:
 
-	#ifdef mxDebug
-	// debug functions
-	#endif
+```c
+#ifdef mxDebug
+// debug functions
+#endif
+```
 
 If the platform does not support the communication with **xsbug**, functions in this section can be empty, except  `fxIsConnected` and `fxIsReadable`, which must return `0`.
 
@@ -121,30 +133,34 @@ Platforms must implement `fxIsReadable` to allow XS machines to receive messages
 
 For instance on Mac the platform uses `CFSocketCreate` with a `kCFSocketReadCallBack`:
 
-	void fxReadableCallback(CFSocketRef socketRef, CFSocketCallBackType cbType, CFDataRef addr, const void* data, void* context)
-	{
-		txMachine* the = context;
-		if (fxIsReadable(the))
-			fxDebugCommand(the);
-	}
+```c
+void fxReadableCallback(CFSocketRef socketRef, CFSocketCallBackType cbType, CFDataRef addr, const void* data, void* context)
+{
+	txMachine* the = context;
+	if (fxIsReadable(the))
+		fxDebugCommand(the);
+}
+```
 
 On Windows the platform uses `WSAAsyncSelect` with the `WM_XSBUG` message:
 
-	LRESULT CALLBACK fxMessageWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
-	{
-		switch(message)	{
-	#ifdef mxDebug
-		case WM_XSBUG: {
-			txMachine* the = (txMachine*)GetWindowLongPtr(window, 0);
-			if (fxIsReadable(the))
-				fxDebugCommand(the);
-		} break;
-	#endif
-		default:
-			return DefWindowProc(window, message, wParam, lParam);
-		}
-		return 0;
+```c
+LRESULT CALLBACK fxMessageWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
+{
+	switch(message)	{
+#ifdef mxDebug
+	case WM_XSBUG: {
+		txMachine* the = (txMachine*)GetWindowLongPtr(window, 0);
+		if (fxIsReadable(the))
+			fxDebugCommand(the);
+	} break;
+#endif
+	default:
+		return DefWindowProc(window, message, wParam, lParam);
 	}
+	return 0;
+}
+```
 
 --
 
@@ -212,25 +228,27 @@ XS calls `fxParseScript` to transform source code into XS byte codes and keys. T
 
 If the platform supports such feature, it must include `xsScript.h` and implements `fxParseScript` like:
 
-	#include "xsScript.h"
+```c
+#include "xsScript.h"
 
-	txScript* fxParseScript(txMachine* the, void* stream, txGetter getter, txUnsigned flags)
-	{
-		txParser _parser;
-		txParser* parser = &_parser;
-		txParserJump jump;
-		txScript* script = NULL;
-		fxInitializeParser(parser, the, 32*1024, 1993);
-		parser->firstJump = &jump;
-		if (c_setjmp(jump.jmp_buf) == 0) {
-			fxParserTree(parser, stream, getter, flags, NULL);
-			fxParserHoist(parser);
-			fxParserBind(parser);
-			script = fxParserCode(parser);
-		}
-		fxTerminateParser(parser);
-		return script;
+txScript* fxParseScript(txMachine* the, void* stream, txGetter getter, txUnsigned flags)
+{
+	txParser _parser;
+	txParser* parser = &_parser;
+	txParserJump jump;
+	txScript* script = NULL;
+	fxInitializeParser(parser, the, 32*1024, 1993);
+	parser->firstJump = &jump;
+	if (c_setjmp(jump.jmp_buf) == 0) {
+		fxParserTree(parser, stream, getter, flags, NULL);
+		fxParserHoist(parser);
+		fxParserBind(parser);
+		script = fxParserCode(parser);
 	}
+	fxTerminateParser(parser);
+	return script;
+}
+```
 
 The platform must also compile and link `xsScript.c`, `xsLexical.c`, `xsSyntaxical.c`, `xsTree.c`, `xsSourceMap.c`, `xsScope.c` and `xsCode.c`.
 
@@ -252,20 +270,22 @@ On most platforms today, XS machines are cloned. The default keys are available 
 
 If the platform supports the creation of XS machines from scratch, `fxBuildKeys` must be implemented as:
 
-	void fxBuildKeys(txMachine* the)
-	{
-		int i;
-		for (i = 0; i < XS_SYMBOL_ID_COUNT; i++) {
-			txID id = the->keyIndex;
-			txSlot* description = fxNewSlot(the);
-			fxCopyStringC(the, description, gxIDStrings[i]);
-			the->keyArray[id] = description;
-			the->keyIndex++;
-		}
-		for (; i < XS_ID_COUNT; i++) {
-			fxID(the, gxIDStrings[i]);
-		}
+```c
+void fxBuildKeys(txMachine* the)
+{
+	int i;
+	for (i = 0; i < XS_SYMBOL_ID_COUNT; i++) {
+		txID id = the->keyIndex;
+		txSlot* description = fxNewSlot(the);
+		fxCopyStringC(the, description, gxIDStrings[i]);
+		the->keyArray[id] = description;
+		the->keyIndex++;
 	}
+	for (; i < XS_ID_COUNT; i++) {
+		fxID(the, gxIDStrings[i]);
+	}
+}
+```
 
 --
 
@@ -339,88 +359,90 @@ The platform defines also how the importing or requiring module identifier and t
 
 Finding modules can involve looking for various kinds of files, using a set of preferred locations, etc.  But on microcontrollers, all modules modules are prepared and ready to be found:
 
-	txID fxFindModule(txMachine* the, txID moduleID, txSlot* slot)
-	{
-		txPreparation* preparation = the->archive;
-		char name[PATH_MAX];
-		char path[PATH_MAX];
-		txBoolean absolute = 0, relative = 0, search = 0;
-		txInteger dot = 0;
-		txSlot *key;
-		txString slash;
-		txID id;
+```c
+txID fxFindModule(txMachine* the, txID moduleID, txSlot* slot)
+{
+	txPreparation* preparation = the->archive;
+	char name[PATH_MAX];
+	char path[PATH_MAX];
+	txBoolean absolute = 0, relative = 0, search = 0;
+	txInteger dot = 0;
+	txSlot *key;
+	txString slash;
+	txID id;
 
-		fxToStringBuffer(the, slot, name, sizeof(name));
-		if (!c_strncmp(name, "/", 1)) {
-			absolute = 1;
-		}
-		else if (!c_strncmp(name, "./", 2)) {
-			dot = 1;
-			relative = 1;
-		}
-		else if (!c_strncmp(name, "../", 3)) {
-			dot = 2;
-			relative = 1;
-		}
-		else {
-			relative = 1;
-			search = 1;
-		}
-		if (absolute) {
-			c_strcpy(path, preparation->base);
-			c_strcat(path, name + 1);
-			if (fxFindScript(the, path, &id))
-				return id;
-		}
-		if (relative && (moduleID != XS_NO_ID)) {
-			key = fxGetKey(the, moduleID);
-			c_strcpy(path, key->value.key.string);
+	fxToStringBuffer(the, slot, name, sizeof(name));
+	if (!c_strncmp(name, "/", 1)) {
+		absolute = 1;
+	}
+	else if (!c_strncmp(name, "./", 2)) {
+		dot = 1;
+		relative = 1;
+	}
+	else if (!c_strncmp(name, "../", 3)) {
+		dot = 2;
+		relative = 1;
+	}
+	else {
+		relative = 1;
+		search = 1;
+	}
+	if (absolute) {
+		c_strcpy(path, preparation->base);
+		c_strcat(path, name + 1);
+		if (fxFindScript(the, path, &id))
+			return id;
+	}
+	if (relative && (moduleID != XS_NO_ID)) {
+		key = fxGetKey(the, moduleID);
+		c_strcpy(path, key->value.key.string);
+		slash = c_strrchr(path, '/');
+		if (!slash)
+			return XS_NO_ID;
+		if (dot == 0)
+			slash++;
+		else if (dot == 2) {
+			*slash = 0;
 			slash = c_strrchr(path, '/');
 			if (!slash)
 				return XS_NO_ID;
-			if (dot == 0)
-				slash++;
-			else if (dot == 2) {
-				*slash = 0;
-				slash = c_strrchr(path, '/');
-				if (!slash)
-					return XS_NO_ID;
-			}
-			if (!c_strncmp(path, preparation->base, preparation->baseLength)) {
-				*slash = 0;
-				c_strcat(path, name + dot);
-				if (fxFindScript(the, path, &id))
-					return id;
-			}
 		}
-		if (search) {
-			c_strcpy(path, preparation->base);
-			c_strcat(path, name);
+		if (!c_strncmp(path, preparation->base, preparation->baseLength)) {
+			*slash = 0;
+			c_strcat(path, name + dot);
 			if (fxFindScript(the, path, &id))
 				return id;
 		}
-		return XS_NO_ID;
 	}
+	if (search) {
+		c_strcpy(path, preparation->base);
+		c_strcat(path, name);
+		if (fxFindScript(the, path, &id))
+			return id;
+	}
+	return XS_NO_ID;
+}
 
-	txBoolean fxFindScript(txMachine* the, txString path, txID* id)
-	{
-		txPreparation* preparation = the->archive;
-		txInteger c = preparation->scriptCount;
-		txScript* script = preparation->scripts;
-		path += preparation->baseLength;
-		c_strcat(path, ".xsb");
-		while (c > 0) {
-			if (!c_strcmp(path, script->path)) {
-				path -= preparation->baseLength;
-				*id = fxNewNameC(the, path);
-				return 1;
-			}
-			c--;
-			script++;
+txBoolean fxFindScript(txMachine* the, txString path, txID* id)
+{
+	txPreparation* preparation = the->archive;
+	txInteger c = preparation->scriptCount;
+	txScript* script = preparation->scripts;
+	path += preparation->baseLength;
+	c_strcat(path, ".xsb");
+	while (c > 0) {
+		if (!c_strcmp(path, script->path)) {
+			path -= preparation->baseLength;
+			*id = fxNewNameC(the, path);
+			return 1;
 		}
-		*id = XS_NO_ID;
-		return 0;
+		c--;
+		script++;
 	}
+	*id = XS_NO_ID;
+	return 0;
+}
+```
 
 --
 
@@ -430,27 +452,29 @@ XS calls `fxLoadModule` to tell the platform to prepare the byte codes, keys and
 
 Preparing modules can involve reading and mapping files, parsing, scoping and byte coding scripts, loading dynamic libraries, etc. But on microcontrollers, all `txScript` structures are available and ready to be used:
 
-	void fxLoadModule(txMachine* the, txID moduleID)
-	{
-		txString path = fxGetKeyName(the, moduleID);
-		txScript* script = fxLoadScript(the, path);
-		fxResolveModule(the, moduleID, script, C_NULL, C_NULL);
-	}
+```c
+void fxLoadModule(txMachine* the, txID moduleID)
+{
+	txString path = fxGetKeyName(the, moduleID);
+	txScript* script = fxLoadScript(the, path);
+	fxResolveModule(the, moduleID, script, C_NULL, C_NULL);
+}
 
-	txScript* fxLoadScript(txMachine* the, txString path)
-	{
-		txPreparation* preparation = the->archive;
-		txInteger c = preparation->scriptCount;
-		txScript* script = preparation->scripts;
-		path += preparation->baseLength;
-		while (c > 0) {
-			if (!c_strcmp(path, script->path))
-				return script;
-			c--;
-			script++;
-		}
-		return C_NULL;
+txScript* fxLoadScript(txMachine* the, txString path)
+{
+	txPreparation* preparation = the->archive;
+	txInteger c = preparation->scriptCount;
+	txScript* script = preparation->scripts;
+	path += preparation->baseLength;
+	while (c > 0) {
+		if (!c_strcmp(path, script->path))
+			return script;
+		c--;
+		script++;
 	}
+	return C_NULL;
+}
+```
 
 --
 
@@ -470,36 +494,40 @@ XS calls `fxQueuePromiseJobs` once when jobs have been queued. Platforms can use
 
 For instance on Mac the platform uses a run loop source and `CFRunLoopSourceSignal`:
 
-	void fxQueuePromiseJobsCallback(void *info)
-	{
-		txMachine* the = info;
-		fxRunPromiseJobs(the);
-	}
+```c
+void fxQueuePromiseJobsCallback(void *info)
+{
+	txMachine* the = info;
+	fxRunPromiseJobs(the);
+}
 
-	void fxQueuePromiseJobs(txMachine* the)
-	{
-		CFRunLoopSourceSignal(the->promiseSource);
-	}
+void fxQueuePromiseJobs(txMachine* the)
+{
+	CFRunLoopSourceSignal(the->promiseSource);
+}
+```
 
 On Windows the platform uses a message window and `PostMessage`:
 
-	LRESULT CALLBACK fxMessageWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
-	{
-		switch(message)	{
-		case WM_PROMISE: {
-			txMachine* the = (txMachine*)GetWindowLongPtr(window, 0);
-			fxRunPromiseJobs(the);
-		} break;
-		default:
-			return DefWindowProc(window, message, wParam, lParam);
-		}
-		return 0;
+```c
+LRESULT CALLBACK fxMessageWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
+{
+	switch(message)	{
+	case WM_PROMISE: {
+		txMachine* the = (txMachine*)GetWindowLongPtr(window, 0);
+		fxRunPromiseJobs(the);
+	} break;
+	default:
+		return DefWindowProc(window, message, wParam, lParam);
 	}
+	return 0;
+}
 
-	void fxQueuePromiseJobs(txMachine* the)
-	{
-		PostMessage(the->window, WM_PROMISE, 0, 0);
-	}
+void fxQueuePromiseJobs(txMachine* the)
+{
+	PostMessage(the->window, WM_PROMISE, 0, 0);
+}
+```
 
 ### SharedArrayBuffer & Atomics
 
@@ -507,11 +535,13 @@ From XS point of view, `SharedArrayBuffer` instances are host objects, i.e. inst
 
 What is a shared chunk is defined by the platform. XS atomically accesses 8-bit, 16-bit or 32-bit signed or unsigned integers inside the data of a shared chunk. XS accesses integers either thru GCC atomics, or between calls to `fxLockSharedChunk` and `fxUnlockSharedChunk`
 
-Since `Atomics.wait` and `Atomics.wake` require to synchonize the **shared cluster** of machines created or cloned by XS, platforms usually need a global synchronization mechanism, and synchronization related fields in every machine record, thru the `mxMachinePlatform` macro explained here above.
+Since `Atomics.wait` and `Atomics.wake` require to synchronize the **shared cluster** of machines created or cloned by XS, platforms usually need a global synchronization mechanism, and synchronization related fields in every machine record, thru the `mxMachinePlatform` macro explained here above.
 
 #### Shared Cluster
 
-	void fxInitializeSharedCluster();
+```c
+void fxInitializeSharedCluster();
+```
 
 Applications that use `Atomics.wait` and `Atomics.wake` must call `xsInitializeSharedCluster` before creating or cloning their first machine. `xsInitializeSharedCluster` is the application programming interface, `fxInitializeSharedCluster` is the platform implementation.
 
@@ -519,7 +549,9 @@ Applications that use `Atomics.wait` and `Atomics.wake` must call `xsInitializeS
 
 The thread that calls `fxInitializeSharedChunks` must be the thread that runs the user interface, usually the main thread. `Atomics.wait` fails for all machines running in that thread.
 
-	void fxTerminateSharedCluster();
+```c
+void fxTerminateSharedCluster();
+```
 
 Applications that use `Atomics.wait` and `Atomics.wake` must call `xsTerminateSharedCluster` after deleting their last machine. `xsTerminateSharedCluster` is the application programming interface, `fxTerminateSharedCluster` is the platform implementation.
 
@@ -527,7 +559,9 @@ Applications that use `Atomics.wait` and `Atomics.wake` must call `xsTerminateSh
 
 #### Shared Chunk
 
-	void* fxCreateSharedChunk(txInteger byteLength);
+```c
+void* fxCreateSharedChunk(txInteger byteLength);
+```
 
 `fxCreateSharedChunk` allocates a shared chunk, `byteLength` is the size of its data, which must be initialised to zero.
 
@@ -535,13 +569,17 @@ Typically platforms use a reference count to track how many machines are referen
 
 `fxCreateSharedChunk` returns a pointer to the data.
 
-	void fxLockSharedChunk(void* data);
+```c
+void fxLockSharedChunk(void* data);
+```
 
 `fxLockSharedChunk` locks the shared chunk, `data` is a pointer to the data of the shared chunk.
 
 `fxLockSharedChunk` is never called if the platform supports GCC atomics.
 
-	txInteger fxMeasureSharedChunk(void* data);
+```c
+txInteger fxMeasureSharedChunk(void* data);
+```
 
 `fxMeasureSharedChunk` returns the size of the data of the chunk, `data` is a pointer to the data of the shared chunk.
 
@@ -553,13 +591,17 @@ Typically platforms use an atomic operation to decrement the reference count of 
 
 `fxReleaseSharedChunk` is the destructor of the host slot.
 
-	void* fxRetainSharedChunk(void* data);
+```c
+void* fxRetainSharedChunk(void* data);
+```
 
 A machine calls `fxRetainSharedChunk` when marshalling a shared chunk to another machine. `data` is a pointer to the data of the shared chunk.
 
 Typically platforms use an atomic operation to increment the reference count of the shared chunk.
 
-	void fxUnlockSharedChunk(void* data);
+```c
+void fxUnlockSharedChunk(void* data);
+```
 
 `fxUnlockSharedChunk` unlocks the shared chunk. `data` is a pointer to the data of the shared chunk.
 
@@ -610,3 +652,27 @@ On systems with POSIX threads and on Windows, to use the default implementation 
 			txMachine* waiterLink;
 
 Obviously, on systems with a single thread, `Atomics.wait` always fails and `Atomics.wake` always returns zero.
+
+### Strings
+
+XS has several options to control the behavior of strings.
+
+#### Internal representation
+
+By default, XS stores strings in UTF-8 encoding. This is convenient in many ways, but results in some subtle differences with standard JavaScript which assumes UTF-16. In particular, the handling of surrogate pairs is different. For environments where stricter conformance is a priority, the internal encoding can be changed to [CESU-8](https://en.wikipedia.org/wiki/CESU-8), a way of encoding UTF-16 in UTF-8. More precisely, XS uses [Modified UTF-8 from Java](https://en.wikipedia.org/wiki/UTF-8#Modified_UTF-8), which is CESU-8 with special handling of NULL characters.
+
+To have XS use CESU-8 encoding as its internal representation, define `mxCESU` when building XS. Note that any native code that interacts with XS strings will need to use CESU-8 as well.
+
+#### Cache
+
+To limit memory use, XS stores minimal information about strings. This is valuable for runtimes where RAM is limited. However, as strings get longer it can result in reduced performance. Platforms working with longer strings generally have more RAM. For this situation, XS has an optional string cache that can be enabled to store additional information about strings. This information is only stored for the most recently used strings, not each string, so it is relatively small.
+
+To enable the string cache, define `mxStringInfoCacheLength` to the number of string cache entries. The recommended default is `4`, which stores additional information about the four mostly recent used strings. This can be increased, but it should generally be a small number as cache searches are linear. The string cache is off by default, as if `mxStringInfoCacheLength` is defined as `0`.
+
+#### Normalize
+
+The JavaScript function [String.prototype.normalize](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/normalize) is useful but obscure: most applications don't use it. The implementation is remarkably large because of required data tables. Consequently, it is disabled by default for most platforms. Platforms that want to support String.prototype.normalize must define `mxStringNormalize` to `1`.
+
+#### Unicode property escapes
+
+Unicode property escapes are supported by XS, but because of the large data tables required to implement the feature, they are not enabled by default on all platforms. An error is thrown if they are used on an unsupported platform. To enable Unicode property escapes, define `mxRegExpUnicodePropertyEscapes` when building XS.

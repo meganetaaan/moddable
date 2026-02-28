@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2021  Moddable Tech, Inc.
+ * Copyright (c) 2018-2025  Moddable Tech, Inc.
  *
  *   This file is part of the Moddable SDK Tools.
  * 
@@ -20,10 +20,9 @@
 
 import {} from "_262";
 import {} from "harness";
+import Modules from "modules";
 import ChecksumOut from "commodetto/checksumOut";
 import Timer from "timer";
-import WiFi from "wifi";
-import Net from "net";
 import config from "mc/config";
 import { URL, URLSearchParams } from "url";
 globalThis.URL = URL;
@@ -122,7 +121,7 @@ Object.defineProperty(globalThis, "screen", {
 		
 		if (config.Screen) { 
 			value = new config.Screen({});
-			width = value.width,
+			width = value.width;
 			height = value.height;
 		}
 		Object.defineProperty(globalThis, "screen", {
@@ -132,8 +131,10 @@ Object.defineProperty(globalThis, "screen", {
 			value
 		});
 
-		screen = new Screen({width: width ?? 240, height: height ?? 320});
-		screen.configure({show: true});
+		const mc_width = (undefined === config.mc_width) ? undefined : Number(config.mc_width);
+		const mc_height = (undefined === config.mc_height) ? undefined : Number(config.mc_height);
+		screen = new Screen({width: mc_width ?? width ?? 240, height: mc_height ?? height ?? 320});
+		screen.configure({show: ((undefined === mc_width) && (undefined === mc_height)) || ((width === mc_width) && (height === mc_height))});
 
 		return screen;
 	},
@@ -144,15 +145,18 @@ Object.defineProperty(globalThis, "screen", {
 			writable: true,
 			value
 		});
-
-		screen = new Screen({width: value.width, height: value.height});
-
-		return screen;
+	
+		const mc_width = (undefined === config.mc_width) ? undefined : Number(config.mc_width);
+		const mc_height = (undefined === config.mc_height) ? undefined : Number(config.mc_height);
+		screen = new Screen({width: mc_width ?? value.width, height: mc_height ?? value.height});
 	}
 });
 
 globalThis.$NETWORK = {
 	get connected() {
+		const WiFi = Modules.importNow("wifi");
+		const Net = Modules.importNow("net");
+
 		if (WiFi.Mode.station !== WiFi.mode)
 			WiFi.mode = WiFi.Mode.station;
 
@@ -177,25 +181,37 @@ globalThis.$NETWORK = {
 		});
 	},
 	async wifi(options) {
-		// could be async to allow time to bring up an AP 
+		// could be async to allow time to bring up an AP
 		return {ssid: config.ssid, password: config.password};
+	},
+	async resolve(domain) {
+		return new Promise((resolve, reject) => {
+			const Net = Modules.importNow("net");
+			Net.resolve(domain, (name, address) => {
+				if (address)
+					resolve(address);
+				else
+					reject();
+			});
+		});
 	},
 	invalidDomain: "fail.moddable.com",
 };
+Object.freeze(globalThis.$NETWORK);
 
-class HostObject @ "xs_hostobject_destructor" {
-	constructor() @ "xs_hostobject"
+class HostObject extends Native("xs_hostobject_destructor") {
+	constructor() { super(); native("xs_hostobject").call(this); }
 }
 
-class HostObjectChunk @ "xs_hostobjectchunk_destructor" {
-	constructor() @ "xs_hostobjectchunk"
+class HostObjectChunk extends Native("xs_hostobjectchunk_destructor") {
+	constructor() { super(); native("xs_hostobjectchunk").call(this); }
 }
 
-class HostBuffer @ "xs_hostbuffer_destructor" {
-	constructor() @ "xs_hostbuffer"
+class HostBuffer extends Native("xs_hostbuffer_destructor") {
+	constructor() { super(); native("xs_hostbuffer").call(this); }
 }
 
-class TestBehavior extends Behavior {
+class TestBehavior extends (globalThis.Behavior ?? Object) {
 	constructor() {
 		super();
 
@@ -225,7 +241,7 @@ globalThis.$TESTMC = {
 	Behavior: TestBehavior
 };
 
-Object.freeze([globalThis.$TESTMC, globalThis.$NETWORK], true);
+Object.freeze(globalThis.$TESTMC, true);
 
 export default function() {
 	const former = globalThis.assert;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2023  Moddable Tech, Inc.
+ * Copyright (c) 2018-2025  Moddable Tech, Inc.
  *
  *   This file is part of the Moddable SDK Runtime.
  *
@@ -56,11 +56,23 @@
 	#ifndef MODDEF_AUDIOIN_I2S_LR_PIN
 		#define MODDEF_AUDIOIN_I2S_LR_PIN (33)
 	#endif
+	#ifndef MODDEF_AUDIOIN_I2S_MCK_PIN
+		#define MODDEF_AUDIOIN_I2S_MCK_PIN (I2S_GPIO_UNUSED)
+	#endif
+	#ifndef MODDEF_AUDIOIN_I2S_FORMAT_I2S
+		#define MODDEF_AUDIOIN_I2S_FORMAT_I2S (0)
+	#endif
 	#ifndef MODDEF_AUDIOIN_I2S_DATAIN
 		#define MODDEF_AUDIOIN_I2S_DATAIN (27)
 	#endif
-	#ifndef MODDEF_AUDIOIN_I2S_ADC
-		#define MODDEF_AUDIOIN_I2S_ADC (0)
+#ifndef MODDEF_AUDIOIN_I2S_ADC
+	#define MODDEF_AUDIOIN_I2S_ADC (0)
+#endif
+#ifndef MODDEF_AUDIOIN_NUMCHANNELS
+	#define MODDEF_AUDIOIN_NUMCHANNELS (1)
+#endif
+	#ifndef MODDEF_AUDIOIN_I2S_SLOT
+		#define MODDEF_AUDIOIN_I2S_SLOT (I2S_STD_SLOT_RIGHT)
 	#endif
 
 	#if MODDEF_AUDIOIN_I2S_ADC
@@ -150,13 +162,17 @@ void xs_audioin(xsMachine *the)
 		xsUnknownError("i2s_channel_init_pdm_rx_mode failed");
 	}
 #else
-	#error STD untested
-
     i2s_std_config_t rx_std_cfg = {
         .clk_cfg  = I2S_STD_CLK_DEFAULT_CONFIG(MODDEF_AUDIOIN_SAMPLERATE),
-        .slot_cfg = I2S_STD_MSB_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_STEREO),
+#if MODDEF_AUDIOIN_I2S_FORMAT_I2S
+        .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT,
+            (2 == MODDEF_AUDIOIN_NUMCHANNELS) ? I2S_SLOT_MODE_STEREO : I2S_SLOT_MODE_MONO),
+#else
+        .slot_cfg = I2S_STD_MSB_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT,
+            (2 == MODDEF_AUDIOIN_NUMCHANNELS) ? I2S_SLOT_MODE_STEREO : I2S_SLOT_MODE_MONO),
+#endif
         .gpio_cfg = {
-            .mclk = I2S_GPIO_UNUSED,
+            .mclk = MODDEF_AUDIOIN_I2S_MCK_PIN,
             .bclk = MODDEF_AUDIOIN_I2S_BCK_PIN,
             .ws   = MODDEF_AUDIOIN_I2S_LR_PIN,
             .dout = I2S_GPIO_UNUSED,
@@ -168,7 +184,9 @@ void xs_audioin(xsMachine *the)
             }
         }
     };
-    rx_std_cfg.slot_cfg.slot_mask = I2S_STD_SLOT_RIGHT;		//@@
+    rx_std_cfg.slot_cfg.slot_mask = (2 == MODDEF_AUDIOIN_NUMCHANNELS)
+        ? I2S_STD_SLOT_BOTH
+        : MODDEF_AUDIOIN_I2S_SLOT;		//@@
 
     err = i2s_channel_init_std_mode(rx_handle, &rx_std_cfg);
 	if (err) {

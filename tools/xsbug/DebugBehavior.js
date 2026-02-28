@@ -728,6 +728,7 @@ export class DebugMachine @ "PiuDebugMachineDelete" {
 		this.doCommand(mxModuleCommand, path, wait, system.readFileBuffer(path));
 	}
 	doStartProfiling() {
+		this.doCommand(mxGoCommand);
 		this.doCommand(mxStartProfilingCommand);
 	}
 	doStopProfiling() {
@@ -1037,8 +1038,16 @@ export class DebugMachine @ "PiuDebugMachineDelete" {
 		behavior.onTitleChanged(this, title, tag);
 	}
 	onViewChanged(viewIndex, lines) {
-		if ((viewIndex == mxLocalsView) || (viewIndex == mxModulesView) || (viewIndex == mxGlobalsView))
+		if ((viewIndex == mxLocalsView) || (viewIndex == mxModulesView) || (viewIndex == mxGlobalsView)) {
+			lines.forEach(line => {
+				let value = line.value;
+				if (value?.startsWith("0x") && value.endsWith("n"))
+					line.value = `${BigInt(value.slice(0, value.length - 1)).toString()}n`;
+				else if (value?.startsWith("-0x") && value.endsWith("n"))
+					line.value = `-${BigInt(value.slice(1, value.length - 1)).toString()}n`;
+			});
 			lines = this.sortLines(viewIndex, lines);
+		}
 		else if (viewIndex == mxInstrumentsView)
 			lines = this.trackLines(lines);
 		this.views[viewIndex].lines = lines;

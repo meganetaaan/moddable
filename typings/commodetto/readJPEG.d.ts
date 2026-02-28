@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2020-2022 Moddable Tech, Inc.
+* Copyright (c) 2020-2025 Moddable Tech, Inc.
 *
 *   This file is part of the Moddable SDK Tools.
 *
@@ -27,10 +27,10 @@ declare module "commodetto/readJPEG" {
   }
 
   class JPEG {
-    constructor(buffer: (BufferLike), options?: { pixelFormat: number })
+    constructor(buffer?: (ByteBuffer), options?: { pixelFormat: number })
 
     read(): Block
-    push(buffer: BufferLike): void
+    push(buffer: ByteBuffer): void
 
     readonly ready: boolean
   }

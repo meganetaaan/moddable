@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2024  Moddable Tech, Inc.
+ * Copyright (c) 2016-2025  Moddable Tech, Inc.
  *
  *   This file is part of the Moddable SDK Runtime.
  * 
@@ -46,7 +46,7 @@ void fxCheckParserStack(txParser* parser, txInteger line)
     char x;
     char *stack = &x;
     if (stack <= parser->stackLimit) {
-    	fxAbort(parser->console, XS_STACK_OVERFLOW_EXIT);
+    	fxAbort(parser->console, XS_NATIVE_STACK_OVERFLOW_EXIT);
     }
 }
 
@@ -114,6 +114,7 @@ void fxInitializeParser(txParser* parser, void* console, txSize bufferSize, txSi
 	parser->asSymbol = fxNewParserSymbol(parser, "as");
 	parser->asyncSymbol = fxNewParserSymbol(parser, "async");
 	parser->awaitSymbol = fxNewParserSymbol(parser, "await");
+	parser->callSymbol = fxNewParserSymbol(parser, "call");
 	parser->callerSymbol = fxNewParserSymbol(parser, "caller");
 	parser->constructorSymbol = fxNewParserSymbol(parser, "constructor");
 	parser->defaultSymbol = fxNewParserSymbol(parser, "default");
@@ -127,12 +128,15 @@ void fxInitializeParser(txParser* parser, void* console, txSize bufferSize, txSi
 	parser->idSymbol = fxNewParserSymbol(parser, "id");
 	parser->includeSymbol = fxNewParserSymbol(parser, "include");
 	parser->InfinitySymbol = fxNewParserSymbol(parser, "Infinity");
+	parser->jsonSymbol = fxNewParserSymbol(parser, "json");
 	parser->lengthSymbol = fxNewParserSymbol(parser, "length");
 	parser->letSymbol = fxNewParserSymbol(parser, "let");
 	parser->metaSymbol = fxNewParserSymbol(parser, "meta");
 	parser->moduleSymbol = fxNewParserSymbol(parser, "module");
 	parser->nameSymbol = fxNewParserSymbol(parser, "name");
 	parser->NaNSymbol = fxNewParserSymbol(parser, "NaN");
+	parser->NativeSymbol = fxNewParserSymbol(parser, "Native");
+	parser->nativeSymbol = fxNewParserSymbol(parser, "native");
 	parser->nextSymbol = fxNewParserSymbol(parser, "next");
 	parser->newTargetSymbol = fxNewParserSymbol(parser, "new.target");
 	parser->ofSymbol = fxNewParserSymbol(parser, "of");

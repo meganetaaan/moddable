@@ -4,7 +4,7 @@
 	},
 	"modules": {
 		"*": [
-			"$(TYPINGS)/*"
+			"$(TYPINGS)/*", "$(TYPINGS)/ble/*"
 		],
 		"commodetto/*": [
 			"$(TYPINGS)/commodetto/*"
@@ -30,6 +30,12 @@
 		"embedded:io/*": [
 			"$(TYPINGS)/embedded_io/*"
 		],
+		"embedded:io/audio/*": [
+			"$(TYPINGS)/embedded_io/audio/*"
+		],
+		"embedded:io/bluetoothle/*": [
+			"$(TYPINGS)/embedded_io/ble/*"
+		],
 		"embedded:io/socket/*": [
 			"$(TYPINGS)/embedded_io/socket/*"
 		],
@@ -42,8 +48,20 @@
 		"embedded:network/dns/resolver/*": [
 			"$(TYPINGS)/embedded_network/dns/resolver/*"
 		],
+		"embedded:network/interface/*": [
+			"$(TYPINGS)/embedded_network/interface/*"
+		],
+		"embedded:network/ntp/*": [
+			"$(TYPINGS)/embedded_network/ntp/*"
+		],
 		"embedded:network/*": [
 			"$(TYPINGS)/embedded_network/*"
+		],
+		"embedded:*": [
+			"$(TYPINGS)/embedded/*"
+		],
+		"embedded:storage/*": [
+			"$(TYPINGS)/embedded/storage/*"
 		],
 		"mqtt/js": [
 			"$(TYPINGS)/mqtt/js"

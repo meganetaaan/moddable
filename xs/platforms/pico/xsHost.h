@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2022  Moddable Tech, Inc.
+ * Copyright (c) 2016-2025  Moddable Tech, Inc.
  *
  *   This file is part of the Moddable SDK Runtime.
  *
@@ -250,6 +250,7 @@ extern void pico_reboot(uint32_t kind);
 #define c_exit(n) { pico_reboot(0); }
 #define c_free free
 #define c_qsort qsort
+#define c_bsearch bsearch
 #define c_strtod strtod
 #define c_strtol strtol
 #define c_strtoul strtoul
@@ -300,6 +301,10 @@ extern void pico_reboot(uint32_t kind);
 #define C_NAN NAN
 #define C_RAND_MAX RAND_MAX
 
+#define C_FP_ILOGB0 FP_ILOGB0
+#define C_FP_ILOGBNAN FP_ILOGBNAN
+#define C_INT_MAX INT_MAX
+
 #define c_acos acos
 #define c_acosh acosh
 #define c_asin asin
@@ -318,6 +323,7 @@ extern void pico_reboot(uint32_t kind);
 #define c_fmod fmod
 #define c_fpclassify fpclassify
 #define c_hypot hypot
+#define c_ilogb ilogb
 #define c_isfinite isfinite
 #define c_isnormal isnormal
 #define c_isnan isnan

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2022  Moddable Tech, Inc.
+ * Copyright (c) 2016-2025  Moddable Tech, Inc.
  *
  *   This file is part of the Moddable SDK Runtime.
  * 
@@ -19,6 +19,9 @@
  */
 
 #include "piuMC.h"
+#if MODDEF_ECMA419_DISPLAY
+	#include "display419.h"
+#endif
 
 #ifdef piuGPU
 #else
@@ -243,6 +246,12 @@ void PiuViewCombine(PiuView* self, PiuRectangle area, PiuCoordinate op)
 			cr->y = y;
 			cr->w = w;
 			cr->h = h;
+#if MODDEF_ECMA419_DISPLAY
+			if (poco->displayHooks) {
+				(((xsDisplayHostHooks)poco->displayHooks)->doAdaptInvalid)(poco->outputRefcon, cr);
+			}
+			else
+#endif
 			if (pixelsOutDispatch)
 				(pixelsOutDispatch->doAdaptInvalid)(poco->outputRefcon, cr);
 			else
@@ -308,6 +317,12 @@ void PiuViewCombineRegion(PiuView* self, PiuRegion* region, PiuCoordinate op)
 				cr->y = y;
 				cr->w = w;
 				cr->h = h;
+#if MODDEF_ECMA419_DISPLAY
+				if (poco->displayHooks) {
+					(((xsDisplayHostHooks)poco->displayHooks)->doAdaptInvalid)(poco->outputRefcon, cr);
+				}
+				else
+#endif
 				if (pixelsOutDispatch)
 					(pixelsOutDispatch->doAdaptInvalid)(poco->outputRefcon, cr);
 				else
@@ -537,8 +552,25 @@ void PiuViewDrawTextureAux(PiuView* self, PiuTexture* texture, PocoColor color, 
 	PocoBitmap bits = (flags & piuTextureColor) ? &((*texture)->bits) : NULL;
 	PocoBitmap mask = (flags & piuTextureAlpha) ? &((*texture)->mask) : NULL;
 	if (mask) {
-		if (bits)
-			PocoBitmapDrawMasked(poco, blend, bits, x, y, sx, sy, sw, sh, mask, sx, sy);
+		if (bits) {
+			if (kCommodettoBitmapMonochrome == bits->format) {
+				PocoColor black = PocoMakeColor((*self)->poco, 0, 0, 0);
+				PocoColor white = PocoMakeColor((*self)->poco, 255, 255, 255);
+				PocoColor background, foreground;
+				if (color == black) {
+					background = white;
+					foreground = black;
+				}
+				else {
+					background = black;
+					foreground = white;
+				}
+				PocoMonochromeBitmapDraw(poco, mask, kPocoMonochromeForeground, foreground, foreground, x, y, sx, sy, sw, sh);
+				PocoMonochromeBitmapDraw(poco, bits, kPocoMonochromeBackground, background, background, x, y, sx, sy, sw, sh);
+			}
+			else
+				PocoBitmapDrawMasked(poco, blend, bits, x, y, sx, sy, sw, sh, mask, sx, sy);
+		}
 		else
 			PocoGrayBitmapDraw(poco, mask, color, blend, x, y, sx, sy, sw, sh);
 	}
@@ -897,6 +929,23 @@ void PiuViewReceiver(PocoPixel *pixels, int byteLength, void *refCon)
 	xsCallFunction3((*self)->_send, xsReference((*self)->screen), xsReference((*self)->pixels), xsInteger((char *)pixels - (char *)poco->pixels), xsInteger(byteLength));
 }
 
+#if MODDEF_ECMA419_DISPLAY
+static void PiuViewDisplayReceiver(PocoPixel *pixels, int byteLength, void *refCon)
+{
+	PiuView* self = refCon;
+	Poco poco = (*self)->poco;
+
+	if (poco->displayHooks) {
+		((xsDisplayHostHooks)poco->displayHooks)->doSend(poco->outputRefcon, pixels, byteLength);
+	}
+	else {
+		xsMachine *the = poco->the;
+
+		xsCall3(xsReference((*self)->screen), xsID_send, xsReference((*self)->pixels), xsInteger((char *)pixels - (char *)poco->pixels), xsInteger((byteLength < 0) ? -byteLength : byteLength));
+	}
+}
+#endif
+
 void PiuViewReflow(PiuView* self)
 {
 	if (!((*self)->updating)) {
@@ -913,11 +962,19 @@ void PiuViewReschedule(PiuView* self)
 	}
 }
 
+#ifndef mxPiuSloMo
+	#define mxPiuSloMo 0
+#endif
+
 PiuTick PiuViewTicks(PiuView* self)
 {
 	if ((*self)->idleTicks)
 		return (*self)->idleTicks;
+#if mxPiuSloMo
+	return modMilliseconds() / 60;
+#else
 	return modMilliseconds();
+#endif
 }
 
 void PiuViewUpdate(PiuView* self, PiuApplication* application)
@@ -936,9 +993,18 @@ void PiuViewUpdate(PiuView* self, PiuApplication* application)
 	PiuRectangleSet(&area, data[1], data[2], data[3], data[4]);
 	if (!PiuRectangleIsEmpty(&area)) {
 #endif
-		PiuViewBegin(self);
-		(*(*application)->dispatch->update)(application, self, &area);
-		PiuViewEnd(self);
+	#if mxPiuSloMo
+		static PiuTick former = 0;
+		PiuTick current = modMilliseconds();
+		if (current - former >= 1000) {
+			former = current;
+	#endif
+			PiuViewBegin(self);
+			(*(*application)->dispatch->update)(application, self, &area);
+			PiuViewEnd(self);
+	#if mxPiuSloMo
+		}
+	#endif
 	}
 }
 
@@ -962,7 +1028,7 @@ void PiuViewUpdateStep(PiuView* self, PocoCoordinate x, PocoCoordinate y, PocoDi
 	xsMachine *the = (*self)->the;
 	Poco poco = (*self)->poco;
 	PixelsOutDispatch pixelsOutDispatch = poco->outputRefcon ? *(PixelsOutDispatch *)poco->outputRefcon : NULL;
-	uint32_t current = sizeof(PiuViewRecord);
+		uint32_t current = sizeof(PiuViewRecord);
 	int result = 0;
 
 #if kPocoFrameBuffer
@@ -981,10 +1047,29 @@ void PiuViewUpdateStep(PiuView* self, PocoCoordinate x, PocoCoordinate y, PocoDi
 			PocoPixel *pixels;
 			int16_t rowBytes;
 
+#if MODDEF_ECMA419_DISPLAY
+			if (poco->displayHooks) {
+				int rowBytesInt;
+				(((xsDisplayHostHooks)poco->displayHooks)->doBegin)(poco->outputRefcon, poco->x, poco->y, poco->w, poco->h, (void **)&pixels, &rowBytesInt, 0);
+				rowBytes = (int16_t)rowBytesInt;
+			}
+			else
+#endif
 			if (pixelsOutDispatch)
 				(pixelsOutDispatch->doBeginFrameBuffer)(poco->outputRefcon, &pixels, &rowBytes);
 			else {
-				xsResult = xsCallFunction4((*self)->_begin, xsReference((*self)->screen), xsInteger(poco->x), xsInteger(poco->y), xsInteger(poco->w), xsInteger(poco->h));
+#if MODDEF_ECMA419_DISPLAY
+				if (poco->flags & kPocoFlag419PixelOut) {
+					xsResult = xsNewObject();
+					xsSet(xsResult, xsID_x, xsInteger(poco->x));
+					xsSet(xsResult, xsID_y, xsInteger(poco->y));
+					xsSet(xsResult, xsID_width, xsInteger(poco->w));
+					xsSet(xsResult, xsID_height, xsInteger(poco->h));
+					xsResult = xsCall1(xsReference((*self)->screen), xsID_begin, xsResult);
+				}
+				else
+#endif
+					xsResult = xsCallFunction4((*self)->_begin, xsReference((*self)->screen), xsInteger(poco->x), xsInteger(poco->y), xsInteger(poco->w), xsInteger(poco->h));
 				pixels = xsGetHostData(xsResult);
 #if (0 == kPocoRotation) || (180 == kPocoRotation)
 				rowBytes = (int16_t)(xsToInteger(xsGet(xsResult, xsID_byteLength)) / poco->height);
@@ -1057,17 +1142,42 @@ done:
 	if (!(poco->flags & kPocoFlagFrameBuffer))
 #endif
 	{
+#if MODDEF_ECMA419_DISPLAY
+		if (poco->displayHooks) {
+			(((xsDisplayHostHooks)poco->displayHooks)->doBegin)(poco->outputRefcon, poco->x, poco->y, poco->w, poco->h, C_NULL, C_NULL, 0);
+			result = PocoDrawingEnd(poco, poco->pixels, poco->pixelsLength, PiuViewDisplayReceiver, self);
+		}
+		else
+#endif
 		if (pixelsOutDispatch) {
 			(pixelsOutDispatch->doBegin)(poco->outputRefcon, poco->x, poco->y, poco->w, poco->h);
 			result = PocoDrawingEnd(poco, poco->pixels, poco->pixelsLength, pixelsOutDispatch->doSend, poco->outputRefcon);
 		}
 		else {
+#if MODDEF_ECMA419_DISPLAY
+			xsResult = xsNewObject();
+			xsSet(xsResult, xsID_x, xsInteger(poco->x));
+			xsSet(xsResult, xsID_y, xsInteger(poco->y));
+			xsSet(xsResult, xsID_width, xsInteger(poco->w));
+			xsSet(xsResult, xsID_height, xsInteger(poco->h));
+			xsResult = xsCall1(xsReference((*self)->screen), xsID_begin, xsResult);
+			result = PocoDrawingEnd(poco, poco->pixels, poco->pixelsLength, PiuViewDisplayReceiver, self);
+#else
 			xsCallFunction4((*self)->_begin, xsReference((*self)->screen), xsInteger(poco->x), xsInteger(poco->y), xsInteger(poco->w), xsInteger(poco->h));
 			result = PocoDrawingEnd(poco, poco->pixels, poco->pixelsLength, PiuViewReceiver, self);
+#endif
 		}
 		if (result) goto fail;
 
-		if (flag) {
+#if MODDEF_ECMA419_DISPLAY
+		if (poco->displayHooks) {
+			(((xsDisplayHostHooks)poco->displayHooks)->doEnd)(poco->outputRefcon);
+
+			pocoInstrumentationAdjust(FramesDrawn, +1);
+		}
+		else
+#endif
+		if (flag && !(poco->flags & kPocoFlag419PixelOut)) {
 			if (pixelsOutDispatch)
 				(pixelsOutDispatch->doContinue)(poco->outputRefcon);
 			else
@@ -1090,6 +1200,11 @@ endStepFrameBuffer:
 			result = PocoDrawingEndFrameBuffer(poco);
 			if (result) goto fail;
 
+#if MODDEF_ECMA419_DISPLAY
+			if (poco->displayHooks)
+				(((xsDisplayHostHooks)poco->displayHooks)->doEnd)(poco->outputRefcon);
+			else
+#endif
 			if (pixelsOutDispatch)
 				(pixelsOutDispatch->doEnd)(poco->outputRefcon);
 			else
@@ -1311,6 +1426,8 @@ void PiuView_create(xsMachine* the)
 	xsIntegerValue commandListLength, regionLength;
 	if (!xsFindInteger(xsArg(1), xsID_commandListLength, &commandListLength))
 		commandListLength = 1024;
+	if (sizeof(void *) > 4)
+		commandListLength += commandListLength >> 1;		// compensate for bigger pointers on 64-bit systems
 	if (!xsFindInteger(xsArg(1), xsID_regionLength, &regionLength))
 		regionLength = 512;
 	size = sizeof(PiuViewRecord) + commandListLength;
@@ -1355,6 +1472,15 @@ void PiuView_get_rotation(xsMachine* the)
 	xsResult = xsInteger(180);
 #elif 270 == kPocoRotation
 	xsResult = xsInteger(270);
+#endif
+}
+
+void PiuView_get_ticks(xsMachine* the) 
+{
+#if mxPiuSloMo
+	xsResult = xsNumber(modMilliseconds() / 60);
+#else
+	xsResult = xsNumber(modMilliseconds());
 #endif
 }
 
@@ -1414,6 +1540,21 @@ void PiuView_onMessage(xsMachine* the)
 	PiuViewUpdate(self, application);
 	PiuApplicationIdleCheck(application);
 	(*self)->idleTicks = 0;
+}
+
+void PiuView_onQuit(xsMachine* the)
+{
+	PiuView* self = PIU(View, xsThis);
+	PiuApplication* application = (*self)->application;
+	if (!application) return;
+	if ((*application)->behavior) {
+		xsVars(2);
+		xsVar(0) = xsReference((*application)->behavior);
+		if (xsFindResult(xsVar(0), xsID_onQuit)) {
+			xsVar(1) = xsReference((*application)->reference);
+			(void)xsCallFunction1(xsResult, xsVar(0), xsVar(1));
+		}
+	}
 }
 
 void PiuView_onTouchBegan(xsMachine* the)

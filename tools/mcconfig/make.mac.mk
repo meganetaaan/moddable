@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2016-2023 Moddable Tech, Inc.
+# Copyright (c) 2016-2025  Moddable Tech, Inc.
 #
 #   This file is part of the Moddable SDK Tools.
 # 
@@ -23,7 +23,7 @@ KILL_SIMULATOR = osascript -e 'quit app "mcsim"'
 ifeq ($(DEBUG),1)
 	START_XSBUG = 
 	ifeq ("$(XSBUG_LAUNCH)","log")
-		START_SIMULATOR = export XSBUG_PORT=$(XSBUG_PORT) && export XSBUG_HOST=$(XSBUG_HOST) && cd $(MODDABLE)/tools/xsbug-log && node xsbug-log open -a $(SIMULATOR) $(SIMULATORS) $(BIN_DIR)/mc.so
+		START_SIMULATOR = export XSBUG_LOG_PORT=$(XSBUG_LOG_PORT) && export XSBUG_PORT=$(XSBUG_PORT) && export XSBUG_HOST=$(XSBUG_HOST) && cd $(MODDABLE)/tools/xsbug-log && node xsbug-log open -a $(SIMULATOR) $(SIMULATORS) $(BIN_DIR)/mc.so
 	else ifeq ("$(XSBUG_LAUNCH)","app")
 		START_XSBUG = open -a $(BUILD_DIR)/bin/mac/release/xsbug.app -g
 	endif	
@@ -98,11 +98,6 @@ C_DEFINES = \
 	-DXS_ARCHIVE=1 \
 	-DINCLUDE_XSPLATFORM=1 \
 	-DXSPLATFORM=\"mac_xs.h\" \
-	-DmxRun=1 \
-	-DmxNoFunctionLength=1 \
-	-DmxNoFunctionName=1 \
-	-DmxHostFunctionPrimitive=1 \
-	-DmxFewGlobalsTable=1 \
 	-DkCommodettoBitmapFormat=$(COMMODETTOBITMAPFORMAT) \
 	-DkPocoRotation=$(POCOROTATION)
 ifeq ($(INSTRUMENT),1)
@@ -122,13 +117,13 @@ else
 #	C_FLAGS += -DMC_MEMORY_DEBUG=1
 endif
 
-# LINK_OPTIONS = -arch i386 -dynamiclib -flat_namespace -undefined suppress -Wl,-exported_symbol,_fxScreenLaunch -Wl,-dead_strip
-LINK_OPTIONS = -dynamiclib -flat_namespace -undefined suppress -Wl,-exported_symbol,_fxScreenLaunch -Wl,-dead_strip -lobjc $(MACOS_ARCH)
+LINK_OPTIONS = -dynamiclib -flat_namespace -undefined dynamic_lookup -Wl,-exported_symbol,_fxScreenLaunch -Wl,-dead_strip -lobjc $(MACOS_ARCH)
 
 VPATH += $(XS_DIRECTORIES)
 
 XSBUG_HOST ?= localhost
 XSBUG_PORT ?= 5002
+XSBUG_LOG_PORT ?= 5002
 
 .PHONY: all	build clean xsbug
 	
@@ -157,7 +152,7 @@ $(LIB_DIR):
 $(BIN_DIR)/mc.so: $(XS_OBJECTS) $(TMP_DIR)/mc.xs.c.o $(TMP_DIR)/mc.resources.c.o $(OBJECTS) 
 	@echo "# ld mc.so"
 	$(CC) $(LINK_OPTIONS) $(LINK_LIBRARIES) $^ -o $@
-#	/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang $(LINK_OPTIONS) $(LINK_LIBRARIES) $^ -Wl,-map,map.txt -v -o $@ 
+# 	$(CC) $(LINK_OPTIONS) $(LINK_LIBRARIES) $^ -o $@ -Wl,-map,map.txt -v
 
 $(XS_OBJECTS) : $(XS_HEADERS)
 $(LIB_DIR)/%.c.o: %.c

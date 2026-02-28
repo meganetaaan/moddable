@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023  Moddable Tech, Inc.
+ * Copyright (c) 2021-2025  Moddable Tech, Inc.
  *
  *   This file is part of the Moddable SDK Runtime.
  * 
@@ -288,7 +288,7 @@ export class Client {
 		case CONNECTING:
 		case RECONNECTING:
 			throw new Error("MQTT client connecting");
-			break;
+			// break;
 		case CONNECTED:
 			this.#endCallback = callback;
 			this.#state = ENDING;
@@ -308,7 +308,7 @@ export class Client {
 	getLastMessageId() {
 		return this.#id;
 	}
-	handleMessage(packet, callback) {
+	handleMessage(/* packet, callback */) {
 		throw new Error("no such method"); // not supported
 	}
 	publish(topic, message, options, callback) {
@@ -325,7 +325,7 @@ export class Client {
 		const retain = options?.retain ?? false;
 		const duplicate = options?.dup ?? false;
 		const id = ++this.#id;
-		let data, ack;
+		let data;
 		if (message instanceof ArrayBuffer)
 			data = message;
 		else if ((message instanceof DataView) || (message instanceof TypedArray))
@@ -373,7 +373,7 @@ export class Client {
 		case ENDING:
 		case CLOSING:
 			throw new Error("MQTT client disconnecting");
-			break;
+			// break;
 		}
   		return this;
 	}
@@ -381,7 +381,7 @@ export class Client {
 		let listeners = this.#eventListeners[event];
 		if (!listeners)
 			throw new Error("no such event");
-		let index = listeners.find(item => item === listener);
+		let index = listeners.findIndex(item => item === listener);
 		if (index >= 0)
 			listeners.splice(index, 1);
 	}
@@ -509,7 +509,6 @@ export class Client {
 	}
 	#restore(republish) {
 		const acks = this.#acks;
-		const buffers = this.#buffers;
 		this.#acks = [];
 		this.#buffers = [];
 		const items = this.#subscriptions;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017  Moddable Tech, Inc.
+ * Copyright (c) 2016-2025  Moddable Tech, Inc.
  *
  *   This file is part of the Moddable SDK Runtime.
  * 
@@ -68,6 +68,15 @@ static int fxShouldStress()
 	gxStress += 1;
 	return 0 == gxStress;
 }
+#endif
+
+#if mxNoChunks
+	#if FUZZING
+		extern void *fxMemMalloc_noforcefail(size_t size);
+		#define c_malloc_noforcefail(size) fxMemMalloc_noforcefail(size)
+	#else
+		#define c_malloc_noforcefail c_malloc
+	#endif
 #endif
 
 #define mxChunkFlag 0x80000000
@@ -176,6 +185,7 @@ void fxAllocate(txMachine* the, txCreation* theCreation)
 	the->firstHeap = C_NULL;
 
 #if mxNoChunks
+	the->maximumChunksSize = theCreation->initialChunkSize;
 #else
 	fxGrowChunks(the, theCreation->initialChunkSize);
 #endif
@@ -207,6 +217,8 @@ void fxAllocate(txMachine* the, txCreation* theCreation)
 	the->symbolTable = (txSlot **)c_malloc_uint32(theCreation->symbolModulo * sizeof(txSlot*));
 	if (!the->symbolTable)
 		fxAbort(the, XS_NOT_ENOUGH_MEMORY_EXIT);
+		
+	fxAllocateStringInfoCache(the);
 
 	the->stackLimit = fxCStackLimit();
 
@@ -261,7 +273,7 @@ void fxCheckCStack(txMachine* the)
     char x;
     char *stack = &x;
 	if (stack <= the->stackLimit) {
-		fxAbort(the, XS_STACK_OVERFLOW_EXIT);
+		fxAbort(the, XS_NATIVE_STACK_OVERFLOW_EXIT);
 	}
 }
 
@@ -293,6 +305,7 @@ void fxCollect(txMachine* the, txFlag theFlag)
 	startTime(&gxMarkTime);
 #endif
 	if (theFlag & XS_COMPACT_FLAG) {
+		fxInvalidateStringInfoCache(the);
 		fxMark(the, fxMarkValue);
 		fxMarkWeakStuff(the);
 	#ifdef mxNever
@@ -435,7 +448,12 @@ void* fxFindChunk(txMachine* the, txSize size, txBoolean *once)
 	}
 #endif
 #if mxNoChunks
-	chunk = c_malloc(size);
+	if ((the->currentChunksSize + size > the->maximumChunksSize)) {
+		fxCollect(the, XS_COMPACT_FLAG | XS_ORGANIC_FLAG);
+		if (the->collectFlag & XS_TRASHING_CHUNKS_FLAG)
+			the->maximumChunksSize += the->minimumChunksSize;
+	}
+	chunk = c_malloc_noforcefail(size);
 	if (!chunk)
 		fxAbort(the, XS_NOT_ENOUGH_MEMORY_EXIT);
 	chunk->size = size;
@@ -513,6 +531,8 @@ void fxFree(txMachine* the)
 		c_free_uint32(the->aliasArray);
 	the->aliasArray = C_NULL;
 #endif
+
+	fxFreeStringInfoCache(the);
 
 	if (the->symbolTable)
 		c_free_uint32(the->symbolTable);
@@ -1431,6 +1451,7 @@ void fxMarkValue(txMachine* the, txSlot* theSlot)
 	case XS_ASYNC_DISPOSABLE_STACK_KIND:
 	case XS_DISPOSABLE_STACK_KIND:
 	case XS_LIST_KIND:
+		fxCheckCStack(the);
 		aSlot = theSlot->value.list.first;
 		while (aSlot) {
 			if (!(aSlot->flag & XS_MARK_FLAG)) {
@@ -1641,6 +1662,9 @@ void* fxNewChunk(txMachine* the, txSize size)
 	if (!chunk) {
 		chunk = fxGrowChunk(the, size);
 	}
+#ifdef mxMetering
+	the->meterIndex += size * XS_CHUNK_ALLOCATION_METERING;
+#endif
 	return fxCheckChunk(the, chunk, size, offset);
 }
 
@@ -1664,6 +1688,9 @@ void* fxNewGrowableChunk(txMachine* the, txSize size, txSize capacity)
 			}
 		}
 	}
+#ifdef mxMetering
+	the->meterIndex += size * XS_CHUNK_ALLOCATION_METERING;
+#endif
 	return fxCheckChunk(the, chunk, size, offset);
 #endif
 }
@@ -1699,6 +1726,9 @@ again:
 		the->currentHeapCount++;
 		if (the->peakHeapCount < the->currentHeapCount)
 			the->peakHeapCount = the->currentHeapCount;
+#ifdef mxMetering
+		the->meterIndex += XS_SLOT_ALLOCATION_METERING;
+#endif
 		return aSlot;
 	}
 	if (once) {
@@ -1746,6 +1776,9 @@ void* fxRenewChunk(txMachine* the, void* theData, txSize size)
 		if (the->peakChunksSize < the->currentChunksSize)
 			the->peakChunksSize = the->currentChunksSize;
 		aChunk->size = size;
+	#ifdef mxMetering
+		the->meterIndex += size * XS_CHUNK_ALLOCATION_METERING;
+	#endif
 		return theData;
 	}
 	while (aBlock) {
@@ -1760,6 +1793,9 @@ void* fxRenewChunk(txMachine* the, void* theData, txSize size)
 				aChunk->size = size;
 			#ifdef mxSnapshot
 				c_memset(aData + capacity, 0, delta);
+			#endif
+			#ifdef mxMetering
+				the->meterIndex += size * XS_CHUNK_ALLOCATION_METERING;
 			#endif
 				return theData;
 			}
@@ -1875,7 +1911,7 @@ void fxSweep(txMachine* the)
 		aSize = chunk->size;
 		if (aSize & mxChunkFlag) {
 			aSize &= ~mxChunkFlag;
-			temporary = malloc(aSize);		// not c_malloc, to avoid failures when shuffling heap during fuzzing
+			temporary = c_malloc_noforcefail(aSize);
 			if (!temporary)
 				fxAbort(the, XS_NOT_ENOUGH_MEMORY_EXIT);		// should never happen
 			c_memcpy(temporary, chunk, aSize);

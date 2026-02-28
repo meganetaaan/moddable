@@ -1,0 +1,32 @@
+/*
+ * Copyright (c) 2016-2025  Moddable Tech, Inc.
+ *
+ *   This file is part of the Moddable SDK Runtime.
+ * 
+ *   The Moddable SDK Runtime is free software: you can redistribute it and/or modify
+ *   it under the terms of the GNU Lesser General Public License as published by
+ *   the Free Software Foundation, either version 3 of the License, or
+ *   (at your option) any later version.
+ * 
+ *   The Moddable SDK Runtime is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU Lesser General Public License for more details.
+ * 
+ *   You should have received a copy of the GNU Lesser General Public License
+ *   along with the Moddable SDK Runtime.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ */
+
+import Bitmap from "commodetto/Bitmap";
+
+export default class JPEG extends Native("xs_JPEG_destructor") {
+	constructor(buffer, options) {
+		super();
+		native("xs_JPEG_initialize").call(this, buffer, options, Bitmap);
+	}
+	close() { return native("xs_JPEG_close").call(this); }
+	push() { throw new Error("ESP32 JPEG decoder doesn't spool"); }
+	read() { return native("xs_JPEG_read").call(this); }
+	get ready() { return native("xs_JPEG_get_ready").call(this); }
+}

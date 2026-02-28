@@ -1,0 +1,43 @@
+{
+	"platforms": {
+		"mac": {
+			"modules": {
+				"embedded:x-files-implementation": "./files-littlefs",
+				"*": [
+					"./lfs_util",
+					"./lfs"
+				],
+				"embedded:storage/files": "./files"
+			}
+		},
+		"esp32": {
+			"modules": {
+				"embedded:x-files-implementation": "./files-littlefs",
+				"*": [
+					"./lfs_util",
+					"./lfs"
+				],
+				"embedded:storage/files": "./files"
+			},
+			"defines": {
+				"file": {
+					"partition": "#storage"
+				}
+			}
+		}
+	},
+	"preload": [
+		"embedded:x-files-implementation"
+	],
+	"defines": {
+		"file": {
+			"lfs": {
+				"read_size": 16,
+				"prog_size": 16,
+				"cache_size": 16,
+				"lookahead_size": 16,
+				"block_cycles": 500
+			}
+		}
+	}
+}

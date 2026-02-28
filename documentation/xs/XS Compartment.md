@@ -32,10 +32,12 @@ For the sake of security, it is the responsibility of a real host that creates c
 
 A parent compartment can create child compartments.
 
-	const parent = new Compartment();
-	parent.evaluate(`
-		const child = new Compartment();
-	`);
+```js
+const parent = new Compartment();
+parent.evaluate(`
+	const child = new Compartment();
+`);
+```
 
 A compartment can only provide to its child compartments the features provided by its parent compartment (and new features based on the features provided by its parent compartment).
 
@@ -224,7 +226,7 @@ If the `specifier` property is present, its value is coerced into a string and b
 	- If the `compartment` property is present, its value must be a compartment.
 	- If absent, the `compartment` property defaults to the compartment being constructed in the `modules` option, or being hooked in the `loadHook` and `loadNowHook` options.
 
-- Else if the value of the `namespace ` property is a module namepace, the descriptor shares a module that is already available.
+- Else if the value of the `namespace ` property is a module namespace, the descriptor shares a module that is already available.
 
 - Else the value of `record` property must be an object. The module is loaded and initialized from the object according to the [virtual module namespace](#VirtualModuleNamespace) pattern.
 

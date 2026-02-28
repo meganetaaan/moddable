@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017  Moddable Tech, Inc.
+ * Copyright (c) 2016-2025  Moddable Tech, Inc.
  *
  *   This file is part of the Moddable SDK Runtime.
  * 
@@ -24,6 +24,7 @@ static void PiuPortBind(void* it, PiuApplication* application, PiuView* view);
 static void PiuPortCascade(void* it);
 static void PiuPortComputeStyle(PiuPort* self);
 static void PiuPortDraw(void* it, PiuView* view, PiuRectangle area);
+static void PiuPortMark(xsMachine* the, void* it, xsMarkRoot markRoot);
 static void PiuPortMeasureHorizontally(void* it);
 static void PiuPortMeasureVertically(void* it);
 static void PiuPortUnbind(void* it, PiuApplication* application, PiuView* view);
@@ -53,7 +54,7 @@ const PiuDispatchRecord ICACHE_FLASH_ATTR PiuPortDispatchRecord = {
 
 const xsHostHooks ICACHE_FLASH_ATTR PiuPortHooks = {
 	PiuContentDelete,
-	PiuContentMark,
+	PiuPortMark,
 	NULL
 };
 
@@ -101,6 +102,13 @@ void PiuPortDraw(void* it, PiuView* view, PiuRectangle area)
 	(*self)->view = NULL;
 }
 
+void PiuPortMark(xsMachine* the, void* it, xsMarkRoot markRoot)
+{
+	PiuPort self = it;
+	PiuContentMark(the, it, markRoot);
+	PiuMarkHandle(the, self->computedStyle);
+}
+
 void PiuPortMeasureHorizontally(void* it) 
 {
 	PiuPort* self = it;
@@ -132,6 +140,7 @@ void PiuPort_create(xsMachine* the)
 	(*self)->reference = xsToReference(xsThis);
 	xsSetHostHooks(xsThis, (xsHostHooks*)&PiuPortHooks);
 	(*self)->dispatch = (PiuDispatch)&PiuPortDispatchRecord;
+	(*self)->recordSize = PiuRecordSize(sizeof(PiuPortRecord));
 	(*self)->flags = piuVisible;
 	PiuContentDictionary(the, self);
 	PiuBehaviorOnCreate(self);
@@ -149,7 +158,7 @@ void PiuPort_set_skin(xsMachine *the)
 void PiuPort_set_state(xsMachine *the)
 {
 	PiuPort* self = PIU(Port, xsThis);
-	(*self)->state = xsToNumber(xsArg(0));
+	(*self)->state = (PiuState)xsToNumber(xsArg(0));
 }
 
 void PiuPort_set_variant(xsMachine *the)
@@ -279,9 +288,9 @@ void PiuPort_drawTexture(xsMachine* the)
 	sy = xsToPiuCoordinate(xsArg(5));
 	sw = xsToPiuDimension(xsArg(6));
 	sh = xsToPiuDimension(xsArg(7));
-	PiuViewPushColor(view, &color);
+	PiuViewPushColorFilter(view, &color);
 	PiuViewDrawTexture(view, texture, x, y, sx, sy, sw, sh);
-	PiuViewPopColor(view);
+	PiuViewPopColorFilter(view);
 }
 
 void PiuPort_fillColor(xsMachine* the)
@@ -321,9 +330,9 @@ void PiuPort_fillTexture(xsMachine* the)
 	sy = xsToPiuCoordinate(xsArg(7));
 	sw = xsToPiuDimension(xsArg(8));
 	sh = xsToPiuDimension(xsArg(9));
-	PiuViewPushColor(view, &color);
+	PiuViewPushColorFilter(view, &color);
 	PiuViewFillTexture(view, texture, x, y, w, h, sx, sy, sw, sh);
-	PiuViewPopColor(view);
+	PiuViewPopColorFilter(view);
 }
 
 void PiuPort_invalidate(xsMachine* the)

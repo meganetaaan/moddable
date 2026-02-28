@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023 Moddable Tech, Inc.
+ * Copyright (c) 2019-2025 Moddable Tech, Inc.
  *
  *   This file is part of the Moddable SDK Runtime.
  *
@@ -22,6 +22,8 @@
 #define __BUILTINCOMMON_H__
 
 #if ESP32
+	#include "freertos/FreeRTOS.h"
+
 	#if kCPUESP32C3 || kCPUESP32C6 || kCPUESP32H2
 		#define kPinBanks (1)
 	#else
@@ -31,7 +33,15 @@
 	extern portMUX_TYPE gCommonCriticalMux;
 	#define builtinCriticalSectionBegin() portENTER_CRITICAL(&gCommonCriticalMux)
 	#define builtinCriticalSectionEnd() portEXIT_CRITICAL(&gCommonCriticalMux)
-#elif defined(__ets__)
+
+	#if ESP32 && (ESP_IDF_VERSION_MAJOR >= 5) && (ESP_IDF_VERSION_MINOR >= 1)
+		// IDF invokes abort() when creating socket if no network configured
+		#define CHECK_NETWORK_SAFE() \
+			if (!esp_netif_get_default_netif()) { \
+				xsUnknownError("no network"); \
+			}
+	#endif
+#elif defined(__ets__) && !defined(__ZEPHYR__)
 	#include "Arduino.h"	// mostly to get xs_rsil
 
 	#define kPinBanks (1)
@@ -51,18 +61,44 @@
 	extern critical_section_t gCommonCriticalMux;
 	#define builtinCriticalSectionBegin()	critical_section_enter_blocking(&gCommonCriticalMux)
 	#define builtinCriticalSectionEnd()		critical_section_exit(&gCommonCriticalMux)
+#elif defined(__ZEPHYR__)
+	#include "mc.devicetree.h"
+
+	#define kPinBanks kModZephyrGPIOBankCount
+	#define builtinCriticalSectionBegin()	\
+		unsigned int __key = irq_lock();
+	#define builtinCriticalSectionEnd() \
+		irq_unlock(__key);
 #endif
 
 enum {
 	kIOFormatNumber = 1,
 	kIOFormatBuffer = 2,
-	kIOFormatStringASCII = 3,
-	kIOFormatStringUTF8 = 4,
-	kIOFormatSocketTCP = 5,
+	kIOFormatString = 3,
+	kIOFormatSocketTCP = 4,
 
-	kIOFormatNext,
+	kIOFormatUint8 = 5,
+	kIOFormatInt8 = 6,
+	kIOFormatUint16 = 7,
+	kIOFormatInt16 = 8,
+	kIOFormatUint32 = 9,
+	kIOFormatInt32 = 10,
+	kIOFormatUint64 = 11,
+	kIOFormatInt64 = 12,
+
+	kIOFormatBufferDisposable = 13,
+
 	kIOFormatInvalid = 0xFF,
 };
+
+
+#ifndef CHECK_NETWORK_SAFE
+	#define CHECK_NETWORK_SAFE()
+#endif
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 void builtinGetFormat(xsMachine *the, uint8_t format);
 uint8_t builtinSetFormat(xsMachine *the);
@@ -75,7 +111,11 @@ uint32_t builtinGetUnsignedInteger(xsMachine *the, xsSlot *slot);
 
 xsSlot *builtinGetCallback(xsMachine *the, xsIdentifier id);
 
-#if kPinBanks
+#ifdef __cplusplus
+}
+#endif
+
+#ifdef kPinBanks
 	#define builtinIsPinFree(pin) builtinArePinsFree(pin >> 5, 1 << (pin & 0x1F))
 	#define builtinUsePin(pin) builtinUsePins(pin >> 5, 1 << (pin & 0x1F))
 	#define builtinFreePin(pin) builtinFreePins(pin >> 5, 1 << (pin & 0x1F))
@@ -87,8 +127,8 @@ xsSlot *builtinGetCallback(xsMachine *the, xsIdentifier id);
 	#define builtinGetPin(the, slot) builtinGetUnsignedInteger(the, slot)
 #endif
 
-#if defined(PICO_BUILD)
-	uint8_t builtinInitIO(void);
+#if defined(PICO_BUILD) || defined(__ZEPHYR__)
+	void builtinInitIO(void);
 #endif
 
 #endif

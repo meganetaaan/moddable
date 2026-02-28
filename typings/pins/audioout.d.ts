@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Moddable Tech, Inc.
+ * Copyright (c) 2020-2025  Moddable Tech, Inc.
  *
  *   This file is part of the Moddable SDK Tools.
  *
@@ -53,9 +53,10 @@ declare module 'pins/audioout' {
     public enqueue(stream: number, kind: MixerKind, buffer: HostBuffer, repeat: number, offset: number, count: number): void
     public enqueue(stream: number, kind: MixerTone, frequency: number, samples: number): void
     public enqueue(stream: number, kind: MixerSilence, samples: number): void
+    public enqueue(stream: number, kind: MixerVolume, volume: number): void
     
     public mix(samplesNeeded: number): HostBuffer
-    public mix(buffer: BufferLike): void
+    public mix(buffer: ByteBuffer): void
 
     public length(stream: number): number
   
@@ -79,7 +80,7 @@ declare module 'pins/audioout' {
       stop(): void
       callback: AudioOutCallback
       callbacks: AudioOutCallback[]
-      readonly mix: undefined
+      mix(): never
   }
   export { AudioOut as default }
 }

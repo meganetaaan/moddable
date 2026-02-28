@@ -1,9 +1,9 @@
 {
 	"build": {
 		"UPLOAD_SPEED": "1500000",
-		"DEBUGGER_SPEED": "1500000",
+		"DEBUGGER_SPEED": "921600",
 		"SDKCONFIGPATH": "./sdkconfig",
-		"PARTITIONS_FILE": "./sdkconfig/partitions.csv"
+		"PARTITIONS_FILE_FOR_TARGET": "./sdkconfig/partitions.csv"
 	},
 	"include": [
 		"$(MODDABLE)/modules/drivers/ili9341/manifest.json",
@@ -33,7 +33,7 @@
 			"height": 240,
 			"cs_pin": 5,
 			"dc_pin": 15,
-			"spi_port": "VSPI_HOST",
+			"spi_port": "SPI3_HOST",
 			"registers": [
 				"0x01, 0,",
 				"0xC8, 3, 0xFF, 0x93, 0x42,",

@@ -109,7 +109,7 @@ txSerialMachine fxOpenNetwork(txSerialTool self, uint32_t value)
 		machine->networkSocket = CFSocketCreate(kCFAllocatorDefault, PF_INET, SOCK_STREAM, IPPROTO_TCP, kCFSocketReadCallBack, fxReadNetwork, &context);
 		CFSocketError err = CFSocketConnectToAddress(machine->networkSocket, CFDataCreate(kCFAllocatorDefault, (const UInt8*)&address, sizeof(address)), (CFTimeInterval)10);
 		if (err) {
-			fprintf(stderr,"Error opening network: %ld.\n",err);
+			fprintf(stderr,"Error opening network: %ld.\n (Unable to connect to JavaScript debugger (xsbug). Is it running?)\n",err);
 			exit(1);
 		}
 		machine->networkSource = CFSocketCreateRunLoopSource(NULL, machine->networkSocket, 0);
@@ -193,17 +193,15 @@ void fxOpenSerial(txSerialTool self)
 	CFRunLoopAddSource(CFRunLoopGetCurrent(), self->serialSource, kCFRunLoopCommonModes);
 
 	if (self->programming) {
-#if mxTraceCommands
-		fprintf(stderr, "### programming mode\n");
-#endif
+		if (self->traceCommands)
+			fprintf(stderr, "### programming mode\n");
 		fxProgrammingModeSerial(self);
 		exit(0);
 	}
 
 	if (self->restartOnConnect) {
-#if mxTraceCommands
-		fprintf(stderr, "### restart\n");
-#endif
+		if (self->traceCommands)
+			fprintf(stderr, "### restart\n");
 		self->restartOnConnect = 0;
 		fxRestart(self);
 	}
@@ -351,9 +349,9 @@ void fxWriteNetwork(txSerialMachine machine, char* buffer, int size)
 
 void fxWriteSerial(txSerialTool self, char* buffer, int size)
 {
-#if mxTrace
-	fprintf(stderr, "%.*s", size, buffer);
-#endif
+	if (self->trace)
+		fprintf(stderr, "%.*s", size, buffer);
+
 	while (size) {
 		int result = write(CFSocketGetNative(self->serialSocket), buffer, size);
 		if (result < 0) {
