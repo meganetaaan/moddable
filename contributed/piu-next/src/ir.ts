@@ -55,7 +55,10 @@ function normalizeChildren(inputs: readonly ChildInput[], output: ChildNode[]): 
 			output.push(input);
 			continue;
 		}
-		throw new TypeError("Unsupported child input");
+		const detail = (typeof input === "object" && input !== null)
+			? "object"
+			: typeof input;
+		throw new TypeError(`Unsupported child input: ${detail}`);
 	}
 }
 

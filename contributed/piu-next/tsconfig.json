@@ -25,6 +25,12 @@
       "animation": [
         "animation.ts"
       ],
+      "resource": [
+        "resource.ts"
+      ],
+      "drivers": [
+        "drivers.ts"
+      ],
       "piu-runtime": [
         "piu-runtime.ts"
       ]

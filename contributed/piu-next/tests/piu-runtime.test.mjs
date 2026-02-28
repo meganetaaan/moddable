@@ -280,6 +280,44 @@ test("mountPiuApplication wires deferred onTap behavior", () => {
 	mounted.dispose();
 });
 
+test("mountPiuApplication wires typed touch phase handlers", () => {
+	installFakePiu();
+	const events = [];
+
+	const mounted = mountPiuApplication(() =>
+		node(
+			"application",
+			{},
+			node("label", {
+				string: "Touch me",
+				onTouchBegan: (_content, event) => events.push(["began", event.x, event.y]),
+				onTouchMoved: (_content, event) => events.push(["moved", event.x, event.y]),
+				onTouchEnded: (_content, event) => events.push(["ended", event.x, event.y]),
+			})
+		),
+		{
+			taskQueue: {
+				post(task) {
+					task();
+				},
+			},
+		}
+	);
+
+	const label = mounted.application.first;
+	const behavior = label.behavior;
+	behavior.onTouchBegan(label, 0, 5, 6, 1);
+	behavior.onTouchMoved(label, 0, 7, 8, 2);
+	behavior.onTouchEnded(label, 0, 9, 10, 3);
+
+	assert.deepEqual(events, [
+		["began", 5, 6],
+		["moved", 7, 8],
+		["ended", 9, 10],
+	]);
+	mounted.dispose();
+});
+
 test("mountPiuApplication can delegate updates to runtime driver", () => {
 	const stats = installFakePiu();
 	const count = createSignal(1);

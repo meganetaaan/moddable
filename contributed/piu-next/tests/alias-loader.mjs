@@ -9,6 +9,8 @@ const aliases = new Map([
 	["ir", "ir.js"],
 	["ref", "ref.js"],
 	["animation", "animation.js"],
+	["resource", "resource.js"],
+	["drivers", "drivers.js"],
 	["piu-runtime", "piu-runtime.js"],
 ]);
 

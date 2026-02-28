@@ -4,8 +4,24 @@ import { effect, type Unsubscribe } from "signal";
 
 type Dictionary = Record<string, unknown>;
 type NodeKey = string | number | symbol;
-type TapHandler = (content: unknown, event: { index: number; x: number; y: number; ticks: number }) => void;
-type TapAwareContent = PiuContent & { __piuNextTap?: TapHandler | null };
+
+export interface PiuTouchEvent {
+	index: number;
+	x: number;
+	y: number;
+	ticks: number;
+}
+
+export type TouchHandler = (content: unknown, event: PiuTouchEvent) => void;
+
+interface TouchHandlers {
+	onTap: TouchHandler | null;
+	onTouchBegan: TouchHandler | null;
+	onTouchMoved: TouchHandler | null;
+	onTouchEnded: TouchHandler | null;
+}
+
+type TouchAwareContent = PiuContent & { __piuNextTouch?: TouchHandlers | null };
 
 interface PiuContent {
 	container?: PiuContainer | null;
@@ -46,8 +62,8 @@ interface RenderedNodeState {
 	key: NodeKey | null;
 	props: Dictionary;
 	ref: Ref<unknown> | null;
-	tapInstalled: boolean;
-	content: TapAwareContent;
+	touchInstalled: boolean;
+	content: TouchAwareContent;
 	children: RenderedNodeState[];
 }
 
@@ -78,7 +94,7 @@ export interface RuntimeDriver {
 export interface MountPiuOptions {
 	application?: PiuApplication;
 	taskQueue?: TaskQueue;
-	driver?: RuntimeDriver;
+	driver?: RuntimeDriver | null;
 }
 
 export interface MountedPiuApplication {
@@ -86,7 +102,7 @@ export interface MountedPiuApplication {
 	dispose(): void;
 }
 
-const RESERVED_KEYS = ["onTap", "ref", "key", "text"] as const;
+const RESERVED_KEYS = ["onTap", "onTouchBegan", "onTouchMoved", "onTouchEnded", "ref", "key", "text"] as const;
 let nativeRuntimeDriver: RuntimeDriver | null = null;
 
 export function setNativeRuntimeDriver(driver: RuntimeDriver | null): void {
@@ -95,8 +111,23 @@ export function setNativeRuntimeDriver(driver: RuntimeDriver | null): void {
 
 function getPiuGlobals(): PiuGlobals {
 	const scope = globalThis as unknown as Partial<PiuGlobals>;
-	if (!scope.Application || !scope.Container || !scope.Column || !scope.Row || !scope.Content || !scope.Label || !scope.Behavior)
-		throw new Error("Piu globals are unavailable. Import \"piu/MC\" before mountPiuApplication.");
+	const missing: string[] = [];
+	if (!scope.Application)
+		missing.push("Application");
+	if (!scope.Container)
+		missing.push("Container");
+	if (!scope.Column)
+		missing.push("Column");
+	if (!scope.Row)
+		missing.push("Row");
+	if (!scope.Content)
+		missing.push("Content");
+	if (!scope.Label)
+		missing.push("Label");
+	if (!scope.Behavior)
+		missing.push("Behavior");
+	if (missing.length > 0)
+		throw new Error(`Piu globals are unavailable (${missing.join(", ")}). Import "piu/MC" before mountPiuApplication.`);
 	return scope as PiuGlobals;
 }
 
@@ -143,8 +174,21 @@ function extractElementChildren(node: ElementNode): ElementNode[] {
 	return children;
 }
 
-function extractTapHandler(props: Readonly<Record<string, unknown>>): TapHandler | null {
-	return (typeof props.onTap === "function") ? props.onTap as TapHandler : null;
+function toTouchHandler(value: unknown): TouchHandler | null {
+	return (typeof value === "function") ? value as TouchHandler : null;
+}
+
+function extractTouchHandlers(props: Readonly<Record<string, unknown>>): TouchHandlers {
+	return {
+		onTap: toTouchHandler(props.onTap),
+		onTouchBegan: toTouchHandler(props.onTouchBegan),
+		onTouchMoved: toTouchHandler(props.onTouchMoved),
+		onTouchEnded: toTouchHandler(props.onTouchEnded),
+	};
+}
+
+function hasTouchHandlers(handlers: TouchHandlers): boolean {
+	return Boolean(handlers.onTap || handlers.onTouchBegan || handlers.onTouchMoved || handlers.onTouchEnded);
 }
 
 function extractRefHandle(props: Readonly<Record<string, unknown>>): Ref<unknown> | null {
@@ -160,19 +204,38 @@ function extractNodeKey(props: Readonly<Record<string, unknown>>): NodeKey | nul
 	return null;
 }
 
-function createTapBehavior(
+function createTouchBehavior(
 	globals: PiuGlobals,
 	taskQueue: TaskQueue,
 ): new(...args: readonly never[]) => object {
 	const Base = globals.Behavior;
+	const invoke = (content: unknown, handler: TouchHandler | null, event: PiuTouchEvent): void => {
+		if (!handler)
+			return;
+		taskQueue.post(() => {
+			handler(content, event);
+		});
+	};
 	return class extends Base {
-		onTouchEnded(content: unknown, index: number, x: number, y: number, ticks: number): void {
-			const handler = (content as TapAwareContent).__piuNextTap;
-			if (typeof handler !== "function")
+		onTouchBegan(content: unknown, index: number, x: number, y: number, ticks: number): void {
+			const handlers = (content as TouchAwareContent).__piuNextTouch;
+			if (!handlers)
 				return;
-			taskQueue.post(() => {
-				handler(content, { index, x, y, ticks });
-			});
+			invoke(content, handlers.onTouchBegan, { index, x, y, ticks });
+		}
+		onTouchMoved(content: unknown, index: number, x: number, y: number, ticks: number): void {
+			const handlers = (content as TouchAwareContent).__piuNextTouch;
+			if (!handlers)
+				return;
+			invoke(content, handlers.onTouchMoved, { index, x, y, ticks });
+		}
+		onTouchEnded(content: unknown, index: number, x: number, y: number, ticks: number): void {
+			const handlers = (content as TouchAwareContent).__piuNextTouch;
+			if (!handlers)
+				return;
+			const event = { index, x, y, ticks };
+			invoke(content, handlers.onTouchEnded, event);
+			invoke(content, handlers.onTap, event);
 		}
 	};
 }
@@ -190,7 +253,7 @@ function resolveNodeCtor(type: string, globals: PiuGlobals): PiuCtor {
 		case "label":
 			return globals.Label;
 		default:
-			throw new Error(`Unsupported node type: ${type}`);
+			throw new Error(`Unsupported node type "${type}". Supported: application, container, column, row, content, label.`);
 	}
 }
 
@@ -221,8 +284,8 @@ function applyProps(target: Dictionary, previous: Dictionary, next: Dictionary):
 	}
 }
 
-function assignTapHandler(content: TapAwareContent, tap: TapHandler | null): void {
-	content.__piuNextTap = tap;
+function assignTouchHandlers(content: TouchAwareContent, handlers: TouchHandlers | null): void {
+	content.__piuNextTouch = handlers;
 }
 
 function updateRefBinding(node: RenderedNodeState, nextRef: Ref<unknown> | null): void {
@@ -236,28 +299,28 @@ function updateRefBinding(node: RenderedNodeState, nextRef: Ref<unknown> | null)
 function createRenderedNode(
 	node: ElementNode,
 	globals: PiuGlobals,
-	tapBehavior: new(...args: readonly never[]) => object,
+	touchBehavior: new(...args: readonly never[]) => object,
 ): RenderedNodeState {
-	const tap = extractTapHandler(node.props);
+	const touchHandlers = extractTouchHandlers(node.props);
 	const ref = extractRefHandle(node.props);
 	const key = extractNodeKey(node.props);
 	const props = buildNodeProps(node);
-	if (tap)
+	if (hasTouchHandlers(touchHandlers))
 		props.active = true;
 
 	const dictionary: Dictionary = { ...props };
 	let children: RenderedNodeState[] = [];
 	if (isContainerType(node.type)) {
 		children = extractElementChildren(node)
-			.map((child) => createRenderedNode(child, globals, tapBehavior));
+			.map((child) => createRenderedNode(child, globals, touchBehavior));
 		dictionary.contents = children.map((child) => child.content);
 	}
-	if (tap)
-		dictionary.Behavior = tapBehavior;
+	if (hasTouchHandlers(touchHandlers))
+		dictionary.Behavior = touchBehavior;
 
 	const ctor = resolveNodeCtor(node.type, globals);
-	const content = new ctor(null, dictionary) as TapAwareContent;
-	assignTapHandler(content, tap);
+	const content = new ctor(null, dictionary) as TouchAwareContent;
+	assignTouchHandlers(content, touchHandlers);
 	if (ref)
 		attachRef(ref, content);
 
@@ -266,7 +329,7 @@ function createRenderedNode(
 		key,
 		props,
 		ref,
-		tapInstalled: Boolean(tap),
+		touchInstalled: hasTouchHandlers(touchHandlers),
 		content,
 		children,
 	};
@@ -275,12 +338,12 @@ function createRenderedNode(
 function disposeRenderedNode(node: RenderedNodeState): void {
 	if (node.ref)
 		detachRef(node.ref, node.content);
-	assignTapHandler(node.content, null);
+	assignTouchHandlers(node.content, null);
 	for (const child of node.children)
 		disposeRenderedNode(child);
 	node.children = [];
 	node.ref = null;
-	node.tapInstalled = false;
+	node.touchInstalled = false;
 }
 
 function supportsFineGrainedMutation(container: PiuContainer): container is PiuContainer & Required<Pick<PiuContainer, "insert" | "remove" | "content">> {
@@ -294,13 +357,13 @@ function replaceAllChildren(
 	previous: readonly RenderedNodeState[],
 	nextElements: readonly ElementNode[],
 	globals: PiuGlobals,
-	tapBehavior: new(...args: readonly never[]) => object,
+	touchBehavior: new(...args: readonly never[]) => object,
 ): RenderedNodeState[] {
 	for (const child of previous)
 		disposeRenderedNode(child);
 	container.empty();
 	const next = nextElements
-		.map((child) => createRenderedNode(child, globals, tapBehavior));
+		.map((child) => createRenderedNode(child, globals, touchBehavior));
 	for (const child of next)
 		container.add(child.content);
 	return next;
@@ -309,8 +372,8 @@ function replaceAllChildren(
 function canPatchInPlace(previous: RenderedNodeState, nextNode: ElementNode): boolean {
 	if (previous.type !== nextNode.type)
 		return false;
-	const nextTap = extractTapHandler(nextNode.props);
-	if (!previous.tapInstalled && nextTap)
+	const nextHandlers = extractTouchHandlers(nextNode.props);
+	if (!previous.touchInstalled && hasTouchHandlers(nextHandlers))
 		return false;
 	return true;
 }
@@ -341,20 +404,21 @@ function patchRenderedNode(
 	previous: RenderedNodeState,
 	nextNode: ElementNode,
 	globals: PiuGlobals,
-	tapBehavior: new(...args: readonly never[]) => object,
+	touchBehavior: new(...args: readonly never[]) => object,
 ): void {
-	const nextTap = extractTapHandler(nextNode.props);
+	const nextTouchHandlers = extractTouchHandlers(nextNode.props);
+	const nextTouchActive = hasTouchHandlers(nextTouchHandlers);
 	const nextRef = extractRefHandle(nextNode.props);
 	const nextProps = buildNodeProps(nextNode);
-	if (nextTap) {
+	if (nextTouchActive) {
 		nextProps.active = true;
 	}
-	else if (previous.tapInstalled && !Object.hasOwn(nextProps, "active")) {
+	else if (previous.touchInstalled && !Object.hasOwn(nextProps, "active")) {
 		nextProps.active = false;
 	}
 
 	applyProps(previous.content as Dictionary, previous.props, nextProps);
-	assignTapHandler(previous.content, nextTap);
+	assignTouchHandlers(previous.content, nextTouchHandlers);
 	updateRefBinding(previous, nextRef);
 
 	if (isContainerType(nextNode.type)) {
@@ -364,13 +428,13 @@ function patchRenderedNode(
 			previous.children,
 			nextElements,
 			globals,
-			tapBehavior,
+			touchBehavior,
 		);
 	}
 
 	previous.key = extractNodeKey(nextNode.props);
 	previous.props = nextProps;
-	previous.tapInstalled = previous.tapInstalled || Boolean(nextTap);
+	previous.touchInstalled = previous.touchInstalled || nextTouchActive;
 }
 
 function patchChildren(
@@ -378,10 +442,10 @@ function patchChildren(
 	previousChildren: readonly RenderedNodeState[],
 	nextElements: readonly ElementNode[],
 	globals: PiuGlobals,
-	tapBehavior: new(...args: readonly never[]) => object,
+	touchBehavior: new(...args: readonly never[]) => object,
 ): RenderedNodeState[] {
 	if (!supportsFineGrainedMutation(container))
-		return replaceAllChildren(container, previousChildren, nextElements, globals, tapBehavior);
+		return replaceAllChildren(container, previousChildren, nextElements, globals, touchBehavior);
 
 	if (previousChildren.length === nextElements.length) {
 		let fastPath = true;
@@ -404,7 +468,7 @@ function patchChildren(
 				const next = nextElements[index];
 				if (!previous || !next)
 					continue;
-				patchRenderedNode(previous, next, globals, tapBehavior);
+				patchRenderedNode(previous, next, globals, touchBehavior);
 			}
 			return nextChildren;
 		}
@@ -457,12 +521,12 @@ function patchChildren(
 
 		if (candidate) {
 			reused.add(candidate);
-			patchRenderedNode(candidate, nextElement, globals, tapBehavior);
+			patchRenderedNode(candidate, nextElement, globals, touchBehavior);
 			nextChildren.push(candidate);
 			continue;
 		}
 
-		nextChildren.push(createRenderedNode(nextElement, globals, tapBehavior));
+		nextChildren.push(createRenderedNode(nextElement, globals, touchBehavior));
 	}
 
 	for (const child of previousChildren) {
@@ -481,29 +545,29 @@ export function mountPiuApplication(
 	options: MountPiuOptions = {},
 ): MountedPiuApplication {
 	const taskQueue = options.taskQueue ?? createDefaultTaskQueue();
-	const preferredDriver = options.driver ?? nativeRuntimeDriver;
+	const preferredDriver = (options.driver === undefined) ? nativeRuntimeDriver : options.driver;
 	const providedApplication = options.application ?? null;
 	let application = providedApplication;
 	let renderedTree: RenderedTree | null = null;
 	let driverSession: RuntimeDriverSession | null = null;
 	let globals: PiuGlobals | null = null;
-	let tapBehavior: (new(...args: readonly never[]) => object) | null = null;
+	let touchBehavior: (new(...args: readonly never[]) => object) | null = null;
 	let disposeEffect: Unsubscribe | null = null;
 	let disposed = false;
 	let queued = false;
 	let pendingRoot: ElementNode | null = null;
 
-	const ensureRendererDependencies = (): { globals: PiuGlobals; tapBehavior: new(...args: readonly never[]) => object } => {
+	const ensureRendererDependencies = (): { globals: PiuGlobals; touchBehavior: new(...args: readonly never[]) => object } => {
 		if (!globals)
 			globals = getPiuGlobals();
-		if (!tapBehavior)
-			tapBehavior = createTapBehavior(globals, taskQueue);
-		return { globals, tapBehavior };
+		if (!touchBehavior)
+			touchBehavior = createTouchBehavior(globals, taskQueue);
+		return { globals, touchBehavior };
 	};
 
 	const render = (root: ElementNode): void => {
 		if (root.type !== "application")
-			throw new Error("Root node must be <application>.");
+			throw new Error(`Root node must be <application>. Received <${root.type}>.`);
 		const deps = ensureRendererDependencies();
 
 		const nextRootProps = sanitizeProps(root.props as Dictionary, RESERVED_KEYS);
@@ -521,7 +585,7 @@ export function mountPiuApplication(
 			renderedTree?.children ?? [],
 			nextElements,
 			deps.globals,
-			deps.tapBehavior,
+			deps.touchBehavior,
 		);
 		renderedTree = {
 			rootProps: nextRootProps,

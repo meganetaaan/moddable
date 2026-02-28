@@ -13,6 +13,9 @@
     "sourceMap": true,
     "rootDir": "src",
     "outDir": "dist",
+    "jsx": "react",
+    "jsxFactory": "node",
+    "jsxFragmentFactory": "fragment",
     "baseUrl": ".",
     "paths": {
       "*": [
@@ -24,6 +27,7 @@
   },
   "include": [
     "src/**/*.ts",
+    "src/**/*.tsx",
     "src/**/*.d.ts"
   ]
 }
