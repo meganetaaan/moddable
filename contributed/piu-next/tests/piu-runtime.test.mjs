@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { createRef, createSignal, node, mountPiuApplication } from "../dist/index.js";
+import { createRef, createSignal, node, mountPiuApplication, setNativeRuntimeDriver } from "../dist/index.js";
 
 function installFakePiu() {
 	const globalScope = globalThis;
@@ -278,4 +278,51 @@ test("mountPiuApplication wires deferred onTap behavior", () => {
 
 	assert.equal(tapped, 1);
 	mounted.dispose();
+});
+
+test("mountPiuApplication can delegate updates to runtime driver", () => {
+	const stats = installFakePiu();
+	const count = createSignal(1);
+	const calls = [];
+	const app = new globalThis.Application(null, {});
+	setNativeRuntimeDriver({
+		mount(root, context) {
+			calls.push({ phase: "mount", root, context });
+			return {
+				application: app,
+				update(nextRoot) {
+					calls.push({ phase: "update", root: nextRoot });
+				},
+				dispose() {
+					calls.push({ phase: "dispose" });
+				},
+			};
+		},
+	});
+	try {
+		const mounted = mountPiuApplication(() =>
+			node(
+				"application",
+				{},
+				node("label", { string: `Count: ${count.value}` })
+			)
+		);
+
+		assert.equal(mounted.application, app);
+		assert.equal(stats.labelConstructed, 0);
+		assert.equal(calls.length, 1);
+		assert.equal(calls[0].phase, "mount");
+
+		count.set(2);
+		assert.equal(calls.length, 2);
+		assert.equal(calls[1].phase, "update");
+		assert.equal(calls[1].root.children[0].props.string, "Count: 2");
+
+		mounted.dispose();
+		assert.equal(calls.length, 3);
+		assert.equal(calls[2].phase, "dispose");
+	}
+	finally {
+		setNativeRuntimeDriver(null);
+	}
 });

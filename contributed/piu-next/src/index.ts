@@ -30,4 +30,12 @@ export {
 	type TweenHandle,
 	type TweenOptions,
 } from "animation";
-export { mountPiuApplication, type MountPiuOptions, type MountedPiuApplication } from "piu-runtime";
+export {
+	mountPiuApplication,
+	setNativeRuntimeDriver,
+	type MountPiuOptions,
+	type MountedPiuApplication,
+	type RuntimeDriver,
+	type RuntimeDriverContext,
+	type RuntimeDriverSession,
+} from "piu-runtime";

@@ -60,9 +60,25 @@ export interface TaskQueue {
 	post(task: () => void): void;
 }
 
+export interface RuntimeDriverSession {
+	application: unknown;
+	update(root: ElementNode): void;
+	dispose(): void;
+}
+
+export interface RuntimeDriverContext {
+	application?: unknown;
+	taskQueue: TaskQueue;
+}
+
+export interface RuntimeDriver {
+	mount(root: ElementNode, context: RuntimeDriverContext): RuntimeDriverSession | null;
+}
+
 export interface MountPiuOptions {
 	application?: PiuApplication;
 	taskQueue?: TaskQueue;
+	driver?: RuntimeDriver;
 }
 
 export interface MountedPiuApplication {
@@ -71,6 +87,11 @@ export interface MountedPiuApplication {
 }
 
 const RESERVED_KEYS = ["onTap", "ref", "key", "text"] as const;
+let nativeRuntimeDriver: RuntimeDriver | null = null;
+
+export function setNativeRuntimeDriver(driver: RuntimeDriver | null): void {
+	nativeRuntimeDriver = driver;
+}
 
 function getPiuGlobals(): PiuGlobals {
 	const scope = globalThis as unknown as Partial<PiuGlobals>;
@@ -459,25 +480,36 @@ export function mountPiuApplication(
 	view: () => ElementNode,
 	options: MountPiuOptions = {},
 ): MountedPiuApplication {
-	const globals = getPiuGlobals();
 	const taskQueue = options.taskQueue ?? createDefaultTaskQueue();
-	const tapBehavior = createTapBehavior(globals, taskQueue);
+	const preferredDriver = options.driver ?? nativeRuntimeDriver;
 	const providedApplication = options.application ?? null;
 	let application = providedApplication;
 	let renderedTree: RenderedTree | null = null;
+	let driverSession: RuntimeDriverSession | null = null;
+	let globals: PiuGlobals | null = null;
+	let tapBehavior: (new(...args: readonly never[]) => object) | null = null;
 	let disposeEffect: Unsubscribe | null = null;
 	let disposed = false;
 	let queued = false;
 	let pendingRoot: ElementNode | null = null;
 
+	const ensureRendererDependencies = (): { globals: PiuGlobals; tapBehavior: new(...args: readonly never[]) => object } => {
+		if (!globals)
+			globals = getPiuGlobals();
+		if (!tapBehavior)
+			tapBehavior = createTapBehavior(globals, taskQueue);
+		return { globals, tapBehavior };
+	};
+
 	const render = (root: ElementNode): void => {
 		if (root.type !== "application")
 			throw new Error("Root node must be <application>.");
+		const deps = ensureRendererDependencies();
 
 		const nextRootProps = sanitizeProps(root.props as Dictionary, RESERVED_KEYS);
 
 		if (!application)
-			application = new globals.Application(null, nextRootProps) as PiuApplication;
+			application = new deps.globals.Application(null, nextRootProps) as PiuApplication;
 
 		applyProps(application as Dictionary, renderedTree?.rootProps ?? {}, nextRootProps);
 		if (!renderedTree && providedApplication)
@@ -488,13 +520,21 @@ export function mountPiuApplication(
 			application,
 			renderedTree?.children ?? [],
 			nextElements,
-			globals,
-			tapBehavior,
+			deps.globals,
+			deps.tapBehavior,
 		);
 		renderedTree = {
 			rootProps: nextRootProps,
 			children: nextChildren,
 		};
+	};
+
+	const applyRoot = (root: ElementNode): void => {
+		if (driverSession) {
+			driverSession.update(root);
+			return;
+		}
+		render(root);
 	};
 
 	const enqueueRender = (root: ElementNode): void => {
@@ -508,11 +548,25 @@ export function mountPiuApplication(
 				return;
 			const next = pendingRoot;
 			pendingRoot = null;
-			render(next);
+			applyRoot(next);
 		});
 	};
 
-	render(view());
+	const initialRoot = view();
+	if (preferredDriver) {
+		driverSession = preferredDriver.mount(initialRoot, {
+			application: providedApplication ?? undefined,
+			taskQueue,
+		});
+		if (driverSession)
+			application = driverSession.application as PiuApplication;
+		else
+			render(initialRoot);
+	}
+	else {
+		render(initialRoot);
+	}
+
 	let skipFirstEffectRun = true;
 	disposeEffect = effect(() => {
 		const nextRoot = view();
@@ -532,12 +586,14 @@ export function mountPiuApplication(
 			disposed = true;
 			disposeEffect?.();
 			disposeEffect = null;
+			driverSession?.dispose();
+			driverSession = null;
 			if (renderedTree) {
 				for (const child of renderedTree.children)
 					disposeRenderedNode(child);
 				renderedTree = null;
+				application?.empty();
 			}
-			application?.empty();
 		},
 	};
 }
