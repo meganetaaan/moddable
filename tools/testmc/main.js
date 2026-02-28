@@ -77,6 +77,13 @@ class Screen extends ChecksumOut {
 		this.doIdle();
 		assert.sameValue(checksum, this.checksum, message ?? "image mismatch");
 	}
+	captureImage(path, options) {
+		super.captureNext(path, options);
+		this.doIdle();
+	}
+	captureNext(path, options) {
+		super.captureNext(path, options);
+	}
 	doIdle() {
 		this.context.onIdle();
 		const promises = this.#promises;

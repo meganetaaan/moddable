@@ -263,6 +263,9 @@ class AW9523 {
     const newData = (tmp & mask) | data;
     this.#io.writeUint8(address, newData);
   }
+  readByte(address) {
+    return this.#io.readUint8(address);
+  }
 	writeByte(address, data) {
 		this.#io.writeUint8(address, data);
   }

@@ -42,6 +42,66 @@ catch (e) {
 const portIn = process.env.XSBUG_LOG_PORT ?? 5002;
 let connections = 0;
 let autoexit = false;
+const parsed = parseArguments(process.argv.slice(2));
+
+function parseChannels(raw) {
+	if (!raw)
+		return undefined;
+	const values = raw.split(",").map(value => value.trim()).filter(Boolean);
+	return values.length ? values : undefined;
+}
+
+function parseArguments(args) {
+	const options = {
+		channel: parseChannels(process.env.XSBUG_LOG_CHANNELS),
+		exclude: parseChannels(process.env.XSBUG_LOG_EXCLUDE),
+		format: process.env.XSBUG_LOG_FORMAT ?? "text",
+		strictChannel: false
+	};
+
+	let index = 0;
+	while (index < args.length) {
+		const argument = args[index];
+		if ("--" === argument) {
+			index++;
+			break;
+		}
+		if (!argument.startsWith("--"))
+			break;
+
+		switch (argument) {
+		case "--channel":
+			index++;
+			options.channel = parseChannels(args[index]);
+			break;
+		case "--exclude":
+			index++;
+			options.exclude = parseChannels(args[index]);
+			break;
+		case "--format":
+			index++;
+			options.format = args[index] ?? "text";
+			break;
+		case "--strict-channel":
+			options.strictChannel = true;
+			break;
+		default:
+			console.log(`#xsbug-log unknown option: ${argument}`);
+			process.exit(1);
+		}
+		index++;
+	}
+
+	if ((options.format !== "text") && (options.format !== "jsonl")) {
+		console.log(`#xsbug-log unsupported format: ${options.format}`);
+		process.exit(1);
+	}
+
+	return {
+		options,
+		command: args.slice(index)
+	};
+}
 
 let probe = net.connect({
 	port: portIn,
@@ -69,21 +129,21 @@ function launch() {
 				process.exit(0);
 		});
 
-		target.machine = new LogMachine(target, target);
+		target.machine = new LogMachine(target, target, parsed.options);
 	});
 
 	server.listen(portIn, () => { 
 	   console.log(`#xsbug-log listening on port ${portIn}. ^C to exit.`);
 	});
 
-	let command = process.argv[2];
-	if (undefined === command) {
+	if (0 === parsed.command.length) {
 		console.log("#xsbug-log: no command line arguments. Waiting for connection.");
 		return;
 	}
 
-	for (let i = 3; i < process.argv.length; i++) 
-		command += ` ${process.argv[i]}`;
+	let command = parsed.command[0];
+	for (let i = 1; i < parsed.command.length; i++)
+		command += ` ${parsed.command[i]}`;
 
 	exec(command);
 }
