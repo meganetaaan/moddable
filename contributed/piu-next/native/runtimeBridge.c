@@ -408,6 +408,7 @@ static uint8_t piuNextTryKeyedReconcile(xsMachine *the, xsSlot session, xsSlot a
 	xsSlot desiredChildren;
 	xsSlot removeChildren;
 	xsSlot desired;
+	xsSlot current;
 	xsIntegerValue i;
 	xsIntegerValue j;
 	xsIntegerValue previousLength;
@@ -415,6 +416,7 @@ static uint8_t piuNextTryKeyedReconcile(xsMachine *the, xsSlot session, xsSlot a
 	xsIntegerValue desiredCount = 0;
 	xsIntegerValue removeCount = 0;
 	uint8_t *used;
+	uint8_t *desiredReused;
 
 	if (!xsmcHas(session, gIDs.id_prevElements))
 		return 0;
@@ -453,6 +455,11 @@ static uint8_t piuNextTryKeyedReconcile(xsMachine *the, xsSlot session, xsSlot a
 	used = c_calloc((size_t)previousLength, sizeof(uint8_t));
 	if ((previousLength > 0) && !used)
 		xsUnknownError("no memory");
+	desiredReused = c_calloc((size_t)nextLength, sizeof(uint8_t));
+	if ((nextLength > 0) && !desiredReused) {
+		c_free(used);
+		xsUnknownError("no memory");
+	}
 
 	desiredChildren = xsmcNewArray(0);
 	removeChildren = xsmcNewArray(0);
@@ -491,6 +498,7 @@ static uint8_t piuNextTryKeyedReconcile(xsMachine *the, xsSlot session, xsSlot a
 			piuNextApplyRootProps(the, reusableChild, props);
 			xsmcSetInteger(at, desiredCount);
 			xsmcSetAt(desiredChildren, at, reusableChild);
+			desiredReused[desiredCount] = 1;
 			desiredCount += 1;
 			continue;
 		}
@@ -521,14 +529,22 @@ static uint8_t piuNextTryKeyedReconcile(xsMachine *the, xsSlot session, xsSlot a
 		xsCall1(application, gIDs.id_remove, desired);
 	}
 
-	xsCall0(application, gIDs.id_empty);
 	for (i = 0; i < desiredCount; i++) {
 		xsmcSetInteger(at, i);
 		xsmcGetAt(desired, desiredChildren, at);
-		xsCall1(application, gIDs.id_add, desired);
+		current = xsCall1(application, gIDs.id_content, xsInteger(i));
+		if (piuNextSameValue(the, current, desired))
+			continue;
+		if (desiredReused[i])
+			xsCall1(application, gIDs.id_remove, desired);
+		if (piuNextIsNullish(the, current))
+			xsCall1(application, gIDs.id_add, desired);
+		else
+			xsCall2(application, gIDs.id_insert, desired, current);
 	}
 
 	c_free(used);
+	c_free(desiredReused);
 	return 1;
 }
 

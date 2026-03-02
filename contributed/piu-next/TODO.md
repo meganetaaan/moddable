@@ -32,6 +32,7 @@
 ### P2-B: C側パッチ適用エンジン
 - [x] 失敗テストを先行追加する（create/remove/reorder/property update）
 - [x] 非key・同形状更新の in-place 更新を実装し、identity更新テストを通す
+- [x] key付きトップレベル子の reuse/reorder/add/remove を C 側 reconcile で処理する
 - [ ] ノードIDと key 対応の管理テーブルを C 側に実装する
 - [ ] `CREATE_NODE` / `SET_PROP` / `CLEAR_PROP` / `INSERT_CHILD` / `REMOVE_NODE` を実装する
 - [ ] JS 側 full rebuild 経路（`application.empty/add`）に依存しない更新へ切替する
