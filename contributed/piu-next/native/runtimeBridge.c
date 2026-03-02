@@ -32,6 +32,8 @@ typedef struct {
 	xsIdentifier id_is;
 	xsIdentifier id_length;
 	xsIdentifier id_prevElements;
+	xsIdentifier id_keyToContent;
+	xsIdentifier id_keyToType;
 	xsIdentifier id_Application;
 	xsIdentifier id_Container;
 	xsIdentifier id_Column;
@@ -69,6 +71,8 @@ static void piuNextEnsureIDs(xsMachine *the)
 	gIDs.id_is = xsID("is");
 	gIDs.id_length = xsID("length");
 	gIDs.id_prevElements = xsID("_prevElements");
+	gIDs.id_keyToContent = xsID("_keyToContent");
+	gIDs.id_keyToType = xsID("_keyToType");
 	gIDs.id_Application = xsID("Application");
 	gIDs.id_Container = xsID("Container");
 	gIDs.id_Column = xsID("Column");
@@ -182,9 +186,19 @@ static xsSlot piuNextNodeKey(xsMachine *the, xsSlot node)
 	return key;
 }
 
+static xsSlot piuNextNodeKeyString(xsMachine *the, xsSlot node)
+{
+	xsSlot key = piuNextNodeKey(the, node);
+	xsSlot keyString;
+	if (xsmcTypeOf(key) == xsUndefinedType)
+		return xsUndefined;
+	xsmcSetString(keyString, xsmcToString(key));
+	return keyString;
+}
+
 static xsSlot piuNextExtractElementChildren(xsMachine *the, xsSlot node)
 {
-	xsmcVars(1);
+	xsIntegerValue base = xsmcVars(1);
 	xsSlot children;
 	xsSlot at;
 	xsSlot child;
@@ -193,13 +207,13 @@ static xsSlot piuNextExtractElementChildren(xsMachine *the, xsSlot node)
 	xsIntegerValue length;
 	xsIntegerValue out = 0;
 
-	xsVar(0) = xsmcNewArray(0);
+	xsVar(base) = xsmcNewArray(0);
 	if (!xsmcHas(node, gIDs.id_children))
-		return xsVar(0);
+		return xsVar(base);
 
 	xsmcGet(children, node, gIDs.id_children);
 	if (xsmcTypeOf(children) != xsReferenceType)
-		return xsVar(0);
+		return xsVar(base);
 
 	length = piuNextArrayLength(the, children);
 	for (i = 0; i < length; i++) {
@@ -213,11 +227,11 @@ static xsSlot piuNextExtractElementChildren(xsMachine *the, xsSlot node)
 		if (!piuNextStringEquals(the, kind, "element"))
 			continue;
 		xsmcSetInteger(at, out);
-		xsmcSetAt(xsVar(0), at, child);
+		xsmcSetAt(xsVar(base), at, child);
 		out += 1;
 	}
 
-	return xsVar(0);
+	return xsVar(base);
 }
 
 static xsSlot piuNextBuildNodeProps(xsMachine *the, xsSlot node)
@@ -230,9 +244,9 @@ static xsSlot piuNextBuildNodeProps(xsMachine *the, xsSlot node)
 	xsSlot typeSlot;
 	xsIntegerValue i;
 	xsIntegerValue length = piuNextArrayLength(the, keys);
-	xsmcVars(1);
+	xsIntegerValue base = xsmcVars(1);
 
-	xsVar(0) = xsmcNewObject();
+	xsVar(base) = xsmcNewObject();
 	for (i = 0; i < length; i++) {
 		const char *name;
 		xsmcSetInteger(at, i);
@@ -243,27 +257,27 @@ static xsSlot piuNextBuildNodeProps(xsMachine *the, xsSlot node)
 		if (piuNextIsReservedKey(name))
 			continue;
 		xsmcGetAt(value, sourceProps, key);
-		xsmcSetAt(xsVar(0), key, value);
+		xsmcSetAt(xsVar(base), key, value);
 	}
 
 	if (!xsmcHas(node, gIDs.id_type))
-		return xsVar(0);
+		return xsVar(base);
 	xsmcGet(typeSlot, node, gIDs.id_type);
 	if (!piuNextStringEquals(the, typeSlot, "label"))
-		return xsVar(0);
+		return xsVar(base);
 
 	if (xsmcHas(sourceProps, gIDs.id_string)) {
 		xsmcGet(value, sourceProps, gIDs.id_string);
 		if (xsmcTypeOf(value) == xsStringType)
-			xsmcSet(xsVar(0), gIDs.id_string, value);
+			xsmcSet(xsVar(base), gIDs.id_string, value);
 	}
 	else if (xsmcHas(sourceProps, gIDs.id_text)) {
 		xsmcGet(value, sourceProps, gIDs.id_text);
 		if (xsmcTypeOf(value) == xsStringType)
-			xsmcSet(xsVar(0), gIDs.id_string, value);
+			xsmcSet(xsVar(base), gIDs.id_string, value);
 	}
 
-	return xsVar(0);
+	return xsVar(base);
 }
 
 static xsSlot piuNextCreateContent(xsMachine *the, xsSlot node)
@@ -271,20 +285,20 @@ static xsSlot piuNextCreateContent(xsMachine *the, xsSlot node)
 	xsSlot typeSlot;
 	xsSlot props;
 	xsIdentifier ctorID;
-	xsmcVars(1);
+	xsIntegerValue base = xsmcVars(1);
 
-	xsVar(0) = node;
-	if (!xsmcHas(xsVar(0), gIDs.id_type))
+	xsVar(base) = node;
+	if (!xsmcHas(xsVar(base), gIDs.id_type))
 		return xsUndefined;
-	xsmcGet(typeSlot, xsVar(0), gIDs.id_type);
+	xsmcGet(typeSlot, xsVar(base), gIDs.id_type);
 	if (xsmcTypeOf(typeSlot) != xsStringType)
 		return xsUndefined;
 
-	props = piuNextBuildNodeProps(the, xsVar(0));
+	props = piuNextBuildNodeProps(the, xsVar(base));
 	ctorID = piuNextCtorIDForType(the, typeSlot);
 
 	if (piuNextIsContainerType(the, typeSlot)) {
-		xsSlot elementChildren = piuNextExtractElementChildren(the, xsVar(0));
+		xsSlot elementChildren = piuNextExtractElementChildren(the, xsVar(base));
 		xsSlot contents = xsmcNewArray(0);
 		xsSlot at;
 		xsSlot childNode;
@@ -399,16 +413,17 @@ static uint8_t piuNextTryInPlaceUpdate(xsMachine *the, xsSlot session, xsSlot ap
 
 static uint8_t piuNextTryKeyedReconcile(xsMachine *the, xsSlot session, xsSlot application, xsSlot nextElements)
 {
+	xsmcVars(2);
 	xsSlot previousElements;
 	xsSlot at;
 	xsSlot previousElement;
 	xsSlot nextElement;
 	xsSlot previousType;
 	xsSlot nextType;
-	xsSlot desiredChildren;
-	xsSlot removeChildren;
 	xsSlot desired;
 	xsSlot current;
+	xsSlot keyToContent;
+	xsSlot keyToType;
 	xsIntegerValue i;
 	xsIntegerValue j;
 	xsIntegerValue previousLength;
@@ -422,9 +437,17 @@ static uint8_t piuNextTryKeyedReconcile(xsMachine *the, xsSlot session, xsSlot a
 		return 0;
 	if (!xsmcHas(application, gIDs.id_content) || !xsmcHas(application, gIDs.id_insert) || !xsmcHas(application, gIDs.id_remove))
 		return 0;
+	if (!xsmcHas(session, gIDs.id_keyToContent) || !xsmcHas(session, gIDs.id_keyToType))
+		return 0;
 
 	xsmcGet(previousElements, session, gIDs.id_prevElements);
+	xsmcGet(keyToContent, session, gIDs.id_keyToContent);
+	xsmcGet(keyToType, session, gIDs.id_keyToType);
 	if (xsmcTypeOf(previousElements) != xsReferenceType)
+		return 0;
+	if (xsmcTypeOf(keyToContent) != xsReferenceType)
+		return 0;
+	if (xsmcTypeOf(keyToType) != xsReferenceType)
 		return 0;
 
 	previousLength = piuNextArrayLength(the, previousElements);
@@ -461,43 +484,76 @@ static uint8_t piuNextTryKeyedReconcile(xsMachine *the, xsSlot session, xsSlot a
 		xsUnknownError("no memory");
 	}
 
-	desiredChildren = xsmcNewArray(0);
-	removeChildren = xsmcNewArray(0);
+	xsVar(0) = xsmcNewArray(0);
+	xsVar(1) = xsmcNewArray(0);
 
 	for (i = 0; i < nextLength; i++) {
 		int32_t reusableIndex = -1;
+		uint8_t canReuse = 0;
 		xsSlot nextKey;
+		xsSlot nextKeyString;
 		xsSlot reusableChild;
+		xsSlot keyedIndex;
 		xsSlot props;
+		xsSlot previousKeyType;
 
 		xsmcSetInteger(at, i);
 		xsmcGetAt(nextElement, nextElements, at);
 		nextKey = piuNextNodeKey(the, nextElement);
+		nextKeyString = piuNextNodeKeyString(the, nextElement);
 		xsmcGet(nextType, nextElement, gIDs.id_type);
 
-		for (j = 0; j < previousLength; j++) {
-			xsSlot previousKey;
-			if (used[j])
-				continue;
-			xsmcSetInteger(at, j);
-			xsmcGetAt(previousElement, previousElements, at);
-			xsmcGet(previousType, previousElement, gIDs.id_type);
-			if (!piuNextStringEquals(the, previousType, xsmcToString(nextType)))
-				continue;
-			previousKey = piuNextNodeKey(the, previousElement);
-			if (!piuNextSameValue(the, previousKey, nextKey))
-				continue;
-			reusableIndex = j;
-			break;
+		xsmcGetAt(keyedIndex, keyToContent, nextKeyString);
+		xsmcGetAt(previousKeyType, keyToType, nextKeyString);
+		if ((xsmcTypeOf(keyedIndex) == xsIntegerType)
+			&& (xsmcTypeOf(previousKeyType) == xsStringType)
+			&& piuNextStringEquals(the, previousKeyType, xsmcToString(nextType))) {
+			int32_t keyed = (int32_t)xsmcToInteger(keyedIndex);
+			if ((keyed >= 0) && (keyed < previousLength) && !used[keyed]) {
+				xsSlot previousKey;
+				xsmcSetInteger(at, keyed);
+				xsmcGetAt(previousElement, previousElements, at);
+				previousKey = piuNextNodeKey(the, previousElement);
+				if (piuNextSameValue(the, previousKey, nextKey)) {
+					reusableIndex = keyed;
+					used[reusableIndex] = 1;
+					reusableChild = xsCall1(application, gIDs.id_content, xsInteger(reusableIndex));
+					if (!piuNextIsNullish(the, reusableChild))
+						canReuse = 1;
+					else
+						used[reusableIndex] = 0;
+				}
+			}
 		}
 
-		if (reusableIndex >= 0) {
-			used[reusableIndex] = 1;
-			reusableChild = xsCall1(application, gIDs.id_content, xsInteger(reusableIndex));
+		if (!canReuse) {
+			for (j = 0; j < previousLength; j++) {
+				xsSlot previousKey;
+				if (used[j])
+					continue;
+				xsmcSetInteger(at, j);
+				xsmcGetAt(previousElement, previousElements, at);
+				xsmcGet(previousType, previousElement, gIDs.id_type);
+				if (!piuNextStringEquals(the, previousType, xsmcToString(nextType)))
+					continue;
+				previousKey = piuNextNodeKey(the, previousElement);
+				if (!piuNextSameValue(the, previousKey, nextKey))
+					continue;
+				reusableChild = xsCall1(application, gIDs.id_content, xsInteger(j));
+				if (piuNextIsNullish(the, reusableChild))
+					continue;
+				reusableIndex = (int32_t)j;
+				used[reusableIndex] = 1;
+				canReuse = 1;
+				break;
+			}
+		}
+
+		if (canReuse) {
 			props = piuNextBuildNodeProps(the, nextElement);
 			piuNextApplyRootProps(the, reusableChild, props);
 			xsmcSetInteger(at, desiredCount);
-			xsmcSetAt(desiredChildren, at, reusableChild);
+			xsmcSetAt(xsVar(0), at, reusableChild);
 			desiredReused[desiredCount] = 1;
 			desiredCount += 1;
 			continue;
@@ -507,7 +563,7 @@ static uint8_t piuNextTryKeyedReconcile(xsMachine *the, xsSlot session, xsSlot a
 		if (piuNextIsNullish(the, reusableChild))
 			continue;
 		xsmcSetInteger(at, desiredCount);
-		xsmcSetAt(desiredChildren, at, reusableChild);
+		xsmcSetAt(xsVar(0), at, reusableChild);
 		desiredCount += 1;
 	}
 
@@ -519,19 +575,19 @@ static uint8_t piuNextTryKeyedReconcile(xsMachine *the, xsSlot session, xsSlot a
 		if (piuNextIsNullish(the, reusableChild))
 			continue;
 		xsmcSetInteger(at, removeCount);
-		xsmcSetAt(removeChildren, at, reusableChild);
+		xsmcSetAt(xsVar(1), at, reusableChild);
 		removeCount += 1;
 	}
 
 	for (i = 0; i < removeCount; i++) {
 		xsmcSetInteger(at, i);
-		xsmcGetAt(desired, removeChildren, at);
+		xsmcGetAt(desired, xsVar(1), at);
 		xsCall1(application, gIDs.id_remove, desired);
 	}
 
 	for (i = 0; i < desiredCount; i++) {
 		xsmcSetInteger(at, i);
-		xsmcGetAt(desired, desiredChildren, at);
+		xsmcGetAt(desired, xsVar(0), at);
 		current = xsCall1(application, gIDs.id_content, xsInteger(i));
 		if (piuNextSameValue(the, current, desired))
 			continue;
@@ -546,6 +602,39 @@ static uint8_t piuNextTryKeyedReconcile(xsMachine *the, xsSlot session, xsSlot a
 	c_free(used);
 	c_free(desiredReused);
 	return 1;
+}
+
+static void piuNextRefreshKeyTables(xsMachine *the, xsSlot session, xsSlot application, xsSlot elements)
+{
+	xsmcVars(2);
+	xsSlot at;
+	xsSlot element;
+	xsSlot keyString;
+	xsSlot typeSlot;
+	xsIntegerValue i;
+	xsIntegerValue length = piuNextArrayLength(the, elements);
+
+	xsVar(0) = xsmcNewObject();
+	xsVar(1) = xsmcNewObject();
+
+	for (i = 0; i < length; i++) {
+		xsmcSetInteger(at, i);
+		xsmcGetAt(element, elements, at);
+		if (!piuNextNodeHasKey(the, element))
+			continue;
+		if (!xsmcHas(element, gIDs.id_type))
+			continue;
+		keyString = piuNextNodeKeyString(the, element);
+		if (xsmcTypeOf(keyString) != xsStringType)
+			continue;
+		xsmcGet(typeSlot, element, gIDs.id_type);
+		xsmcSetInteger(at, i);
+		xsmcSetAt(xsVar(0), keyString, at);
+		xsmcSetAt(xsVar(1), keyString, typeSlot);
+	}
+
+	xsmcSet(session, gIDs.id_keyToContent, xsVar(0));
+	xsmcSet(session, gIDs.id_keyToType, xsVar(1));
 }
 
 static void piuNextRender(xsMachine *the, xsSlot session, xsSlot application, xsSlot root)
@@ -571,10 +660,12 @@ static void piuNextRender(xsMachine *the, xsSlot session, xsSlot application, xs
 	elementChildren = piuNextExtractElementChildren(the, root);
 	if (piuNextTryInPlaceUpdate(the, session, application, elementChildren)) {
 		xsmcSet(session, gIDs.id_prevElements, elementChildren);
+		piuNextRefreshKeyTables(the, session, application, elementChildren);
 		return;
 	}
 	if (piuNextTryKeyedReconcile(the, session, application, elementChildren)) {
 		xsmcSet(session, gIDs.id_prevElements, elementChildren);
+		piuNextRefreshKeyTables(the, session, application, elementChildren);
 		return;
 	}
 
@@ -590,6 +681,7 @@ static void piuNextRender(xsMachine *the, xsSlot session, xsSlot application, xs
 	}
 
 	xsmcSet(session, gIDs.id_prevElements, elementChildren);
+	piuNextRefreshKeyTables(the, session, application, elementChildren);
 }
 
 void xs_piu_next_runtime_bridge(xsMachine *the)
@@ -606,6 +698,8 @@ void xs_piu_next_runtime_bridge_session(xsMachine *the)
 	PiuNextRuntimeBridgeSessionRecord session;
 	xsmcVars(2);
 	xsSlot previousElements;
+	xsSlot keyToContent;
+	xsSlot keyToType;
 
 	piuNextEnsureIDs(the);
 	if (xsmcArgc < 2)
@@ -616,7 +710,11 @@ void xs_piu_next_runtime_bridge_session(xsMachine *the)
 	session.disposed = 0;
 	xsmcSetHostChunk(xsThis, &session, sizeof(session));
 	previousElements = xsmcNewArray(0);
+	keyToContent = xsmcNewObject();
+	keyToType = xsmcNewObject();
 	xsmcSet(xsThis, gIDs.id_prevElements, previousElements);
+	xsmcSet(xsThis, gIDs.id_keyToContent, keyToContent);
+	xsmcSet(xsThis, gIDs.id_keyToType, keyToType);
 	piuNextRender(the, xsThis, xsVar(0), xsVar(1));
 }
 
@@ -645,6 +743,8 @@ void xs_piu_next_runtime_bridge_session_dispose(xsMachine *the)
 	PiuNextRuntimeBridgeSessionRecord *session = xsmcGetHostChunk(xsThis);
 	xsmcVars(1);
 	xsSlot previousElements;
+	xsSlot keyToContent;
+	xsSlot keyToType;
 
 	if (!session || session->disposed)
 		return;
@@ -653,6 +753,10 @@ void xs_piu_next_runtime_bridge_session_dispose(xsMachine *the)
 	xsmcGet(xsVar(0), xsThis, gIDs.id_application);
 	xsCall0(xsVar(0), gIDs.id_empty);
 	previousElements = xsmcNewArray(0);
+	keyToContent = xsmcNewObject();
+	keyToType = xsmcNewObject();
 	xsmcSet(xsThis, gIDs.id_prevElements, previousElements);
+	xsmcSet(xsThis, gIDs.id_keyToContent, keyToContent);
+	xsmcSet(xsThis, gIDs.id_keyToType, keyToType);
 	session->disposed = 1;
 }
