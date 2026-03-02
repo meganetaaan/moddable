@@ -280,6 +280,78 @@ static xsSlot piuNextBuildNodeProps(xsMachine *the, xsSlot node)
 	return xsVar(base);
 }
 
+static uint8_t piuNextArrayHasString(xsMachine *the, xsSlot keys, const char *value)
+{
+	xsSlot at;
+	xsSlot item;
+	xsIntegerValue i;
+	xsIntegerValue length = piuNextArrayLength(the, keys);
+	for (i = 0; i < length; i++) {
+		xsmcSetInteger(at, i);
+		xsmcGetAt(item, keys, at);
+		if (!piuNextStringEquals(the, item, value))
+			continue;
+		return 1;
+	}
+	return 0;
+}
+
+static void piuNextOpSetProp(xsMachine *the, xsSlot target, xsSlot key, xsSlot value)
+{
+	xsmcSetAt(target, key, value);
+}
+
+static void piuNextOpClearProp(xsMachine *the, xsSlot target, xsSlot key)
+{
+	xsSlot empty;
+	xsmcSetUndefined(empty);
+	xsmcSetAt(target, key, empty);
+}
+
+static void piuNextPatchProps(xsMachine *the, xsSlot target, xsSlot previousProps, xsSlot nextProps)
+{
+	xsSlot previousKeys = piuNextObjectKeys(the, previousProps);
+	xsSlot nextKeys = piuNextObjectKeys(the, nextProps);
+	xsSlot at;
+	xsSlot key;
+	xsSlot previousValue;
+	xsSlot nextValue;
+	xsIntegerValue i;
+	xsIntegerValue length;
+
+	length = piuNextArrayLength(the, previousKeys);
+	for (i = 0; i < length; i++) {
+		const char *name;
+		xsmcSetInteger(at, i);
+		xsmcGetAt(key, previousKeys, at);
+		if (xsmcTypeOf(key) != xsStringType)
+			continue;
+		name = xsmcToString(key);
+		if (piuNextArrayHasString(the, nextKeys, name))
+			continue;
+		piuNextOpClearProp(the, target, key);
+	}
+
+	length = piuNextArrayLength(the, nextKeys);
+	for (i = 0; i < length; i++) {
+		const char *name;
+		uint8_t hadPrevious = 0;
+		xsmcSetInteger(at, i);
+		xsmcGetAt(key, nextKeys, at);
+		if (xsmcTypeOf(key) != xsStringType)
+			continue;
+		name = xsmcToString(key);
+		if (piuNextArrayHasString(the, previousKeys, name)) {
+			hadPrevious = 1;
+			xsmcGetAt(previousValue, previousProps, key);
+		}
+		xsmcGetAt(nextValue, nextProps, key);
+		if (hadPrevious && piuNextSameValue(the, previousValue, nextValue))
+			continue;
+		piuNextOpSetProp(the, target, key, nextValue);
+	}
+}
+
 static xsSlot piuNextCreateContent(xsMachine *the, xsSlot node)
 {
 	xsSlot typeSlot;
@@ -322,6 +394,24 @@ static xsSlot piuNextCreateContent(xsMachine *the, xsSlot node)
 	}
 
 	return xsNew2(xsGlobal, ctorID, xsNull, props);
+}
+
+static xsSlot piuNextOpCreateNode(xsMachine *the, xsSlot node)
+{
+	return piuNextCreateContent(the, node);
+}
+
+static void piuNextOpInsertChild(xsMachine *the, xsSlot container, xsSlot child, xsSlot before)
+{
+	if (piuNextIsNullish(the, before))
+		xsCall1(container, gIDs.id_add, child);
+	else
+		xsCall2(container, gIDs.id_insert, child, before);
+}
+
+static void piuNextOpRemoveNode(xsMachine *the, xsSlot container, xsSlot child)
+{
+	xsCall1(container, gIDs.id_remove, child);
 }
 
 static void piuNextApplyRootProps(xsMachine *the, xsSlot application, xsSlot rootProps)
@@ -381,8 +471,10 @@ static uint8_t piuNextTryInPlaceUpdate(xsMachine *the, xsSlot session, xsSlot ap
 	xsSlot previousElements;
 	xsSlot child;
 	xsSlot at;
+	xsSlot previousElement;
 	xsSlot nextElement;
-	xsSlot props;
+	xsSlot previousProps;
+	xsSlot nextProps;
 	xsIntegerValue i;
 	xsIntegerValue length;
 
@@ -400,9 +492,11 @@ static uint8_t piuNextTryInPlaceUpdate(xsMachine *the, xsSlot session, xsSlot ap
 		if (piuNextIsNullish(the, child))
 			return 0;
 		xsmcSetInteger(at, i);
+		xsmcGetAt(previousElement, previousElements, at);
 		xsmcGetAt(nextElement, nextElements, at);
-		props = piuNextBuildNodeProps(the, nextElement);
-		piuNextApplyRootProps(the, child, props);
+		previousProps = piuNextBuildNodeProps(the, previousElement);
+		nextProps = piuNextBuildNodeProps(the, nextElement);
+		piuNextPatchProps(the, child, previousProps, nextProps);
 		xsmcGet(child, child, gIDs.id_next);
 	}
 
@@ -494,7 +588,8 @@ static uint8_t piuNextTryKeyedReconcile(xsMachine *the, xsSlot session, xsSlot a
 		xsSlot nextKeyString;
 		xsSlot reusableChild;
 		xsSlot keyedIndex;
-		xsSlot props;
+		xsSlot previousProps;
+		xsSlot nextProps;
 		xsSlot previousKeyType;
 
 		xsmcSetInteger(at, i);
@@ -550,8 +645,11 @@ static uint8_t piuNextTryKeyedReconcile(xsMachine *the, xsSlot session, xsSlot a
 		}
 
 		if (canReuse) {
-			props = piuNextBuildNodeProps(the, nextElement);
-			piuNextApplyRootProps(the, reusableChild, props);
+			xsmcSetInteger(at, reusableIndex);
+			xsmcGetAt(previousElement, previousElements, at);
+			previousProps = piuNextBuildNodeProps(the, previousElement);
+			nextProps = piuNextBuildNodeProps(the, nextElement);
+			piuNextPatchProps(the, reusableChild, previousProps, nextProps);
 			xsmcSetInteger(at, desiredCount);
 			xsmcSetAt(xsVar(0), at, reusableChild);
 			desiredReused[desiredCount] = 1;
@@ -559,7 +657,7 @@ static uint8_t piuNextTryKeyedReconcile(xsMachine *the, xsSlot session, xsSlot a
 			continue;
 		}
 
-		reusableChild = piuNextCreateContent(the, nextElement);
+		reusableChild = piuNextOpCreateNode(the, nextElement);
 		if (piuNextIsNullish(the, reusableChild))
 			continue;
 		xsmcSetInteger(at, desiredCount);
@@ -582,7 +680,7 @@ static uint8_t piuNextTryKeyedReconcile(xsMachine *the, xsSlot session, xsSlot a
 	for (i = 0; i < removeCount; i++) {
 		xsmcSetInteger(at, i);
 		xsmcGetAt(desired, xsVar(1), at);
-		xsCall1(application, gIDs.id_remove, desired);
+		piuNextOpRemoveNode(the, application, desired);
 	}
 
 	for (i = 0; i < desiredCount; i++) {
@@ -592,15 +690,102 @@ static uint8_t piuNextTryKeyedReconcile(xsMachine *the, xsSlot session, xsSlot a
 		if (piuNextSameValue(the, current, desired))
 			continue;
 		if (desiredReused[i])
-			xsCall1(application, gIDs.id_remove, desired);
-		if (piuNextIsNullish(the, current))
-			xsCall1(application, gIDs.id_add, desired);
-		else
-			xsCall2(application, gIDs.id_insert, desired, current);
+			piuNextOpRemoveNode(the, application, desired);
+		piuNextOpInsertChild(the, application, desired, current);
 	}
 
 	c_free(used);
 	c_free(desiredReused);
+	return 1;
+}
+
+static uint8_t piuNextTryIndexReconcile(xsMachine *the, xsSlot session, xsSlot application, xsSlot nextElements)
+{
+	xsSlot previousElements;
+	xsSlot at;
+	xsSlot previousElement;
+	xsSlot nextElement;
+	xsSlot previousType;
+	xsSlot nextType;
+	xsSlot child;
+	xsSlot previousProps;
+	xsSlot nextProps;
+	xsSlot none;
+	xsIntegerValue i;
+	xsIntegerValue minLength;
+	xsIntegerValue previousLength;
+	xsIntegerValue nextLength;
+
+	if (!xsmcHas(session, gIDs.id_prevElements))
+		return 0;
+	if (!xsmcHas(application, gIDs.id_content) || !xsmcHas(application, gIDs.id_add) || !xsmcHas(application, gIDs.id_remove))
+		return 0;
+
+	xsmcGet(previousElements, session, gIDs.id_prevElements);
+	if (xsmcTypeOf(previousElements) != xsReferenceType)
+		return 0;
+
+	previousLength = piuNextArrayLength(the, previousElements);
+	nextLength = piuNextArrayLength(the, nextElements);
+	for (i = 0; i < previousLength; i++) {
+		xsmcSetInteger(at, i);
+		xsmcGetAt(previousElement, previousElements, at);
+		if (piuNextNodeHasKey(the, previousElement))
+			return 0;
+		if (!xsmcHas(previousElement, gIDs.id_type))
+			return 0;
+		xsmcGet(previousType, previousElement, gIDs.id_type);
+		if (piuNextIsContainerType(the, previousType))
+			return 0;
+	}
+	for (i = 0; i < nextLength; i++) {
+		xsmcSetInteger(at, i);
+		xsmcGetAt(nextElement, nextElements, at);
+		if (piuNextNodeHasKey(the, nextElement))
+			return 0;
+		if (!xsmcHas(nextElement, gIDs.id_type))
+			return 0;
+		xsmcGet(nextType, nextElement, gIDs.id_type);
+		if (piuNextIsContainerType(the, nextType))
+			return 0;
+	}
+
+	minLength = (previousLength < nextLength) ? previousLength : nextLength;
+	for (i = 0; i < minLength; i++) {
+		xsmcSetInteger(at, i);
+		xsmcGetAt(previousElement, previousElements, at);
+		xsmcGetAt(nextElement, nextElements, at);
+		xsmcGet(previousType, previousElement, gIDs.id_type);
+		xsmcGet(nextType, nextElement, gIDs.id_type);
+		if (!piuNextStringEquals(the, previousType, xsmcToString(nextType)))
+			return 0;
+
+		child = xsCall1(application, gIDs.id_content, xsInteger(i));
+		if (piuNextIsNullish(the, child))
+			return 0;
+		previousProps = piuNextBuildNodeProps(the, previousElement);
+		nextProps = piuNextBuildNodeProps(the, nextElement);
+		piuNextPatchProps(the, child, previousProps, nextProps);
+	}
+
+	for (i = previousLength; i > nextLength; i--) {
+		xsIntegerValue removeIndex = i - 1;
+		child = xsCall1(application, gIDs.id_content, xsInteger(removeIndex));
+		if (piuNextIsNullish(the, child))
+			continue;
+		piuNextOpRemoveNode(the, application, child);
+	}
+
+	xsmcSetUndefined(none);
+	for (i = minLength; i < nextLength; i++) {
+		xsmcSetInteger(at, i);
+		xsmcGetAt(nextElement, nextElements, at);
+		child = piuNextOpCreateNode(the, nextElement);
+		if (piuNextIsNullish(the, child))
+			continue;
+		piuNextOpInsertChild(the, application, child, none);
+	}
+
 	return 1;
 }
 
@@ -668,13 +853,18 @@ static void piuNextRender(xsMachine *the, xsSlot session, xsSlot application, xs
 		piuNextRefreshKeyTables(the, session, application, elementChildren);
 		return;
 	}
+	if (piuNextTryIndexReconcile(the, session, application, elementChildren)) {
+		xsmcSet(session, gIDs.id_prevElements, elementChildren);
+		piuNextRefreshKeyTables(the, session, application, elementChildren);
+		return;
+	}
 
 	xsCall0(application, gIDs.id_empty);
 	length = piuNextArrayLength(the, elementChildren);
 	for (i = 0; i < length; i++) {
 		xsmcSetInteger(at, i);
 		xsmcGetAt(childNode, elementChildren, at);
-		childContent = piuNextCreateContent(the, childNode);
+		childContent = piuNextOpCreateNode(the, childNode);
 		if ((xsmcTypeOf(childContent) == xsUndefinedType) || (xsmcTypeOf(childContent) == xsNullType))
 			continue;
 		xsCall1(application, gIDs.id_add, childContent);
