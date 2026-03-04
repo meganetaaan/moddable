@@ -1,0 +1,46 @@
+/*---
+description: debug tap without reactive updates.
+flags: [async, module]
+---*/
+
+import {} from "piu/MC";
+import Time from "time";
+import { node } from "ir";
+import { mountPiuApplication } from "piu-runtime";
+
+let taps = 0;
+const mounted = mountPiuApplication(() =>
+	node(
+		"application",
+		{},
+		node(
+			"row",
+			{ left: 20, right: 20, top: 20, height: 40, active: true, onTap: () => { taps += 1; } },
+			node("label", { left: 0, right: 0, top: 0, bottom: 0 }, "Tap")
+		)
+	)
+);
+(globalThis).application = mounted.application;
+
+function findPoint(app, target) {
+	for (let y = 0; y < screen.height; y += 2) {
+		for (let x = 0; x < screen.width; x += 2) {
+			if (app.hit(x, y) === target)
+				return { x, y };
+		}
+	}
+	return null;
+}
+
+Promise.resolve().then(async () => {
+	const app = globalThis.application;
+	screen.doIdle();
+	const row = app.first;
+	const point = findPoint(app, row);
+	assert.notSameValue(point, null, "tap point exists");
+	screen.context.onTouchBegan(0, point.x, point.y, Time.ticks);
+	screen.context.onTouchEnded(0, point.x, point.y, Time.ticks);
+	await Promise.resolve();
+	screen.doIdle();
+	assert.sameValue(taps, 1, "tap handler fired once");
+}).then($DONE, $DONE);

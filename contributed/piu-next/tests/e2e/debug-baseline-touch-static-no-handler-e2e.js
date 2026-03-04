@@ -1,0 +1,56 @@
+/*---
+description: debug baseline touch on static nested view.
+flags: [async, module]
+---*/
+
+import {} from "piu/MC";
+import Time from "time";
+
+const mounted = new Application(null, {
+	contents: [
+		new Column(null, {
+			left: 20,
+			right: 20,
+			top: 20,
+			bottom: 20,
+			contents: [
+				new Label(null, { left: 0, right: 0, top: 0, height: 40, string: "Count: 0" }),
+				new Row(null, {
+					left: 0,
+					right: 0,
+					top: 10,
+					height: 40,
+					active: true,
+					contents: [
+						new Label(null, { left: 0, right: 0, top: 0, bottom: 0, string: "Tap" }),
+					],
+				}),
+			],
+		}),
+	],
+});
+(globalThis).application = mounted;
+
+function findPoint(app, target) {
+	for (let y = 0; y < screen.height; y += 2) {
+		for (let x = 0; x < screen.width; x += 2) {
+			if (app.hit(x, y) === target)
+				return { x, y };
+		}
+	}
+	return null;
+}
+
+Promise.resolve().then(async () => {
+	const app = globalThis.application;
+	screen.doIdle();
+	const panel = app.first;
+	const row = panel.first.next;
+	const point = findPoint(app, row);
+	assert.notSameValue(point, null, "tap point exists");
+	screen.context.onTouchBegan(0, point.x, point.y, Time.ticks);
+	screen.context.onTouchEnded(0, point.x, point.y, Time.ticks);
+	await Promise.resolve();
+	screen.doIdle();
+	assert.sameValue(app.first.first.string, "Count: 0", "count unchanged");
+}).then($DONE, $DONE);
