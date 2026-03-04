@@ -210,10 +210,10 @@ class Machine {
 		this.doCommand(`logout`);
 	}
 	doModule(path, wait, source) {
-		let string = `\r\n<module path="${path}" line="${wait ? 1 : 0}"><![CDATA[`;
-		string += source;
-		string += `]]><module/>\r\n`;
-		this.output.write(this.encoder.encode(string));
+		const head = `\r\n<module path="${path}" line="${wait ? 1 : 0}"><![CDATA[`;
+		this.output.write(this.encoder.encode(head));
+		this.output.write(source);
+		this.output.write(this.encoder.encode(`]]></module>\r\n`));
 	}
 	doScript(path, wait, source) {
 		let string = `\r\n<script path="${path}" line="${wait ? 1 : 0}"><![CDATA[`;

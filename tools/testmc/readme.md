@@ -16,6 +16,35 @@ node tools/testmc/mctest.js run --app testmc --root tests/modules --select piu/r
 node tools/testmc/mctest.js rerun --failed ./artifacts/report.json
 ```
 
+### Temporary simulator operation (Linux)
+
+For now, run `testmc` tests as **one test per process** on simulator targets.
+
+Reason:
+- `mcsim` is effectively single-instance in this workflow.
+- Non-module tests may leak globals across sequential runs in one process.
+
+Recommended loop:
+
+```bash
+node tools/testmc/mctest.js list --app testmc --root tests/modules --select 'piu/rgb565le/*' | \
+while IFS= read -r test; do
+	[ -z "$test" ] && continue
+	mcconfig -dn -m -p lin -x 127.0.0.1:5124 -t build || break
+	node tools/testmc/mctest.js run \
+		--app testmc \
+		--root tests/modules \
+		--select "$test" \
+		--host 127.0.0.1 \
+		--port 5124 \
+		--launch "xvfb-run -a mcconfig -dn -m -p lin -x 127.0.0.1:5124 -t xsbug" \
+		--connect-timeout 60000 \
+		--timeout 60000 || break
+done
+```
+
+> **Note**: `mctest.js run --select a,b,c` can work for module-only batches, but single-test execution is the safe default for current simulator operation.
+
 > **Note**: `mctest.js` reuses `tools/xsbug-log/xsbug-machine.js`. Run `npm install` in `tools/xsbug-log` first.
 
 ### Manifests

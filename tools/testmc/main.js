@@ -94,26 +94,41 @@ class Screen extends ChecksumOut {
 	doTouchBegan(id, x, y, ticks) {
 		return new Promise((resolve, reject) => {
 			Timer.set(() => {
-				this.context.onTouchBegan(id, x, y, ticks);
-				this.#promises.push(resolve);
-				this.doIdle();
+				try {
+					this.context.onTouchBegan(id, x, y, ticks);
+					this.#promises.push(resolve);
+					this.doIdle();
+				}
+				catch (error) {
+					reject(error);
+				}
 			});
 		});
 	}
 	doTouchMoved(id, x, y, ticks) {
 		return new Promise((resolve, reject) => {
 			Timer.set(() => {
-				this.context.onTouchMoved(id, x, y, ticks);
-				this.#promises.push(resolve);
+				try {
+					this.context.onTouchMoved(id, x, y, ticks);
+					this.#promises.push(resolve);
+				}
+				catch (error) {
+					reject(error);
+				}
 			});
 		});
 	}
 	doTouchEnded(id, x, y, ticks) {
 		return new Promise((resolve, reject) => {
 			Timer.set(() => {
-				this.context.onTouchEnded(id, x, y, ticks);
-				this.#promises.push(resolve);
-				this.doIdle();
+				try {
+					this.context.onTouchEnded(id, x, y, ticks);
+					this.#promises.push(resolve);
+					this.doIdle();
+				}
+				catch (error) {
+					reject(error);
+				}
 			});
 		});
 	}

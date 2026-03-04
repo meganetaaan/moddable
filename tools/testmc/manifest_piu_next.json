@@ -5,7 +5,8 @@
 	],
 	"modules": {
 		"*": [
-			"$(MODDABLE)/contributed/piu-next/src/*"
+			"$(MODDABLE)/contributed/piu-next/src/*",
+			"$(MODDABLE)/contributed/piu-next/native/*"
 		],
 		"counterMain": "$(MODDABLE)/contributed/piu-next/examples/counter-app/src/main"
 	},

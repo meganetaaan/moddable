@@ -20,9 +20,6 @@
 		"$(MODDABLE)/modules/piu/MC/colorcell/manifest.json",
 		"$(MODDABLE)/modules/io/flash/manifest.json",
 		"$(MODDABLE)/modules/io/storage/manifest.json",
-		"$(MODDABLE)/modules/io/audioout/manifest.json",
-		"$(MODDABLE)/modules/io/audioin/manifest.json",
-		"$(MODDABLE)/modules/io/update/manifest.json",
 		"$(MODDABLE)/modules/io/flash/manifest.json"
 	],
 	"modules": {
@@ -41,16 +38,24 @@
 		"commodetto/*": "$(MODULES)/commodetto/commodettoPocoBlit",
 		"commodetto/cfe": "$(MODULES)/commodetto/cfeBMF",
 		"commodetto/checksumOut": "./commodettoChecksumOut",
-        "piu/Sound": "$(MODULES)/piu/MC/piuSound"
+		"piu/Sound": "$(MODULES)/piu/MC/piuSound",
+		"pomodoroMain": "$(MODDABLE)/contributed/pomodoro-timer/src/main",
+		"PomodoroApp": "$(MODDABLE)/contributed/pomodoro-timer/src/PomodoroApp",
+		"PomodoroModel": "$(MODDABLE)/contributed/pomodoro-timer/src/PomodoroModel"
 	},
 	"preload": [
 		"commodetto/*",
 		"piu/Sound"
 	],
-	"platforms": {
-		"mac": {
-			"config": {
-				"flash": {
+		"platforms": {
+			"mac": {
+				"include": [
+					"$(MODDABLE)/modules/io/update/manifest.json",
+					"$(MODDABLE)/modules/io/audioout/manifest.json",
+					"$(MODDABLE)/modules/io/audioin/manifest.json"
+				],
+				"config": {
+					"flash": {
 					"xs_test": { "blocks":10, "blockLength":1024 },
 					"running": { "blocks":20, "blockLength":1024, "bytes":[ 249 ] },
 					"nextota": { "blocks":10, "blockLength":1024 }
@@ -148,13 +153,16 @@
 				]
 			}
 		},
-		"esp32": {
-			"include": [
-				"./manifest_net.json",
-				"./manifest_ble.json",
-				"$(MODULES)/base/worker/manifest.json",
-				"$(MODULES)/files/flash/manifest.json",
-				"$(MODDABLE)/modules/pins/i2s/manifest.json"
+			"esp32": {
+				"include": [
+					"./manifest_net.json",
+					"./manifest_ble.json",
+					"$(MODDABLE)/modules/io/update/manifest.json",
+					"$(MODDABLE)/modules/io/audioout/manifest.json",
+					"$(MODDABLE)/modules/io/audioin/manifest.json",
+					"$(MODULES)/base/worker/manifest.json",
+					"$(MODULES)/files/flash/manifest.json",
+					"$(MODDABLE)/modules/pins/i2s/manifest.json"
 			],
 			"defines": {
 				"audioOut": {
@@ -193,13 +201,16 @@
 				]
 			}
 		},
-		"esp32/moddable_six": {
-			"include": [
-				"./manifest_net.json",
-				"./manifest_ble.json",
-				"$(MODULES)/base/worker/manifest.json",
-				"$(MODULES)/files/flash/manifest.json",
-				"$(MODDABLE)/modules/pins/i2s/manifest.json"
+			"esp32/moddable_six": {
+				"include": [
+					"./manifest_net.json",
+					"./manifest_ble.json",
+					"$(MODDABLE)/modules/io/update/manifest.json",
+					"$(MODDABLE)/modules/io/audioout/manifest.json",
+					"$(MODDABLE)/modules/io/audioin/manifest.json",
+					"$(MODULES)/base/worker/manifest.json",
+					"$(MODULES)/files/flash/manifest.json",
+					"$(MODDABLE)/modules/pins/i2s/manifest.json"
 			],
 			"defines": {
 				"audioOut": {
@@ -303,6 +314,9 @@
 	"resources": {
 		"*-mask": [
 			"$(MODDABLE)/examples/assets/fonts/OpenSans-Regular-16",
+			"$(MODDABLE)/examples/assets/fonts/OpenSans-Regular-24",
+			"$(MODDABLE)/examples/assets/fonts/OpenSans-Regular-52",
+			"$(MODDABLE)/examples/assets/fonts/OpenSans-Semibold-20",
             "./assets/circleish"
 		],
 		"*" : [
