@@ -19,6 +19,24 @@ mcconfig -dl -m -p esp32/moddable_two -t xsbug
 
 Use `-dl` for terminal logging through `xsbug-log`.
 
+## Simulator Triage Rule for testmc
+
+When reproducing `testmc` failures on Linux simulator, run one test per process.
+
+```bash
+PORT=5124
+mcconfig -dn -m -p lin -x 127.0.0.1:$PORT -t build
+node tools/testmc/mctest.js run \
+  --app testmc \
+  --root tests/modules \
+  --select piu/rgb565le/examples/balls.js \
+  --host 127.0.0.1 \
+  --port "$PORT" \
+  --launch "xvfb-run -a mcconfig -dn -m -p lin -x 127.0.0.1:$PORT -t xsbug"
+```
+
+Avoid batching non-module tests in a single run when triaging log signatures.
+
 ## Capture Logs to File for Repeatable Triage
 
 Capture runtime logs and filter them with `rg`.

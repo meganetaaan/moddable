@@ -20,6 +20,36 @@ mcconfig manifests/manifest.e2e.json -dl -m -p esp32/moddable_two -t xsbug
 
 Use `-dl` for runtime-focused logs on terminal.
 
+## Temporary Simulator Rule (Current)
+
+When running `testmc` on Linux simulator (`lin` + `mcsim`), use **one test per run**.
+
+Reason:
+1. Current workflow is effectively single-instance for `mcsim`.
+2. Non-module tests can leak globals if batched in one process.
+
+Safe pattern:
+
+```bash
+PORT=5124
+mcconfig -dn -m -p lin -x 127.0.0.1:$PORT -t build
+node tools/testmc/mctest.js list --app testmc --root tests/modules --select 'piu/rgb565le/*' | \
+while IFS= read -r test; do
+	[ -z "$test" ] && continue
+	node tools/testmc/mctest.js run \
+		--app testmc \
+		--root tests/modules \
+		--select "$test" \
+		--host 127.0.0.1 \
+		--port "$PORT" \
+		--launch "xvfb-run -a mcconfig -dn -m -p lin -x 127.0.0.1:$PORT -t xsbug" \
+		--connect-timeout 60000 \
+		--timeout 60000 || break
+done
+```
+
+Use `-dn` so simulator connects to the headless runner directly without launching GUI `xsbug`.
+
 ## Validate Scenario Checksum
 
 Use `screen.checkImage(...)` in scenario tests and compare with registered checksum.
