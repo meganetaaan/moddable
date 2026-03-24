@@ -1,0 +1,31 @@
+{
+	"include": [
+		"$(MODDABLE)/examples/manifest_base.json",
+		"$(MODDABLE)/examples/manifest_piu.json",
+		"../../manifest.json"
+	],
+	"modules": {
+		"*": [
+			"./main"
+		]
+	},
+	"platforms": {
+		"esp32/m5stack_cores3": {
+			"creation": {
+				"static": 0,
+				"chunk": {
+					"initial": 131072,
+					"incremental": 0
+				},
+				"heap": {
+					"initial": 8192,
+					"incremental": 0
+				},
+				"stack": 1024
+			}
+		},
+		"...": {
+			"error": "Use esp32/m5stack_cores3"
+		}
+	}
+}

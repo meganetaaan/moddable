@@ -1,0 +1,18 @@
+export const NVS_KEYS = Object.freeze({
+	BOOT_COUNT: "boot_count",
+	WIFI_SSID: "wifi_ssid",
+	WIFI_PASS: "wifi_pass",
+	LLM_BACKEND: "llm_backend",
+	API_KEY: "api_key",
+	LLM_MODEL: "llm_model",
+	LLM_API_URL: "llm_api_url",
+	TG_TOKEN: "tg_token",
+	TG_CHAT_ID: "tg_chat_id",
+	TG_CHAT_IDS: "tg_chat_ids",
+	TG_OFFSET: "tg_offset",
+	TIMEZONE: "timezone",
+	PERSONA: "persona",
+	RL_DAILY: "rl_daily",
+	RL_DAY: "rl_day",
+	RL_YEAR: "rl_year",
+});

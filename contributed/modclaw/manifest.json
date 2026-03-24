@@ -1,0 +1,9 @@
+{
+	"include": [
+		"$(MODDABLE)/modules/network/http/manifest.json",
+		"$(MODDABLE)/modules/files/preference/manifest.json"
+	],
+	"modules": {
+		"zclaw/*": "./modules/*"
+	}
+}
