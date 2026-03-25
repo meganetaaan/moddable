@@ -4,7 +4,8 @@
 	},
 	"modules": {
 		"*": [
-			"$(TYPINGS)/*", "$(TYPINGS)/ble/*"
+			"$(TYPINGS)/*", "$(TYPINGS)/ble/*",
+			"$(TYPINGS)/web/*"
 		],
 		"commodetto/*": [
 			"$(TYPINGS)/commodetto/*"
@@ -63,8 +64,7 @@
 		],
 		"mqtt/js": [
 			"$(TYPINGS)/mqtt/js"
-		],
-		"web/*": "$(TYPINGS)/web/*"
+		]
 	}, 
 	"platforms": {
 		"pebble": {
@@ -85,6 +85,7 @@
 							"$(TYPINGS)/pebble/piu",
 							"$(TYPINGS)/pebble/poco",
 							"$(TYPINGS)/easing",
+							"$(TYPINGS)/piu/MC",
 							"$(TYPINGS)/piu/MC-types"
 						]
 					}
