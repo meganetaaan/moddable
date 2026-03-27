@@ -33,6 +33,8 @@ and the public `modules/*` surface. Actual device I/O uses the live adapters und
 `modules/liveApp.js`, `modules/requestTransport.js`, and `modules/wifiService.js`.
 `modclaw` now uses the ECMA-419 TCP/HTTP/TLS stack on every target; the older
 `Request`/`SecureSocket` path is no longer used.
+The OpenAI backend now uses the `Responses API`; OpenRouter and Ollama remain on
+OpenAI-compatible `chat/completions`.
 
 M5Stack CoreS3 sample app:
 

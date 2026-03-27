@@ -30,7 +30,7 @@ assert.sameValue(config.usesOpenAIFormat, false);
 
 config = resolveBackendConfig({backend: "mystery_backend"});
 assert.sameValue(config.backend, LLM_BACKENDS.OPENAI);
-assert.sameValue(config.apiUrl, "https://api.openai.com/v1/chat/completions");
+assert.sameValue(config.apiUrl, "https://api.openai.com/v1/responses");
 assert.sameValue(config.model, "gpt-5.4");
 assert.sameValue(config.usesOpenAIFormat, true);
 
@@ -55,11 +55,13 @@ request = JSON.parse(buildRequest({
 	tools,
 }));
 assert.sameValue(request.model, "gpt-5.4");
-assert.sameValue(request.max_completion_tokens, 1024);
-assert.sameValue(request.max_tokens, undefined);
-assert.sameValue(request.messages.length, 2);
-assert.sameValue(request.messages[0].role, "system");
+assert.sameValue(request.max_output_tokens, 1024);
+assert.sameValue(request.instructions, "sys prompt");
+assert.sameValue(request.messages, undefined);
+assert.sameValue(request.input.length, 1);
+assert.sameValue(request.input[0].role, "user");
 assert.sameValue(request.tools[0].type, "function");
+assert.sameValue(request.tools[0].name, "gpio_write");
 
 request = JSON.parse(buildRequest({
 	backend: LLM_BACKENDS.OPENROUTER,
@@ -88,9 +90,37 @@ request = JSON.parse(buildRequest({
 	],
 	tools,
 }));
-assert.sameValue(request.messages.length, 2);
-assert.sameValue(request.messages[0].role, "system");
-assert.sameValue(request.messages[1].content, "remember my name is Ted");
+assert.sameValue(request.input.length, 1);
+assert.sameValue(request.input[0].role, "user");
+assert.sameValue(request.input[0].content, "remember my name is Ted");
+
+request = JSON.parse(buildRequest({
+	backend: LLM_BACKENDS.OPENAI,
+	systemPrompt: "sys prompt",
+	history: [
+		{
+			role: "assistant",
+			content: {key: "name", value: "alice"},
+			isToolUse: true,
+			toolId: "call_123",
+			toolName: "memory_set",
+		},
+		{
+			role: "user",
+			content: "stored",
+			isToolResult: true,
+			toolId: "call_123",
+		},
+	],
+	tools,
+}));
+assert.sameValue(request.input.length, 2);
+assert.sameValue(request.input[0].type, "function_call");
+assert.sameValue(request.input[0].call_id, "call_123");
+assert.sameValue(request.input[0].arguments, "{\"key\":\"name\",\"value\":\"alice\"}");
+assert.sameValue(request.input[1].type, "function_call_output");
+assert.sameValue(request.input[1].call_id, "call_123");
+assert.sameValue(request.input[1].output, "stored");
 
 let parsed = parseResponse({
 	backend: LLM_BACKENDS.ANTHROPIC,
@@ -103,12 +133,20 @@ assert.sameValue(parsed.toolInput.state, 1);
 
 parsed = parseResponse({
 	backend: LLM_BACKENDS.OPENAI,
-	responseText: "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":\"call_abc\",\"type\":\"function\",\"function\":{\"name\":\"memory_set\",\"arguments\":\"{\\\"key\\\":\\\"name\\\",\\\"value\\\":\\\"alice\\\"}\"}}]}}]}",
+	responseText: "{\"id\":\"resp_123\",\"output\":[{\"type\":\"function_call\",\"call_id\":\"call_abc\",\"name\":\"memory_set\",\"arguments\":\"{\\\"key\\\":\\\"name\\\",\\\"value\\\":\\\"alice\\\"}\"}]}",
 });
 assert.sameValue(parsed.toolName, "memory_set");
 assert.sameValue(parsed.toolId, "call_abc");
 assert.sameValue(parsed.toolInput.key, "name");
 assert.sameValue(parsed.toolInput.value, "alice");
+
+parsed = parseResponse({
+	backend: LLM_BACKENDS.OPENAI,
+	responseText: "{\"id\":\"resp_124\",\"output\":[{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"hello from responses\"}]}]}",
+});
+assert.sameValue(parsed.text, "hello from responses");
+assert.sameValue(parsed.toolName, "");
+assert.sameValue(parsed.toolId, "");
 
 parsed = parseResponse({
 	backend: LLM_BACKENDS.OPENAI,

@@ -154,14 +154,18 @@ let started = app.start();
 assert.sameValue(started.telegramConfigured, true);
 await timer.runNextTask();
 
-transport.push({ok: true, text: JSON.stringify({choices: [{message: {content: "channel reply"}}]})});
+transport.push({ok: true, text: JSON.stringify({
+	output: [{type: "message", role: "assistant", content: [{type: "output_text", text: "channel reply"}]}],
+})});
 await app.processChannelMessage("hello");
 assert.sameValue(lines[0], "channel reply");
 assert(transport.requests[1].url.includes("openai.com"));
 
 app.cronScheduler.create({type: "once", delayMinutes: 1, action: "cron hello"}, clock.nowMs());
 clock.value = 61_000;
-transport.push({ok: true, text: JSON.stringify({choices: [{message: {content: "cron reply"}}]})});
+transport.push({ok: true, text: JSON.stringify({
+	output: [{type: "message", role: "assistant", content: [{type: "output_text", text: "cron reply"}]}],
+})});
 const due = await app.runCronDue(clock.nowMs());
 assert.sameValue(due.length, 1);
 assert.sameValue(lines[1], "cron reply");

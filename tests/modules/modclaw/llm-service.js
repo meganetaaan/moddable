@@ -33,7 +33,7 @@ assert.sameValue(service.init().backend, "openai");
 let response = await service.request("{\"ping\":1}");
 assert.sameValue(response.ok, true);
 assert.sameValue(response.responseText, "{\"ok\":true}");
-assert.sameValue(transport.requests[0].url, "https://api.openai.com/v1/chat/completions");
+assert.sameValue(transport.requests[0].url, "https://api.openai.com/v1/responses");
 assert.sameValue(transport.requests[0].headers[0], "Content-Type");
 assert.sameValue(transport.requests[0].headers[2], "Authorization");
 assert.sameValue(transport.requests[0].headers[3], "Bearer sk-openai");

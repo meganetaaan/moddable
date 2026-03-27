@@ -28,6 +28,12 @@ function parseSchema(schemaJson) {
 	return JSON.parse(schemaJson);
 }
 
+function serializeArguments(content) {
+	if ("string" === typeof content)
+		return content;
+	return JSON.stringify(content ?? {});
+}
+
 function toAnthropicMessages(history, userMessage) {
 	const messages = [];
 
@@ -79,7 +85,7 @@ function toOpenAIMessages(history, userMessage, systemPrompt) {
 					type: "function",
 					function: {
 						name: message.toolName,
-						arguments: message.content || "{}",
+						arguments: serializeArguments(message.content),
 					},
 				}],
 			});
@@ -107,6 +113,43 @@ function toOpenAIMessages(history, userMessage, systemPrompt) {
 		messages.push({role: "user", content: userMessage});
 
 	return messages;
+}
+
+function toOpenAIResponsesInput(history, userMessage) {
+	const input = [];
+
+	history.forEach((message, index) => {
+		if (message.isToolUse) {
+			input.push({
+				type: "function_call",
+				call_id: message.toolId ?? "",
+				name: message.toolName ?? "",
+				arguments: serializeArguments(message.content),
+			});
+			return;
+		}
+
+		if (message.isToolResult) {
+			if (!hasPriorToolUse(history, index, message.toolId))
+				return;
+			input.push({
+				type: "function_call_output",
+				call_id: message.toolId,
+				output: message.content ?? "",
+			});
+			return;
+		}
+
+		input.push({
+			role: message.role,
+			content: message.content,
+		});
+	});
+
+	if (userMessage)
+		input.push({role: "user", content: userMessage});
+
+	return input;
 }
 
 function toAnthropicTools(tools) {
@@ -145,6 +188,27 @@ function buildAnthropicRequest(options) {
 function buildOpenAIRequest(options) {
 	const request = {
 		model: options.model,
+		instructions: options.systemPrompt,
+		input: toOpenAIResponsesInput(options.history, options.userMessage),
+		store: false,
+	};
+
+	if (options.tools.length) {
+		request.tools = options.tools.map(tool => ({
+			type: "function",
+			name: tool.name,
+			description: tool.description,
+			parameters: parseSchema(tool.inputSchemaJson),
+		}));
+	}
+
+	request.max_output_tokens = LLM_MAX_TOKENS;
+	return JSON.stringify(request);
+}
+
+function buildOpenAICompatibleRequest(options) {
+	const request = {
+		model: options.model,
 		messages: toOpenAIMessages(options.history, options.userMessage, options.systemPrompt),
 		tools: options.tools.length ? toOpenAITools(options.tools) : undefined,
 	};
@@ -177,6 +241,42 @@ function parseAnthropicResponse(root) {
 }
 
 function parseOpenAIResponse(root) {
+	let text = "";
+	let toolName = "";
+	let toolId = "";
+	let toolInput = null;
+
+	for (const output of root?.output ?? []) {
+		if (!text && output?.type === "message" && output?.role === "assistant") {
+			const parts = [];
+			for (const content of output.content ?? []) {
+				if (content?.type === "output_text" && content?.text)
+					parts.push(content.text);
+				else if (content?.type === "refusal" && content?.refusal)
+					parts.push(content.refusal);
+			}
+			if (parts.length)
+				text = parts.join("\n");
+		}
+
+		if (!toolName && output?.type === "function_call") {
+			toolName = output.name ?? "";
+			toolId = output.call_id ?? output.id ?? "";
+			if ("string" === typeof output.arguments && output.arguments.length) {
+				try {
+					toolInput = JSON.parse(output.arguments);
+				}
+				catch {
+					toolInput = {};
+				}
+			}
+		}
+	}
+
+	return {text, toolName, toolId, toolInput};
+}
+
+function parseOpenAICompatibleResponse(root) {
 	const message = root?.choices?.[0]?.message ?? {};
 	const toolCall = message.tool_calls?.[0];
 	let toolInput = null;
@@ -229,7 +329,9 @@ export function buildRequest(options) {
 
 	return (config.backend === LLM_BACKENDS.ANTHROPIC)
 		? buildAnthropicRequest(requestOptions)
-		: buildOpenAIRequest(requestOptions);
+		: (config.backend === LLM_BACKENDS.OPENAI)
+			? buildOpenAIRequest(requestOptions)
+			: buildOpenAICompatibleRequest(requestOptions);
 }
 
 export function parseResponse(options) {
@@ -246,5 +348,7 @@ export function parseResponse(options) {
 	const backend = normalizeBackend(options.backend);
 	return (backend === LLM_BACKENDS.ANTHROPIC)
 		? parseAnthropicResponse(root)
-		: parseOpenAIResponse(root);
+		: (backend === LLM_BACKENDS.OPENAI)
+			? parseOpenAIResponse(root)
+			: parseOpenAICompatibleResponse(root);
 }

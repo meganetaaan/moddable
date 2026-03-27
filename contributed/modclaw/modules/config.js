@@ -22,7 +22,7 @@ export const LLM_BACKENDS = Object.freeze({
 
 export const LLM_API_URLS = Object.freeze({
 	[LLM_BACKENDS.ANTHROPIC]: "https://api.anthropic.com/v1/messages",
-	[LLM_BACKENDS.OPENAI]: "https://api.openai.com/v1/chat/completions",
+	[LLM_BACKENDS.OPENAI]: "https://api.openai.com/v1/responses",
 	[LLM_BACKENDS.OPENROUTER]: "https://openrouter.ai/api/v1/chat/completions",
 	[LLM_BACKENDS.OLLAMA]: "http://127.0.0.1:11434/v1/chat/completions",
 });

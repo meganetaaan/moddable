@@ -45,6 +45,10 @@ export function openAITokenLimitField(backend, model) {
 	return "max_tokens";
 }
 
+export function usesResponsesAPI(backend) {
+	return backend === BACKENDS.OPENAI;
+}
+
 export function buildAnthropicRequest({
 	model,
 	systemPrompt,
@@ -93,6 +97,60 @@ export function buildAnthropicRequest({
 }
 
 export function buildOpenAIRequest({
+	model,
+	systemPrompt,
+	history = [],
+	userMessage = "",
+	userTools = [],
+}) {
+	const request = {
+		model,
+		instructions: systemPrompt,
+		input: [],
+		store: false,
+		max_output_tokens: LLM_MAX_TOKENS,
+	};
+
+	if (userTools.length) {
+		request.tools = userTools.map(tool => ({
+			type: "function",
+			name: tool.name,
+			description: tool.description,
+			parameters: tool.inputSchema,
+		}));
+	}
+
+	for (let index = 0; index < history.length; index++) {
+		const entry = history[index];
+		if (entry.isToolUse) {
+			request.input.push({
+				type: "function_call",
+				call_id: entry.toolId,
+				name: entry.toolName,
+				arguments: serializeArguments(entry.content),
+			});
+		}
+		else if (entry.isToolResult) {
+			if (!historyHasPriorToolUse(history, index, entry.toolId))
+				continue;
+			request.input.push({
+				type: "function_call_output",
+				call_id: entry.toolId,
+				output: entry.content,
+			});
+		}
+		else {
+			request.input.push({role: entry.role, content: entry.content});
+		}
+	}
+
+	if (userMessage)
+		request.input.push({role: "user", content: userMessage});
+
+	return request;
+}
+
+export function buildOpenAICompatibleRequest({
 	backend = BACKENDS.OPENAI,
 	model,
 	systemPrompt,
@@ -144,9 +202,11 @@ export function buildOpenAIRequest({
 }
 
 export function buildProviderRequest(options) {
-	return isOpenAIFormat(options.backend)
-		? buildOpenAIRequest(options)
-		: buildAnthropicRequest(options);
+	return options.backend === BACKENDS.ANTHROPIC
+		? buildAnthropicRequest(options)
+		: usesResponsesAPI(options.backend)
+			? buildOpenAIRequest(options)
+			: buildOpenAICompatibleRequest(options);
 }
 
 export function parseAnthropicResponse(response) {
@@ -164,6 +224,39 @@ export function parseAnthropicResponse(response) {
 }
 
 export function parseOpenAIResponse(response) {
+	const result = {text: "", toolName: "", toolId: "", toolInput: null};
+
+	for (const output of response?.output ?? []) {
+		if (!result.text && output?.type === "message" && output?.role === "assistant") {
+			const parts = [];
+			for (const content of output.content ?? []) {
+				if (content?.type === "output_text" && content?.text)
+					parts.push(content.text);
+				else if (content?.type === "refusal" && content?.refusal)
+					parts.push(content.refusal);
+			}
+			if (parts.length)
+				result.text = parts.join("\n");
+		}
+
+		if (!result.toolName && output?.type === "function_call") {
+			result.toolName = output.name ?? "";
+			result.toolId = output.call_id ?? output.id ?? "";
+			if ("string" === typeof output.arguments) {
+				try {
+					result.toolInput = JSON.parse(output.arguments);
+				}
+				catch {
+					result.toolInput = {};
+				}
+			}
+		}
+	}
+
+	return result;
+}
+
+export function parseOpenAICompatibleResponse(response) {
 	const result = {text: "", toolName: "", toolId: "", toolInput: null};
 	const message = response?.choices?.[0]?.message;
 	if (!message)
@@ -190,7 +283,9 @@ export function parseOpenAIResponse(response) {
 }
 
 export function parseProviderResponse(backend, response) {
-	return isOpenAIFormat(backend)
-		? parseOpenAIResponse(response)
-		: parseAnthropicResponse(response);
+	return backend === BACKENDS.ANTHROPIC
+		? parseAnthropicResponse(response)
+		: usesResponsesAPI(backend)
+			? parseOpenAIResponse(response)
+			: parseOpenAICompatibleResponse(response);
 }
