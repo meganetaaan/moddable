@@ -3,6 +3,10 @@
 This directory contains the current Moddable port of `modclaw`, split into a pure-JS core,
 async service adapters, and a live Moddable runtime entrypoint.
 
+Japanese implementation notes comparing the upstream `zclaw` design and this Moddable port:
+
+- [`ARCHITECTURE.ja.md`](/home/sskw/.local/share/moddable/contributed/modclaw/ARCHITECTURE.ja.md)
+
 Implemented so far:
 
 - synchronous agent runtime and conversation history for xst
