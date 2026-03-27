@@ -4,6 +4,7 @@ export const TELEGRAM_POLL_TIMEOUT = 30;
 export const TELEGRAM_POLL_TIMEOUT_OPENROUTER = 8;
 export const TELEGRAM_POLL_TIMEOUT_ESP32 = 5;
 export const CRON_MAX_ENTRIES = 16;
+export const SLACK_MAX_ALLOWED_USER_IDS = 4;
 export const CRON_MAX_ACTION_LENGTH = 256;
 export const TIMEZONE_MAX_LENGTH = 64;
 export const DEFAULT_TIMEZONE = Object.freeze({
@@ -67,6 +68,9 @@ export const NVS_KEYS = Object.freeze({
 	TG_CHAT_ID: "tg_chat_id",
 	TG_CHAT_IDS: "tg_chat_ids",
 	TG_OFFSET: "tg_offset",
+	SLACK_TOKEN: "slack_token",
+	SLACK_USER_IDS: "slack_user_ids",
+	SLACK_STATE: "slack_state",
 	TIMEZONE: "timezone",
 	PERSONA: "persona",
 	RL_DAILY: "rl_daily",
@@ -79,6 +83,8 @@ export const SENSITIVE_KEYS = Object.freeze([
 	NVS_KEYS.TG_TOKEN,
 	NVS_KEYS.TG_CHAT_ID,
 	NVS_KEYS.TG_CHAT_IDS,
+	NVS_KEYS.SLACK_TOKEN,
+	NVS_KEYS.SLACK_USER_IDS,
 	NVS_KEYS.WIFI_PASS,
 	NVS_KEYS.LLM_BACKEND,
 	NVS_KEYS.LLM_MODEL,

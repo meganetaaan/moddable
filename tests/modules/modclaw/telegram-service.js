@@ -3,9 +3,9 @@ description:
 flags: [module, async]
 ---*/
 
-import {HttpGate} from "../../../contributed/zclaw/modules/httpGate.js";
-import {NVS_KEYS} from "../../../contributed/zclaw/modules/config.js";
-import {TelegramService} from "../../../contributed/zclaw/modules/telegramService.js";
+import {HttpGate} from "../../../contributed/modclaw/modules/httpGate.js";
+import {NVS_KEYS} from "../../../contributed/modclaw/modules/config.js";
+import {TelegramService} from "../../../contributed/modclaw/modules/telegramService.js";
 
 class FakeTransport {
 	constructor() {

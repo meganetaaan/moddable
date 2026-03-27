@@ -6,7 +6,7 @@ flags: [module]
 import {
 	LocalAdminAction,
 	LocalAdminController,
-} from "../../../contributed/zclaw/modules/localAdmin.js";
+} from "../../../contributed/modclaw/modules/localAdmin.js";
 
 const admin = new LocalAdminController({
 	bootGuard: {getPersistedCount() { return 3; }},

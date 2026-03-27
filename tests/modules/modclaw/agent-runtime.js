@@ -3,8 +3,8 @@ description:
 flags: [module]
 ---*/
 
-import {AgentRuntime} from "../../../contributed/zclaw/modules/agentRuntime.js";
-import {LocalAdminController, LocalAdminAction} from "../../../contributed/zclaw/modules/localAdmin.js";
+import {AgentRuntime} from "../../../contributed/modclaw/modules/agentRuntime.js";
+import {LocalAdminController, LocalAdminAction} from "../../../contributed/modclaw/modules/localAdmin.js";
 
 class FakeClock {
 	constructor(nowMs = 0) {
@@ -69,12 +69,16 @@ class FakeOutputs {
 	constructor() {
 		this.channel = [];
 		this.telegram = [];
+		this.slack = [];
 	}
 	sendChannel(text) {
 		this.channel.push(text);
 	}
 	sendTelegram(text, chatId) {
 		this.telegram.push({text, chatId});
+	}
+	sendSlack(text, conversationId) {
+		this.slack.push({text, conversationId});
 	}
 }
 
@@ -168,7 +172,7 @@ assert.sameValue(2000, env.clock.delays[0]);
 assert.sameValue(4000, env.clock.delays[1]);
 assert.sameValue(1, env.rateLimit.recordCount);
 assert.sameValue("retry succeeded", env.outputs.channel[0]);
-assert.sameValue("retry succeeded", env.outputs.telegram[0].text);
+assert.sameValue(0, env.outputs.telegram.length);
 
 env = createRuntime();
 env.rateLimit.allow = false;
@@ -281,6 +285,16 @@ assert.sameValue("targeted reply", env.outputs.telegram[0].text);
 assert.sameValue(-100222333444, env.outputs.telegram[0].chatId);
 assert.sameValue(1, env.telegramControl.pauseCalls);
 assert.sameValue(1, env.telegramControl.resumeCalls);
+
+env = createRuntime();
+env.llm.push(true, JSON.stringify({text: "slack reply"}));
+env.runtime.processMessage("hello", {
+	source: "slack",
+	replyTarget: {transport: "slack", conversationId: "D123456", userId: "U123456"},
+});
+assert.sameValue("slack reply", env.outputs.slack[0].text);
+assert.sameValue("D123456", env.outputs.slack[0].conversationId);
+assert.sameValue(0, env.outputs.telegram.length);
 
 env = createRuntime();
 env.runtime.processMessage("/settings");

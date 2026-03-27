@@ -3,7 +3,7 @@ description:
 flags: [module]
 ---*/
 
-import {PreferenceMap} from "../../../contributed/zclaw/modules/preferenceMap.js";
+import {PreferenceMap} from "../../../contributed/modclaw/modules/preferenceMap.js";
 
 class FakePreference {
 	constructor() {

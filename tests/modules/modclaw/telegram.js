@@ -10,8 +10,8 @@ import {
 	resolveTargetChatId,
 	pollTimeoutForBackend,
 	extractMaxUpdateId,
-} from "../../../contributed/zclaw/modules/telegram.js";
-import {LLM_BACKENDS} from "../../../contributed/zclaw/modules/config.js";
+} from "../../../contributed/modclaw/modules/telegram.js";
+import {LLM_BACKENDS} from "../../../contributed/modclaw/modules/config.js";
 
 assert.sameValue(extractBotId("8291539104:AAGxpPliHXAghCqdmIlQwPMwcrF-4ibBpgk"), "8291539104");
 assert.sameValue(extractBotId("8291539104AAGxpPliHXAghCqdmIlQwPMwcrF-4ibBpgk"), null);

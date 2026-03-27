@@ -30,6 +30,10 @@ import Parser from "dns/parser";
 import Serializer from "dns/serializer";
 import Timer from "timer";
 
+function traceDNS419(message) {
+	trace(`zclaw dns419 ${message}\n`);
+}
+
 class Resolver {
 	#socket;
 	#requests = [];
@@ -50,6 +54,7 @@ class Resolver {
 		let {onResolved, onError, host} = options;
 		if (!host || (!onResolved && !onError) || !this.#UDP)
 			throw new Error;
+		traceDNS419(`resolve host=${host}`);
 
 		host = host.toString();
 		if ("localhost" === host)
@@ -75,6 +80,7 @@ class Resolver {
 		this.#timer ??= Timer.set(() => this.#task(), 0, 1000);
 	} 
 	#send(request) {
+		traceDNS419(`send host=${request.host} state=${request.state}`);
 		const packet = new Serializer({query: true, recursionDesired: true, opcode: DNS.OPCODE.QUERY, id: request.id});
 		packet.add(DNS.SECTION.QUESTION, request.host, DNS.RR.A, DNS.CLASS.IN);
 
@@ -97,6 +103,7 @@ class Resolver {
 				this.#socket.write(packet.build(), "224.0.0.251", 5353);
 		}
 		catch {
+			traceDNS419(`send_error host=${request.host}`);
 			if (!this.#timer) {
 				this.#remove(request);
 				request.onError?.call(this, request.host);
@@ -104,6 +111,7 @@ class Resolver {
 		}
 	}
 	#receive(buffer) {
+		traceDNS419(`receive length=${buffer?.byteLength ?? 0}`);
 		const packet = new Parser(buffer);
 		const question = packet.question(0);
 		if (question && (DNS.CLASS.IN !== question.qclass))
@@ -148,6 +156,7 @@ class Resolver {
 		}
 	}
 	#task() {
+		traceDNS419(`task pending=${this.#requests.length}`);
 		for (let i = 0, requests = this.#requests, servers = this.#servers; i < requests.length; i++) {
 			const request = requests[i];
 			if (request.isAddress) {

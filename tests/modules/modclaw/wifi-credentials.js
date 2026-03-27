@@ -6,11 +6,11 @@ flags: [module]
 import {
 	WIFI_STA_PASS_MAX_BYTES,
 	WIFI_STA_SSID_MAX_BYTES,
-} from "../../../contributed/zclaw/modules/config.js";
+} from "../../../contributed/modclaw/modules/config.js";
 import {
 	copyWiFiCredentialsToSTAConfig,
 	validateWiFiCredentials,
-} from "../../../contributed/zclaw/modules/wifiCredentials.js";
+} from "../../../contributed/modclaw/modules/wifiCredentials.js";
 
 const maxSSID = "s".repeat(WIFI_STA_SSID_MAX_BYTES);
 const maxPass = "p".repeat(WIFI_STA_PASS_MAX_BYTES);

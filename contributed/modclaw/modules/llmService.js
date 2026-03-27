@@ -6,6 +6,10 @@ const OPENROUTER_REFERER = "https://github.com/tnm/zclaw";
 const OPENROUTER_TITLE = "zclaw";
 const ANTHROPIC_VERSION = "2023-06-01";
 
+function traceLLM(message) {
+	trace(`zclaw llm ${message}\n`);
+}
+
 function backendRequiresApiKey(backend) {
 	return backend !== LLM_BACKENDS.OLLAMA;
 }
@@ -100,17 +104,24 @@ export class LLMService {
 		if (!this.transport?.requestText)
 			return {ok: false, responseText: ""};
 
+		traceLLM(`request backend=${config.backend} model=${config.model} url=${config.apiUrl}`);
+
 		const perform = async () => normalizeTransportResponse(await this.transport.requestText({
 			url: config.apiUrl,
 			method: "POST",
 			headers: buildHeaders(config),
 			body: requestBody,
+			secure: {
+				applicationLayerProtocolNegotiation: "http/1.1",
+			},
 		}));
 
 		const result = this.httpGate
 			? await this.httpGate.runExclusive("llm", {}, perform)
 			: {ok: true, skipped: false, value: await perform()};
 		const response = result.value ?? {ok: false, text: ""};
+		const preview = String(response.text ?? "").slice(0, 160).replace(/\s+/g, " ");
+		traceLLM(`response ok=${response.ok === true ? "yes" : "no"} status=${response.status ?? 0} body=${preview}`);
 
 		return {
 			ok: response.ok === true,

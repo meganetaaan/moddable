@@ -10,7 +10,7 @@ import {
 	trimAsciiWhitespace,
 	validateDailyTime,
 	validatePeriodicInterval,
-} from "../../../contributed/zclaw/modules/cron.js";
+} from "../../../contributed/modclaw/modules/cron.js";
 
 assert(validatePeriodicInterval(1));
 assert(validatePeriodicInterval(1440));

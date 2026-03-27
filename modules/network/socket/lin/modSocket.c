@@ -38,6 +38,10 @@
 	#define SOMAXCONN 128
 #endif
 
+#ifndef MSG_NOSIGNAL
+	#define MSG_NOSIGNAL 0
+#endif
+
 #define kTCP (0)
 #define kUDP (1)
 #define kRAW (2)
@@ -99,6 +103,7 @@ static gboolean socketServiceTimerCallback(gpointer data);
 static void resolverCallback(GObject *source_object, GAsyncResult *result, gpointer user_data);
 
 static void socketConnected(void *the, void *refcon, uint8_t *message, uint16_t messageLength);
+static void socketDisconnected(void *the, void *refcon, uint8_t *message, uint16_t messageLength);
 static void socketReadable(void *the, void *refcon, uint8_t *message, uint16_t messageLength);
 static void socketWritable(void *the, void *refcon, uint8_t *message, uint16_t messageLength);
 static void listenerConnected(void *the, void *refcon, uint8_t *message, uint16_t messageLength);
@@ -300,6 +305,23 @@ void socketConnected(void *the, void *refcon, uint8_t *message, uint16_t message
 	
 	socketDownUseCount(the, xss);
 }
+
+void socketDisconnected(void *the, void *refcon, uint8_t *message, uint16_t messageLength)
+{
+	xsSocket xss = (xsSocket)refcon;
+
+	if (xss->done)
+		return;
+
+	socketUpUseCount(the, xss);
+
+	xsBeginHost(the);
+		xsCall1(xss->obj, xsID_callback, xsInteger(kSocketMsgDisconnect));
+	xsEndHost(the);
+
+	socketDownUseCount(the, xss);
+	doDestructor(xss);
+}
 						
 void socketReadable(void *the, void *refcon, uint8_t *message, uint16_t messageLength)
 {
@@ -413,7 +435,7 @@ gboolean socketServiceTimerCallback(gpointer data)
 		if (xss->done)
 			continue;
 		xsss[count] = xss;
-		FD_SET(xss->skt, (!xss->connected || xss->unreportedSent) ? &wfds : &rfds);
+		FD_SET(xss->skt, (!xss->connected || xss->writeBytes || xss->unreportedSent) ? &wfds : &rfds);
 		if (xss->skt > max)
 			max = xss->skt;
 		if (++count == kMaxSockets)
@@ -427,12 +449,24 @@ gboolean socketServiceTimerCallback(gpointer data)
 				xsSocket xss = xsss[i];
 				if (FD_ISSET(xss->skt, &wfds)) {
 					if (!xss->connected) {
-						xss->connected = true;
-						modMessagePostToMachine(xss->the, NULL, 0, socketConnected, xss);
+						int error = 0;
+						socklen_t length = sizeof(error);
+						if ((0 == getsockopt(xss->skt, SOL_SOCKET, SO_ERROR, &error, &length)) && (0 == error)) {
+							xss->connected = true;
+							modMessagePostToMachine(xss->the, NULL, 0, socketConnected, xss);
+						}
+						else
+							modMessagePostToMachine(xss->the, NULL, 0, socketDisconnected, xss);
 					}
-					else if (0 != xss->unreportedSent) {
+					else {
+						if (xss->writeBytes && doFlushWrite(xss)) {
+							modMessagePostToMachine(xss->the, NULL, 0, socketDisconnected, xss);
+							continue;
+						}
+						if (0 != xss->unreportedSent) {
 						xss->unreportedSent = 0;
 						modMessagePostToMachine(xss->the, NULL, 0, socketWritable, xss);
+						}
 					}
 				}
 				if (FD_ISSET(xss->skt, &rfds)) {
@@ -752,18 +786,18 @@ int doFlushWrite(xsSocket xss)
 {
 	int ret;
 
-	ret = send(xss->skt, (char*)xss->writeBuf, xss->writeBytes, 0);
+	ret = send(xss->skt, (char*)xss->writeBuf, xss->writeBytes, MSG_NOSIGNAL);
 	if (ret < 0) {
+		if ((EAGAIN == errno) || (EWOULDBLOCK == errno) || (EINTR == errno))
+			return 0;
 		return -1;
 	}
 
 	modInstrumentationAdjust(NetworkBytesWritten, ret);
 
 	if (ret > 0) {
-		if (ret < xss->writeBytes) {
-			xss->writeBytes -= ret;	
-			return -1;
-		}
+		if (ret < xss->writeBytes)
+			c_memmove(xss->writeBuf, xss->writeBuf + ret, xss->writeBytes - ret);
 		xss->writeBytes -= ret;
 		xss->unreportedSent += ret;
 	}
@@ -893,5 +927,4 @@ int modMessagePostToMachine(xsMachine *the, uint8_t *message, uint16_t messageLe
 
 	return 0;
 }
-
 

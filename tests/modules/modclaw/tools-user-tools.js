@@ -9,8 +9,8 @@ import {
 	buildOpenAIToolDefinitions,
 	getBuiltinTool,
 	hasBuiltinTool,
-} from "../../../contributed/zclaw/core/tools.js";
-import {UserToolRegistry, userToolNameIsValid} from "../../../contributed/zclaw/core/userTools.js";
+} from "../../../contributed/modclaw/core/tools.js";
+import {UserToolRegistry, userToolNameIsValid} from "../../../contributed/modclaw/core/userTools.js";
 
 assert(BUILTIN_TOOLS.length > 0);
 assert(hasBuiltinTool("gpio_write"));

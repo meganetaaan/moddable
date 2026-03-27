@@ -3,7 +3,7 @@ description:
 flags: [module]
 ---*/
 
-import {isSensitiveKey, isUserKey} from "../../../contributed/zclaw/modules/memoryKeys.js";
+import {isSensitiveKey, isUserKey} from "../../../contributed/modclaw/modules/memoryKeys.js";
 
 assert(isUserKey("u_name"));
 assert(isUserKey("u_temp1"));

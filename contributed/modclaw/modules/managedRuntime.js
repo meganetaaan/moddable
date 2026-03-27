@@ -9,11 +9,18 @@ import {
 } from "./persistence.js";
 import {createProviderCodec} from "./providerCodec.js";
 import {RateLimiter} from "./rateLimit.js";
+import {SlackService} from "./slackService.js";
 import {TelegramService} from "./telegramService.js";
 import {ToolRuntime} from "./toolRuntime.js";
 
 function defaultChannelWriter(text) {
 	trace(`${text}\n`);
+}
+
+function traceRuntimeError(owner, error) {
+	trace(`zclaw runtime ${owner} error=${error}\n`);
+	if (error?.stack)
+		trace(`${error.stack}\n`);
 }
 
 function createClock(timer) {
@@ -70,22 +77,45 @@ export function createManagedZclawRuntime(options = {}) {
 	llm.init?.();
 
 	let telegram;
+	let slack;
 	const outputs = options.outputs ?? {
 		sendChannel(text) {
 			(options.channelWriter ?? defaultChannelWriter)(text);
 		},
+		sendRemote(text, replyTarget) {
+			if (!replyTarget)
+				return;
+			if ("slack" === replyTarget.transport)
+				return slack?.send(text, replyTarget.conversationId);
+			return telegram?.send(text, replyTarget.chatId ?? 0);
+		},
 		sendTelegram(text, chatId) {
 			return telegram?.send(text, chatId);
 		},
+		sendSlack(text, conversationId) {
+			return slack?.send(text, conversationId);
+		},
 	};
-	const telegramControl = options.telegramControl ?? {
+	const remoteControl = options.remoteControl ?? options.telegramControl ?? {
 		pausePolling() {
 			telegram?.pause();
+			slack?.pause();
 		},
 		resumePolling() {
 			telegram?.resume();
+			slack?.resume();
 		},
 	};
+	const transportStatus = options.transportStatus ?? (() => {
+		const telegramConfigured = telegram?.isConfigured?.() ?? false;
+		const slackConfigured = slack?.isConfigured?.() ?? false;
+		return {
+			telegramConfigured,
+			telegramActive: telegramConfigured && Boolean(telegram?.running) && !telegram?.paused,
+			slackConfigured,
+			slackActive: slackConfigured && Boolean(slack?.running) && !slack?.paused,
+		};
+	});
 	const localAdmin = options.localAdmin ?? new LocalAdminController(options.localAdminOptions);
 
 	const runtime = new AgentRuntime({
@@ -95,7 +125,8 @@ export function createManagedZclawRuntime(options = {}) {
 		rateLimit,
 		personaStore,
 		localAdmin,
-		telegramControl,
+		remoteControl,
+		transportStatus,
 		outputs,
 		requestCodec,
 	});
@@ -106,6 +137,12 @@ export function createManagedZclawRuntime(options = {}) {
 		timer,
 		backend: llm.getBackend?.() ?? options.provider?.backend ?? "openai",
 		classicEsp32Target: Boolean(options.classicEsp32Target),
+	});
+	slack = options.slack ?? new SlackService({
+		store: rawStore,
+		transport: options.transport,
+		httpGate,
+		timer,
 	});
 
 	let cronTimerId = 0;
@@ -133,14 +170,20 @@ export function createManagedZclawRuntime(options = {}) {
 
 	function start() {
 		if (!cronTimerId && timer?.repeat)
-			cronTimerId = timer.repeat(() => void cronTick(), cronIntervalMs);
+			cronTimerId = timer.repeat(() => {
+				return cronTick().catch(error => {
+					traceRuntimeError("cron_tick", error);
+				});
+			}, cronIntervalMs);
+		const onMessage = (text, messageOptions) => runtime.processMessageAsync(text, messageOptions);
 		telegram.start({
-			onMessage(text, messageOptions) {
-				return runtime.processMessageAsync(text, messageOptions);
-			},
+			onMessage,
+		});
+		slack.start({
+			onMessage,
 		});
 		return {
-			telegramConfigured: telegram.isConfigured(),
+			...transportStatus(),
 		};
 	}
 
@@ -150,6 +193,7 @@ export function createManagedZclawRuntime(options = {}) {
 			cronTimerId = 0;
 		}
 		telegram.stop();
+		slack.stop();
 	}
 
 	return {
@@ -165,6 +209,7 @@ export function createManagedZclawRuntime(options = {}) {
 		httpGate,
 		llm,
 		telegram,
+		slack,
 		start,
 		stop,
 		runCronDue,
@@ -172,7 +217,23 @@ export function createManagedZclawRuntime(options = {}) {
 			return runtime.processMessageAsync(text, {source: "channel"});
 		},
 		processTelegramMessage(text, replyChatId) {
-			return runtime.processMessageAsync(text, {source: "telegram", replyChatId});
+			return runtime.processMessageAsync(text, {
+				source: "telegram",
+				replyTarget: replyChatId ? {transport: "telegram", chatId: replyChatId} : null,
+				replyChatId,
+			});
+		},
+		processSlackMessage(text, replyConversationId, replyUserId = "") {
+			return runtime.processMessageAsync(text, {
+				source: "slack",
+				replyTarget: replyConversationId ? {
+					transport: "slack",
+					conversationId: replyConversationId,
+					userId: replyUserId,
+				} : null,
+				replyConversationId,
+				replyUserId,
+			});
 		},
 	};
 }

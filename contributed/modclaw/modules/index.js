@@ -14,6 +14,8 @@ export * from "./persona.js";
 export * from "./providers.js";
 export * from "./rateLimit.js";
 export * from "./security.js";
+export * from "./slack.js";
+export * from "./slackService.js";
 export * from "./telegram.js";
 export * from "./textBuffer.js";
 export * from "./toolRuntime.js";

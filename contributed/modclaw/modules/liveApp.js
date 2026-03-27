@@ -141,6 +141,7 @@ export function createLiveZclawApp(options = {}) {
 					deviceConfigured,
 					wifiConnected: false,
 					telegramConfigured: false,
+					slackConfigured: false,
 				};
 			}
 

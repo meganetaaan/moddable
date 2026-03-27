@@ -9,7 +9,7 @@ import {
 	isSlashCommand,
 	parseDiagCommandArgs,
 	parseGPIOCommandArgs,
-} from "../../../contributed/zclaw/modules/commands.js";
+} from "../../../contributed/modclaw/modules/commands.js";
 
 assert.sameValue(true, isCommand("/start", "start"));
 assert.sameValue(true, isCommand("  /start@lobster_bot hi", "start"));

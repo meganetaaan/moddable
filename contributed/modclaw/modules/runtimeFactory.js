@@ -36,7 +36,8 @@ export function createZclawRuntime(options = {}) {
 		rateLimit,
 		personaStore,
 		localAdmin,
-		telegramControl: options.telegramControl,
+		remoteControl: options.remoteControl ?? options.telegramControl,
+		transportStatus: options.transportStatus,
 		outputs: options.outputs,
 		requestCodec,
 	});

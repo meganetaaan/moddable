@@ -3,8 +3,8 @@ description:
 flags: [module, async]
 ---*/
 
-import {NVS_KEYS} from "../../../contributed/zclaw/modules/config.js";
-import {createManagedZclawRuntime} from "../../../contributed/zclaw/modules/managedRuntime.js";
+import {NVS_KEYS} from "../../../contributed/modclaw/modules/config.js";
+import {createManagedZclawRuntime} from "../../../contributed/modclaw/modules/managedRuntime.js";
 
 class FakeTransport {
 	constructor() {
@@ -69,6 +69,60 @@ class FakeClock {
 	}
 }
 
+class FakeLLM {
+	constructor() {
+		this.responses = [];
+		this.requests = [];
+	}
+
+	push(text) {
+		this.responses.push(text);
+	}
+
+	async request(request) {
+		this.requests.push(request);
+		return {
+			ok: true,
+			responseText: JSON.stringify({text: this.responses.shift() ?? ""}),
+		};
+	}
+}
+
+class FakeRemoteService {
+	constructor() {
+		this.sent = [];
+		this.running = false;
+		this.paused = false;
+	}
+
+	isConfigured() {
+		return true;
+	}
+
+	start(options = {}) {
+		this.onMessage = options.onMessage ?? null;
+		this.running = true;
+		return true;
+	}
+
+	stop() {
+		this.running = false;
+	}
+
+	pause() {
+		this.paused = true;
+	}
+
+	resume() {
+		this.paused = false;
+	}
+
+	async send(text, target) {
+		this.sent.push({text, target});
+		return {ok: true, text: ""};
+	}
+}
+
 const transport = new FakeTransport;
 const timer = new FakeTimer;
 const clock = new FakeClock(0);
@@ -101,7 +155,6 @@ assert.sameValue(started.telegramConfigured, true);
 await timer.runNextTask();
 
 transport.push({ok: true, text: JSON.stringify({choices: [{message: {content: "channel reply"}}]})});
-transport.push({ok: true, text: "{\"ok\":true}"});
 await app.processChannelMessage("hello");
 assert.sameValue(lines[0], "channel reply");
 assert(transport.requests[1].url.includes("openai.com"));
@@ -109,10 +162,64 @@ assert(transport.requests[1].url.includes("openai.com"));
 app.cronScheduler.create({type: "once", delayMinutes: 1, action: "cron hello"}, clock.nowMs());
 clock.value = 61_000;
 transport.push({ok: true, text: JSON.stringify({choices: [{message: {content: "cron reply"}}]})});
-transport.push({ok: true, text: "{\"ok\":true}"});
 const due = await app.runCronDue(clock.nowMs());
 assert.sameValue(due.length, 1);
 assert.sameValue(lines[1], "cron reply");
 
 app.stop();
 assert.sameValue(timer.repeats.length, 0);
+
+const remoteLines = [];
+const remoteClock = new FakeClock(0);
+const remoteLLM = new FakeLLM;
+const fakeTelegram = new FakeRemoteService;
+const fakeSlack = new FakeRemoteService;
+const remoteApp = createManagedZclawRuntime({
+	rawStore: new Map([
+		[NVS_KEYS.API_KEY, "sk-test"],
+	]),
+	clock: remoteClock,
+	llm: remoteLLM,
+	telegram: fakeTelegram,
+	slack: fakeSlack,
+	channelWriter(text) {
+		remoteLines.push(text);
+	},
+	requestCodec: {
+		buildRequest({history}) {
+			return JSON.stringify({history});
+		},
+		parseResponse(responseText) {
+			return JSON.parse(responseText);
+		},
+	},
+	system: {
+		now() {
+			return new Date(remoteClock.nowMs());
+		},
+	},
+	timeSynced: true,
+});
+
+started = remoteApp.start();
+assert.sameValue(started.telegramConfigured, true);
+assert.sameValue(started.telegramActive, true);
+assert.sameValue(started.slackConfigured, true);
+assert.sameValue(started.slackActive, true);
+
+remoteLLM.push("telegram reply");
+await remoteApp.processTelegramMessage("hello", 7585013353);
+assert.sameValue(fakeTelegram.sent[0].text, "telegram reply");
+assert.sameValue(fakeTelegram.sent[0].target, 7585013353);
+assert.sameValue(fakeSlack.sent.length, 0);
+
+remoteLLM.push("slack reply");
+await remoteApp.processSlackMessage("hello", "D123456", "U123456");
+assert.sameValue(fakeSlack.sent[0].text, "slack reply");
+assert.sameValue(fakeSlack.sent[0].target, "D123456");
+assert.sameValue(fakeTelegram.sent.length, 1);
+
+await remoteApp.processSlackMessage("/settings", "D123456", "U123456");
+assert(fakeSlack.sent[1].text.includes("Slack: configured, active"));
+assert(fakeSlack.sent[1].text.includes("Telegram: configured, active"));
+assert(remoteLines[2].includes("Slack: configured, active"));

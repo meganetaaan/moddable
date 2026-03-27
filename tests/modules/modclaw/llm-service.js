@@ -3,9 +3,9 @@ description:
 flags: [module, async]
 ---*/
 
-import {HttpGate} from "../../../contributed/zclaw/modules/httpGate.js";
-import {LLMService} from "../../../contributed/zclaw/modules/llmService.js";
-import {NVS_KEYS} from "../../../contributed/zclaw/modules/config.js";
+import {HttpGate} from "../../../contributed/modclaw/modules/httpGate.js";
+import {LLMService} from "../../../contributed/modclaw/modules/llmService.js";
+import {NVS_KEYS} from "../../../contributed/modclaw/modules/config.js";
 
 class FakeTransport {
 	constructor() {
@@ -37,6 +37,7 @@ assert.sameValue(transport.requests[0].url, "https://api.openai.com/v1/chat/comp
 assert.sameValue(transport.requests[0].headers[0], "Content-Type");
 assert.sameValue(transport.requests[0].headers[2], "Authorization");
 assert.sameValue(transport.requests[0].headers[3], "Bearer sk-openai");
+assert.sameValue(transport.requests[0].secure.applicationLayerProtocolNegotiation, "http/1.1");
 
 store = new Map([
 	[NVS_KEYS.LLM_BACKEND, "anthropic"],
@@ -70,3 +71,4 @@ response = await service.request("{\"hello\":true}");
 assert.sameValue(response.ok, true);
 assert.sameValue(service.getApiUrl(), "http://127.0.0.1:11434/v1/chat/completions");
 assert.sameValue(transport.requests[0].headers.includes("Authorization"), false);
+assert.sameValue(transport.requests[0].secure.applicationLayerProtocolNegotiation, "http/1.1");

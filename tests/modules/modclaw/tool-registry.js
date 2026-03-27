@@ -7,7 +7,7 @@ import {
 	BUILTIN_TOOLS,
 	createToolRegistry,
 	normalizeUserTool,
-} from "../../../contributed/zclaw/modules/toolRegistry.js";
+} from "../../../contributed/modclaw/modules/toolRegistry.js";
 
 const registry = createToolRegistry();
 

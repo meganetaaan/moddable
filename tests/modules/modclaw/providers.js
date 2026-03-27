@@ -9,9 +9,9 @@ import {
 	copyApiKey,
 	parseResponse,
 	resolveBackendConfig,
-} from "../../../contributed/zclaw/modules/providers.js";
-import {LLM_BACKENDS} from "../../../contributed/zclaw/modules/config.js";
-import {createToolRegistry} from "../../../contributed/zclaw/modules/toolRegistry.js";
+} from "../../../contributed/modclaw/modules/providers.js";
+import {LLM_BACKENDS} from "../../../contributed/modclaw/modules/config.js";
+import {createToolRegistry} from "../../../contributed/modclaw/modules/toolRegistry.js";
 
 const registry = createToolRegistry();
 const tools = [registry.getBuiltin("gpio_write")];

@@ -3,7 +3,7 @@ description:
 flags: [module]
 ---*/
 
-import {ToolRuntime} from "../../../contributed/zclaw/modules/toolRuntime.js";
+import {ToolRuntime} from "../../../contributed/modclaw/modules/toolRuntime.js";
 
 const tools = new ToolRuntime({
 	hardware: {

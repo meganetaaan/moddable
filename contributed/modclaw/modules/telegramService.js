@@ -10,6 +10,16 @@ import {extractTelegramMaxUpdateId} from "../core/telegram/update.js";
 const BACKOFF_BASE_MS = 5000;
 const BACKOFF_MAX_MS = 300000;
 
+function traceTelegram(message) {
+	trace(`zclaw telegram ${message}\n`);
+}
+
+function traceTelegramError(owner, error) {
+	traceTelegram(`${owner} error=${error}`);
+	if (error?.stack)
+		trace(`${error.stack}\n`);
+}
+
 function normalizeInteger(value, fallback = 0) {
 	const parsed = Number(value);
 	return Number.isSafeInteger(parsed) ? parsed : fallback;
@@ -148,7 +158,16 @@ export class TelegramService {
 	#schedule(delayMs) {
 		if (!this.running || this.paused || this.timerId)
 			return;
-		this.timerId = this.timer?.set?.(() => this.#tick(), delayMs) ?? 0;
+		this.timerId = this.timer?.set?.(() => {
+			return this.#tick().catch(error => {
+				traceTelegramError("tick_error", error);
+				this.polling = false;
+				if (this.running && !this.paused) {
+					this.failureCount++;
+					this.#schedule(this.#backoffDelayMs());
+				}
+			});
+		}, delayMs) ?? 0;
 	}
 
 	async #tick() {

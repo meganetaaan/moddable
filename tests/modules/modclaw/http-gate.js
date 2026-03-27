@@ -3,7 +3,7 @@ description:
 flags: [module, async]
 ---*/
 
-import {HttpGate} from "../../../contributed/zclaw/modules/httpGate.js";
+import {HttpGate} from "../../../contributed/modclaw/modules/httpGate.js";
 
 function withResolvers() {
 	let resolve;

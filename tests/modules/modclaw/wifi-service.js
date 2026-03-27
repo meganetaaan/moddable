@@ -3,8 +3,8 @@ description:
 flags: [module, async]
 ---*/
 
-import {NVS_KEYS} from "../../../contributed/zclaw/modules/config.js";
-import {WiFiService} from "../../../contributed/zclaw/modules/wifiService.js";
+import {NVS_KEYS} from "../../../contributed/modclaw/modules/config.js";
+import {WiFiService} from "../../../contributed/modclaw/modules/wifiService.js";
 
 class FakeTimer {
 	constructor() {

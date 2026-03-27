@@ -8,7 +8,7 @@ import {
 	loadPersona,
 	resetPersona,
 	setPersona,
-} from "../../../contributed/zclaw/modules/persona.js";
+} from "../../../contributed/modclaw/modules/persona.js";
 
 class Storage {
 	constructor(seed = {}) {

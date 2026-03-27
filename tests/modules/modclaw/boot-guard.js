@@ -8,7 +8,7 @@ import {
 	bootGuardNextCount,
 	bootGuardSetPersistedCount,
 	bootGuardShouldEnterSafeMode,
-} from "../../../contributed/zclaw/modules/bootGuard.js";
+} from "../../../contributed/modclaw/modules/bootGuard.js";
 
 class Store {
 	constructor(seed = {}) {

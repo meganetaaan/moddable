@@ -7,7 +7,7 @@ import {
 	isSensitiveMemoryKey,
 	isUserMemoryKey,
 	MemoryStore,
-} from "../../../contributed/zclaw/modules/memory.js";
+} from "../../../contributed/modclaw/modules/memory.js";
 
 assert.sameValue(true, isUserMemoryKey("u_name"));
 assert.sameValue(true, isUserMemoryKey("u_temp1"));

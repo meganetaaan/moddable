@@ -3,7 +3,7 @@ description:
 flags: [module]
 ---*/
 
-import {createZclawRuntime} from "../../../contributed/zclaw/modules/runtimeFactory.js";
+import {createZclawRuntime} from "../../../contributed/modclaw/modules/runtimeFactory.js";
 
 class FakeClock {
 	constructor(nowMs = 0) {

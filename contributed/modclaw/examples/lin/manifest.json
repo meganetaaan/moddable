@@ -1,0 +1,25 @@
+{
+	"include": [
+		"$(MODDABLE)/examples/manifest_base.json",
+		"../../manifest.json"
+	],
+	"creation": {
+		"chunk": {
+			"initial": 65536,
+			"incremental": 4096
+		},
+		"heap": {
+			"initial": 8192,
+			"incremental": 1024
+		},
+		"stack": 2048
+	},
+	"modules": {
+		"*": [
+			"./main"
+		]
+	},
+	"config": {
+		"wifiSSID": "lin-sim"
+	}
+}

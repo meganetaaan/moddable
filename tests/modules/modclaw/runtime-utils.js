@@ -8,9 +8,9 @@ import {
 	CHANNEL_RX_BUF_SIZE,
 	TELEGRAM_MAX_MSG_LEN,
 	TELEGRAM_OUTPUT_QUEUE_LENGTH,
-} from "../../../contributed/zclaw/modules/config.js";
-import {securityKeyIsSensitive} from "../../../contributed/zclaw/modules/security.js";
-import {TextBuffer} from "../../../contributed/zclaw/modules/textBuffer.js";
+} from "../../../contributed/modclaw/modules/config.js";
+import {securityKeyIsSensitive} from "../../../contributed/modclaw/modules/security.js";
+import {TextBuffer} from "../../../contributed/modclaw/modules/textBuffer.js";
 
 assert.sameValue(true, securityKeyIsSensitive("wifi_pass"));
 assert.sameValue(true, securityKeyIsSensitive("tg_token"));

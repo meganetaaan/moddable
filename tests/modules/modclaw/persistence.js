@@ -3,11 +3,11 @@ description:
 flags: [module]
 ---*/
 
-import {PreferenceMap} from "../../../contributed/zclaw/modules/preferenceMap.js";
+import {PreferenceMap} from "../../../contributed/modclaw/modules/preferenceMap.js";
 import {
 	PersistentCronScheduler,
 	PersistentUserToolRegistry,
-} from "../../../contributed/zclaw/modules/persistence.js";
+} from "../../../contributed/modclaw/modules/persistence.js";
 
 class FakePreference {
 	constructor() {

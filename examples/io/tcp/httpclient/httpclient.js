@@ -22,6 +22,10 @@ import Timer from "timer";
 
 const more = Object.freeze({more: true});
 
+function traceHTTP419(message) {
+	trace(`zclaw http419 ${message}\n`);
+}
+
 class HTTPClient {
 	static #Request = class {
 		#client;
@@ -152,6 +156,7 @@ class HTTPClient {
 		if (!host) throw new Error("host required");
 		this.#host = host;
 		this.#onError = onError;
+		traceHTTP419(`construct host=${host} port=${port ?? 80}`);
 
 		const dns = new options.dns.io(options.dns);
 		dns.resolve({
@@ -159,6 +164,7 @@ class HTTPClient {
 
 			onResolved: (host, address) => {
 				try {
+					traceHTTP419(`resolved host=${host} address=${address}`);
 					this.#socket = new options.socket.io({
 						...options.socket,
 						address,
@@ -168,13 +174,18 @@ class HTTPClient {
 						onWritable: count => this.#onWritable(count),
 						onError: () => this.#error()
 					});
+					traceHTTP419(`socket_ready host=${host}`);
 				}
 				catch (e) {
+					traceHTTP419(`socket_error host=${host} error=${e}`);
+					if (e?.stack)
+						trace(`${e.stack}\n`);
 					this.#state = "error";
 					this.#error?.(e);
 				}
 			},
 			onError: e => {
+				traceHTTP419(`dns_error host=${this.#host} error=${e}`);
 				this.#state = "error";
 				this.#error?.(e);
 			}
@@ -191,6 +202,7 @@ class HTTPClient {
 	}
 	request(options) {
 		options = {...options};
+		traceHTTP419(`request host=${this.#host} path=${options.path ?? "/"}`);
 		this.#requests.push(options);
 		if (("connected" === this.#state) && (1 === this.#requests.length)) {
 			this.#next();
@@ -421,6 +433,9 @@ class HTTPClient {
 		} while (this.#pendingWrite && this.#writable);
 	}
 	#error(e) {
+		traceHTTP419(`error host=${this.#host} state=${this.#state} error=${e}`);
+		if (e?.stack)
+			trace(`${e.stack}\n`);
 		if (("receivedBody" === this.#state) && this.#timer) {		// completion not reported yet. report before handling error.
 			Timer.clear(this.#timer);
 			this.#done();
@@ -445,6 +460,7 @@ class HTTPClient {
 		this.close();
 	}
 	#done() {
+		traceHTTP419(`done host=${this.#host}`);
 		this.#timer = undefined;
 
 		this.#state = "completing";

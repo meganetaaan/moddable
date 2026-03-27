@@ -38,16 +38,24 @@
 import {Socket} from "socket";
 import Session from "ssl/session";
 
+function traceSecureSocket(message) {
+	trace(`zclaw tls ${message}\n`);
+}
+
 class SecureSocket {
 	constructor(dict) {
 		const sock = dict.sock ?? new Socket(dict);
 
 		this.sock = sock;
+		this.host = String(dict.host ?? "");
 		this.handshaking = true;
 		try {
 			this.ssl = new Session({tls_server_name: dict.host, ...dict.secure});
 		}
 		catch (e) {
+			traceSecureSocket(`session_error host=${this.host} error=${e}`);
+			if (e?.stack)
+				trace(`${e.stack}\n`);
 			sock.close();
 			throw e;
 		}
@@ -79,15 +87,20 @@ class SecureSocket {
 						}
 						break;
 					default:
+						traceSecureSocket(`socket_close host=${this.host} message=${message} value=${value ?? 0} handshaking=${this.handshaking ? "yes" : "no"}`);
 						this.closing = message;
 						break;
 				}
 			}
 			catch (e) {
+				traceSecureSocket(`callback_error host=${this.host} error=${e} handshaking=${this.handshaking ? "yes" : "no"}`);
+				if (e?.stack)
+					trace(`${e.stack}\n`);
 				this.closing = Socket.error;
 			}
 
 			if (this.closing) {
+				traceSecureSocket(`closing host=${this.host} message=${this.closing} handshaking=${this.handshaking ? "yes" : "no"}`);
 				this.callback(this.closing);
 				this.close();
 			}
@@ -106,6 +119,7 @@ class SecureSocket {
 		if (this.handshaking) {
 			if (this.ssl.handshake(this.sock, bytesAvailable)) {
 				delete this.handshaking;
+				traceSecureSocket(`handshake_complete host=${this.host}`);
 				this.callback(1);
 			}
 			return;

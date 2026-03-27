@@ -6,11 +6,11 @@ flags: [module]
 import {
 	LLM_API_KEY_MAX_LENGTH,
 	LLM_AUTH_HEADER_BUF_SIZE,
-} from "../../../contributed/zclaw/modules/config.js";
+} from "../../../contributed/modclaw/modules/config.js";
 import {
 	buildLLMBearerAuthHeader,
 	copyLLMApiKey,
-} from "../../../contributed/zclaw/modules/llmAuth.js";
+} from "../../../contributed/modclaw/modules/llmAuth.js";
 
 assert(LLM_API_KEY_MAX_LENGTH >= 256);
 assert(LLM_AUTH_HEADER_BUF_SIZE > ("Bearer ".length + LLM_API_KEY_MAX_LENGTH));

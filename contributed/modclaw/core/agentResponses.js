@@ -27,11 +27,20 @@ export function startHelpText() {
 	);
 }
 
-export function settingsText({paused = false, persona = "neutral"} = {}) {
+export function settingsText({
+	paused = false,
+	persona = "neutral",
+	telegramConfigured = false,
+	telegramActive = false,
+	slackConfigured = false,
+	slackActive = false,
+} = {}) {
 	return (
 		"zclaw settings:\n" +
 		`- Message intake: ${paused ? "paused" : "active"}\n` +
 		`- Persona: ${persona}\n` +
+		`- Telegram: ${telegramConfigured ? (telegramActive ? "configured, active" : "configured, idle") : "not configured"}\n` +
+		`- Slack: ${slackConfigured ? (slackActive ? "configured, active" : "configured, idle") : "not configured"}\n` +
 		"- Chat commands: /start, /help, /settings, /stop, /resume\n" +
 		"- USB local admin: /gpio, /diag, /reboot, /wifi, /bootcount, /factory-reset\n" +
 		"- /gpio supports reads and writes (e.g. /gpio 9 low)\n" +

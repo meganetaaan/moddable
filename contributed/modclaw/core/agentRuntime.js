@@ -20,6 +20,11 @@ import {buildSystemPrompt, loadCurrentPersona} from "./persona.js";
 function noop() {
 }
 
+function normalizeInteger(value, fallback = 0) {
+	const parsed = Number(value);
+	return Number.isSafeInteger(parsed) ? parsed : fallback;
+}
+
 function isCronTriggerMessage(text) {
 	let value = String(text ?? "");
 	while (value.length && /\s/.test(value[0]))
@@ -45,6 +50,57 @@ function normalizeToolResult(result) {
 	return {ok: result.ok !== false, text: result.text ?? ""};
 }
 
+function normalizeReplyTarget(source, options = {}) {
+	const replyTarget = options.replyTarget;
+	if (replyTarget && ("object" === typeof replyTarget)) {
+		const transport = String(replyTarget.transport ?? source ?? "telegram");
+		if ("slack" === transport) {
+			const conversationId = String(replyTarget.conversationId ?? replyTarget.channelId ?? "");
+			if (!conversationId)
+				return null;
+			return {
+				transport: "slack",
+				conversationId,
+				userId: String(replyTarget.userId ?? ""),
+			};
+		}
+
+		const chatId = normalizeInteger(
+			replyTarget.chatId ?? replyTarget.replyChatId ?? replyTarget.conversationId ?? options.replyChatId,
+			0
+		);
+		if (!chatId)
+			return null;
+		return {
+			transport: "telegram",
+			chatId,
+		};
+	}
+
+	const replyChatId = normalizeInteger(options.replyChatId, 0);
+	if (replyChatId || ("telegram" === source)) {
+		if (!replyChatId)
+			return null;
+		return {
+			transport: "telegram",
+			chatId: replyChatId,
+		};
+	}
+
+	const replyConversationId = String(options.replyConversationId ?? options.conversationId ?? "");
+	if (("slack" === source) || replyConversationId) {
+		if (!replyConversationId)
+			return null;
+		return {
+			transport: "slack",
+			conversationId: replyConversationId,
+			userId: String(options.replyUserId ?? options.userId ?? ""),
+		};
+	}
+
+	return null;
+}
+
 export class AgentRuntime {
 	constructor(options = {}) {
 		this.clock = options.clock ?? {nowMs: () => Date.now(), sleepMs: noop};
@@ -53,8 +109,9 @@ export class AgentRuntime {
 		this.rateLimit = options.rateLimit ?? {check: () => ({ok: true, reason: ""}), recordRequest: noop};
 		this.personaStore = options.personaStore ?? null;
 		this.localAdmin = options.localAdmin ?? null;
-		this.telegramControl = options.telegramControl ?? {pausePolling: noop, resumePolling: noop};
-		this.outputs = options.outputs ?? {sendChannel: noop, sendTelegram: noop};
+		this.remoteControl = options.remoteControl ?? options.telegramControl ?? {pausePolling: noop, resumePolling: noop};
+		this.transportStatus = options.transportStatus ?? (() => ({}));
+		this.outputs = options.outputs ?? {sendChannel: noop, sendRemote: noop, sendTelegram: noop, sendSlack: noop};
 		this.requestCodec = options.requestCodec ?? {
 			buildRequest({systemPrompt, history, tools}) {
 				return JSON.stringify({systemPrompt, history, tools});
@@ -83,14 +140,46 @@ export class AgentRuntime {
 		this.lastNonCommandResponseMs = 0;
 	}
 
-	#sendResponse(text, replyChatId) {
-		this.outputs.sendChannel?.(text);
-		this.outputs.sendTelegram?.(text, replyChatId);
+	#sendRemoteResponse(text, replyTarget) {
+		if (!replyTarget)
+			return;
+		if (this.outputs.sendRemote)
+			return this.outputs.sendRemote(text, replyTarget);
+		if ("slack" === replyTarget.transport)
+			return this.outputs.sendSlack?.(text, replyTarget.conversationId, replyTarget);
+		return this.outputs.sendTelegram?.(text, replyTarget.chatId ?? 0, replyTarget);
 	}
 
-	async #sendResponseAsync(text, replyChatId) {
+	async #sendRemoteResponseAsync(text, replyTarget) {
+		if (!replyTarget)
+			return;
+		if (this.outputs.sendRemote) {
+			await this.outputs.sendRemote(text, replyTarget);
+			return;
+		}
+		if ("slack" === replyTarget.transport) {
+			await this.outputs.sendSlack?.(text, replyTarget.conversationId, replyTarget);
+			return;
+		}
+		await this.outputs.sendTelegram?.(text, replyTarget.chatId ?? 0, replyTarget);
+	}
+
+	#sendResponse(text, replyTarget) {
+		this.outputs.sendChannel?.(text);
+		this.#sendRemoteResponse(text, replyTarget);
+	}
+
+	async #sendResponseAsync(text, replyTarget) {
 		await this.outputs.sendChannel?.(text);
-		await this.outputs.sendTelegram?.(text, replyChatId);
+		await this.#sendRemoteResponseAsync(text, replyTarget);
+	}
+
+	#settingsText() {
+		return settingsText({
+			paused: this.messagesPaused,
+			persona: this.persona,
+			...(this.transportStatus?.() ?? {}),
+		});
 	}
 
 	#isLocalAdminCommand(text) {
@@ -117,9 +206,9 @@ export class AgentRuntime {
 		return result.text || `Error: ${toolName} failed`;
 	}
 
-	#handleLocalAdmin(text, source, replyChatId) {
+	#handleLocalAdmin(text, source, replyTarget) {
 		if ("channel" !== source) {
-			this.#sendResponse("Error: local admin commands are only available on the USB serial console.", replyChatId);
+			this.#sendResponse("Error: local admin commands are only available on the USB serial console.", replyTarget);
 			return;
 		}
 
@@ -127,10 +216,10 @@ export class AgentRuntime {
 			try {
 				const input = parseDiagCommandArgs(text);
 				const result = normalizeToolResult(this.tools.execute?.("get_diagnostics", input));
-				this.#sendResponse(result.text || "Error: diagnostics failed", replyChatId);
+				this.#sendResponse(result.text || "Error: diagnostics failed", replyTarget);
 			}
 			catch (error) {
-				this.#sendResponse(error.message, replyChatId);
+				this.#sendResponse(error.message, replyTarget);
 			}
 			return;
 		}
@@ -139,23 +228,23 @@ export class AgentRuntime {
 			try {
 				const parsed = parseGPIOCommandArgs(text);
 				const result = normalizeToolResult(this.tools.execute?.(parsed.toolName, parsed.input));
-				this.#sendResponse(result.text || "Error: GPIO read failed", replyChatId);
+				this.#sendResponse(result.text || "Error: GPIO read failed", replyTarget);
 			}
 			catch (error) {
-				this.#sendResponse(error.message, replyChatId);
+				this.#sendResponse(error.message, replyTarget);
 			}
 			return;
 		}
 
 		const response = this.localAdmin.handle(text);
-		this.#sendResponse(response.text, replyChatId);
+		this.#sendResponse(response.text, replyTarget);
 		if (response.ok)
 			this.localAdmin.performAction?.(response.action);
 	}
 
-	async #handleLocalAdminAsync(text, source, replyChatId) {
+	async #handleLocalAdminAsync(text, source, replyTarget) {
 		if ("channel" !== source) {
-			await this.#sendResponseAsync("Error: local admin commands are only available on the USB serial console.", replyChatId);
+			await this.#sendResponseAsync("Error: local admin commands are only available on the USB serial console.", replyTarget);
 			return;
 		}
 
@@ -163,10 +252,10 @@ export class AgentRuntime {
 			try {
 				const input = parseDiagCommandArgs(text);
 				const result = normalizeToolResult(this.tools.execute?.("get_diagnostics", input));
-				await this.#sendResponseAsync(result.text || "Error: diagnostics failed", replyChatId);
+				await this.#sendResponseAsync(result.text || "Error: diagnostics failed", replyTarget);
 			}
 			catch (error) {
-				await this.#sendResponseAsync(error.message, replyChatId);
+				await this.#sendResponseAsync(error.message, replyTarget);
 			}
 			return;
 		}
@@ -175,10 +264,10 @@ export class AgentRuntime {
 			try {
 				const parsed = parseGPIOCommandArgs(text);
 				const result = normalizeToolResult(this.tools.execute?.(parsed.toolName, parsed.input));
-				await this.#sendResponseAsync(result.text || "Error: GPIO read failed", replyChatId);
+				await this.#sendResponseAsync(result.text || "Error: GPIO read failed", replyTarget);
 			}
 			catch (error) {
-				await this.#sendResponseAsync(error.message, replyChatId);
+				await this.#sendResponseAsync(error.message, replyTarget);
 			}
 			return;
 		}
@@ -186,7 +275,7 @@ export class AgentRuntime {
 		const response = this.localAdmin.handleAsync
 			? await this.localAdmin.handleAsync(text)
 			: this.localAdmin.handle(text);
-		await this.#sendResponseAsync(response.text, replyChatId);
+		await this.#sendResponseAsync(response.text, replyTarget);
 		if (response.ok)
 			await this.localAdmin.performAction?.(response.action);
 	}
@@ -250,27 +339,27 @@ export class AgentRuntime {
 	processMessage(text, options = {}) {
 		const userMessage = String(text ?? "");
 		const source = options.source ?? "channel";
-		const replyChatId = options.replyChatId ?? 0;
+		const replyTarget = normalizeReplyTarget(source, options);
 		const isNonCommandMessage = !isSlashCommand(userMessage);
 		const isCronTrigger = isCronTriggerMessage(userMessage);
 
 		if (isCommand(userMessage, "resume")) {
 			if (!this.messagesPaused) {
-				this.#sendResponse("zclaw is already active.", replyChatId);
+				this.#sendResponse("zclaw is already active.", replyTarget);
 				return;
 			}
 			this.messagesPaused = false;
-			this.#sendResponse("zclaw resumed. Send /start for command help.", replyChatId);
+			this.#sendResponse("zclaw resumed. Send /start for command help.", replyTarget);
 			return;
 		}
 
 		if (isCommand(userMessage, "settings")) {
-			this.#sendResponse(settingsText({paused: this.messagesPaused, persona: this.persona}), replyChatId);
+			this.#sendResponse(this.#settingsText(), replyTarget);
 			return;
 		}
 
 		if (this.#isLocalAdminCommand(userMessage)) {
-			this.#handleLocalAdmin(userMessage, source, replyChatId);
+			this.#handleLocalAdmin(userMessage, source, replyTarget);
 			return;
 		}
 
@@ -278,13 +367,13 @@ export class AgentRuntime {
 			return;
 
 		if (isCommand(userMessage, "help")) {
-			this.#sendResponse(startHelpText(), replyChatId);
+			this.#sendResponse(startHelpText(), replyTarget);
 			return;
 		}
 
 		if (isCommand(userMessage, "stop")) {
 			this.messagesPaused = true;
-			this.#sendResponse("zclaw paused. I will ignore new messages until /resume.", replyChatId);
+			this.#sendResponse("zclaw paused. I will ignore new messages until /resume.", replyTarget);
 			return;
 		}
 
@@ -293,7 +382,7 @@ export class AgentRuntime {
 			if (this.lastStartResponseMs && ((nowMs - this.lastStartResponseMs) < START_COMMAND_COOLDOWN_MS))
 				return;
 			this.lastStartResponseMs = nowMs;
-			this.#sendResponse(startHelpText(), replyChatId);
+			this.#sendResponse(startHelpText(), replyTarget);
 			return;
 		}
 
@@ -306,7 +395,7 @@ export class AgentRuntime {
 		}
 
 		const marker = this.history.mark();
-		this.telegramControl.pausePolling?.();
+		this.remoteControl.pausePolling?.();
 		try {
 			this.history.addUser(userMessage);
 
@@ -321,21 +410,21 @@ export class AgentRuntime {
 				}
 				catch {
 					this.history.rollback(marker);
-					this.#sendResponse("Error: Failed to build request", replyChatId);
+					this.#sendResponse("Error: Failed to build request", replyTarget);
 					return;
 				}
 
 				const rateResult = normalizeRateLimitResult(this.rateLimit.check?.());
 				if (!rateResult.ok) {
 					this.history.rollback(marker);
-					this.#sendResponse(rateResult.reason, replyChatId);
+					this.#sendResponse(rateResult.reason, replyTarget);
 					return;
 				}
 
 				const llmResponse = this.#requestWithRetry(request);
 				if (!llmResponse.ok) {
 					this.history.rollback(marker);
-					this.#sendResponse("Error: Failed to contact LLM API after retries", replyChatId);
+					this.#sendResponse("Error: Failed to contact LLM API after retries", replyTarget);
 					return;
 				}
 
@@ -347,7 +436,7 @@ export class AgentRuntime {
 				}
 				catch {
 					this.history.rollback(marker);
-					this.#sendResponse("Error: Failed to parse LLM response", replyChatId);
+					this.#sendResponse("Error: Failed to parse LLM response", replyTarget);
 					return;
 				}
 
@@ -378,44 +467,44 @@ export class AgentRuntime {
 
 				const responseText = parsed.text || "(No response from Claude)";
 				this.history.addAssistant(responseText);
-				this.#sendResponse(responseText, replyChatId);
+				this.#sendResponse(responseText, replyTarget);
 				if (isNonCommandMessage)
 					this.#updateSuccessfulReplayState(userMessage);
 				return;
 			}
 
 			this.history.addAssistant("(Reached max tool iterations)");
-			this.#sendResponse("(Reached max tool iterations)", replyChatId);
+			this.#sendResponse("(Reached max tool iterations)", replyTarget);
 		}
 		finally {
-			this.telegramControl.resumePolling?.();
+			this.remoteControl.resumePolling?.();
 		}
 	}
 
 	async processMessageAsync(text, options = {}) {
 		const userMessage = String(text ?? "");
 		const source = options.source ?? "channel";
-		const replyChatId = options.replyChatId ?? 0;
+		const replyTarget = normalizeReplyTarget(source, options);
 		const isNonCommandMessage = !isSlashCommand(userMessage);
 		const isCronTrigger = isCronTriggerMessage(userMessage);
 
 		if (isCommand(userMessage, "resume")) {
 			if (!this.messagesPaused) {
-				await this.#sendResponseAsync("zclaw is already active.", replyChatId);
+				await this.#sendResponseAsync("zclaw is already active.", replyTarget);
 				return;
 			}
 			this.messagesPaused = false;
-			await this.#sendResponseAsync("zclaw resumed. Send /start for command help.", replyChatId);
+			await this.#sendResponseAsync("zclaw resumed. Send /start for command help.", replyTarget);
 			return;
 		}
 
 		if (isCommand(userMessage, "settings")) {
-			await this.#sendResponseAsync(settingsText({paused: this.messagesPaused, persona: this.persona}), replyChatId);
+			await this.#sendResponseAsync(this.#settingsText(), replyTarget);
 			return;
 		}
 
 		if (this.#isLocalAdminCommand(userMessage)) {
-			await this.#handleLocalAdminAsync(userMessage, source, replyChatId);
+			await this.#handleLocalAdminAsync(userMessage, source, replyTarget);
 			return;
 		}
 
@@ -423,13 +512,13 @@ export class AgentRuntime {
 			return;
 
 		if (isCommand(userMessage, "help")) {
-			await this.#sendResponseAsync(startHelpText(), replyChatId);
+			await this.#sendResponseAsync(startHelpText(), replyTarget);
 			return;
 		}
 
 		if (isCommand(userMessage, "stop")) {
 			this.messagesPaused = true;
-			await this.#sendResponseAsync("zclaw paused. I will ignore new messages until /resume.", replyChatId);
+			await this.#sendResponseAsync("zclaw paused. I will ignore new messages until /resume.", replyTarget);
 			return;
 		}
 
@@ -438,7 +527,7 @@ export class AgentRuntime {
 			if (this.lastStartResponseMs && ((nowMs - this.lastStartResponseMs) < START_COMMAND_COOLDOWN_MS))
 				return;
 			this.lastStartResponseMs = nowMs;
-			await this.#sendResponseAsync(startHelpText(), replyChatId);
+			await this.#sendResponseAsync(startHelpText(), replyTarget);
 			return;
 		}
 
@@ -451,7 +540,7 @@ export class AgentRuntime {
 		}
 
 		const marker = this.history.mark();
-		await this.telegramControl.pausePolling?.();
+		await this.remoteControl.pausePolling?.();
 		try {
 			this.history.addUser(userMessage);
 
@@ -466,21 +555,21 @@ export class AgentRuntime {
 				}
 				catch {
 					this.history.rollback(marker);
-					await this.#sendResponseAsync("Error: Failed to build request", replyChatId);
+					await this.#sendResponseAsync("Error: Failed to build request", replyTarget);
 					return;
 				}
 
 				const rateResult = normalizeRateLimitResult(this.rateLimit.check?.());
 				if (!rateResult.ok) {
 					this.history.rollback(marker);
-					await this.#sendResponseAsync(rateResult.reason, replyChatId);
+					await this.#sendResponseAsync(rateResult.reason, replyTarget);
 					return;
 				}
 
 				const llmResponse = await this.#requestWithRetryAsync(request);
 				if (!llmResponse.ok) {
 					this.history.rollback(marker);
-					await this.#sendResponseAsync("Error: Failed to contact LLM API after retries", replyChatId);
+					await this.#sendResponseAsync("Error: Failed to contact LLM API after retries", replyTarget);
 					return;
 				}
 
@@ -492,7 +581,7 @@ export class AgentRuntime {
 				}
 				catch {
 					this.history.rollback(marker);
-					await this.#sendResponseAsync("Error: Failed to parse LLM response", replyChatId);
+					await this.#sendResponseAsync("Error: Failed to parse LLM response", replyTarget);
 					return;
 				}
 
@@ -523,17 +612,17 @@ export class AgentRuntime {
 
 				const responseText = parsed.text || "(No response from Claude)";
 				this.history.addAssistant(responseText);
-				await this.#sendResponseAsync(responseText, replyChatId);
+				await this.#sendResponseAsync(responseText, replyTarget);
 				if (isNonCommandMessage)
 					this.#updateSuccessfulReplayState(userMessage);
 				return;
 			}
 
 			this.history.addAssistant("(Reached max tool iterations)");
-			await this.#sendResponseAsync("(Reached max tool iterations)", replyChatId);
+			await this.#sendResponseAsync("(Reached max tool iterations)", replyTarget);
 		}
 		finally {
-			await this.telegramControl.resumePolling?.();
+			await this.remoteControl.resumePolling?.();
 		}
 	}
 }

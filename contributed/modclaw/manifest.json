@@ -1,9 +1,19 @@
 {
 	"include": [
-		"$(MODDABLE)/modules/network/http/manifest.json",
+		"$(MODDABLE)/examples/io/tcp/httpsclient/manifest_httpsclient.json",
 		"$(MODDABLE)/modules/files/preference/manifest.json"
 	],
+	"resources": {
+		"*": [
+			"$(MODULES)/crypt/data/ca109",
+			"$(MODULES)/crypt/data/ca22",
+			"$(MODULES)/crypt/data/ca236"
+		]
+	},
 	"modules": {
+		"core/*": "./core/*",
+		"core/slack/*": "./core/slack/*",
+		"core/telegram/*": "./core/telegram/*",
 		"zclaw/*": "./modules/*"
 	}
 }

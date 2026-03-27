@@ -3,7 +3,7 @@ description:
 flags: [module]
 ---*/
 
-import {RateLimiter} from "../../../contributed/zclaw/modules/rateLimit.js";
+import {RateLimiter} from "../../../contributed/modclaw/modules/rateLimit.js";
 
 class Store {
 	constructor(seed = {}) {

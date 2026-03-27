@@ -15,6 +15,16 @@
 import Session from "ssl/session";
 import Timer from "timer";
 
+function traceTLS419(message) {
+	trace(`zclaw tls419 ${message}\n`);
+}
+
+function traceTLS419Error(owner, error) {
+	traceTLS419(`${owner} error=${error}`);
+	if (error?.stack)
+		trace(`${error.stack}\n`);
+}
+
 class TLSSocket {
 	#socket;
 	#ready = false;
@@ -37,18 +47,26 @@ class TLSSocket {
  */
 
 	constructor(options) {		
+		traceTLS419(`construct host=${options.host} port=${options.port ?? 443}`);
 		this.#callbacks = {
 			onReadable: options.onReadable,
 			onWritable: options.onWritable,
 			onError: options.onError
 		}; 
 
-		this.#session = new Session({
-			serverName: options.host,		// serverName for SNI. This defaults it to host. Caller can override with options.secure.serverName
-			...options.secure,
-			protocolVersion: 0x303,
-		});
-		this.#session.initiateHandshake();
+		try {
+			this.#session = new Session({
+				serverName: options.host,		// serverName for SNI. This defaults it to host. Caller can override with options.secure.serverName
+				...options.secure,
+				protocolVersion: 0x303,
+			});
+			this.#session.initiateHandshake();
+			traceTLS419(`session_ready host=${options.host}`);
+		}
+		catch (error) {
+			traceTLS419Error(`session host=${options.host}`, error);
+			throw error;
+		}
 
 		this.#socket = new options.TCP.io({
 			...options,
@@ -129,47 +147,69 @@ class TLSSocket {
 		return this.#format ? "buffer" : "number";
 	}
 	#onWritable(count) {
-		this.#socket.writable = count;
-		if (!this.#ready)
-			this.#messageHandler();
-		else if (count > 96)			// 96 is an estimate of TLS overhead
-			this.#callbacks.onWritable?.(count - 96);
+		try {
+			traceTLS419(`writable count=${count} ready=${this.#ready ? "yes" : "no"}`);
+			this.#socket.writable = count;
+			if (!this.#ready)
+				this.#messageHandler();
+			else if (count > 96)			// 96 is an estimate of TLS overhead
+				this.#callbacks.onWritable?.(count - 96);
+		}
+		catch (error) {
+			traceTLS419Error("onWritable", error);
+			this.#onError();
+		}
 	}
 	#onReadable(count) {
-		this.#socket.readable = count;
-		if (this.#data)
-			return;
+		try {
+			traceTLS419(`readable count=${count} ready=${this.#ready ? "yes" : "no"}`);
+			this.#socket.readable = count;
+			if (this.#data)
+				return;
 
-		this.#messageHandler(true);
-		if (!this.#ready)
-			this.#messageHandler();
+			this.#messageHandler(true);
+			if (!this.#ready)
+				this.#messageHandler();
+		}
+		catch (error) {
+			traceTLS419Error("onReadable", error);
+			this.#onError();
+		}
 	}
 	#onError() {
+		traceTLS419("error");
 		this.#callbacks.onError?.();
 	}
 	#messageHandler(read) {
-		if (!this.#ready) {
-			if (this.#session.handshake(this.#socket)) {
-				this.#ready = true;
-				this.#onWritable(this.#socket.writable);
+		try {
+			if (!this.#ready) {
+				if (this.#session.handshake(this.#socket)) {
+					this.#ready = true;
+					traceTLS419("handshake_complete");
+					this.#onWritable(this.#socket.writable);
+				}
+				if (read)
+					this.#session.read(this.#socket);
+				return;
 			}
-			if (read)
-				this.#session.read(this.#socket);
-			return;
+
+			const data = this.#session.read(this.#socket);
+			if (undefined === data)		// nothing to read
+				return;
+			if (null === data)		// closed
+				return void this.#onError();
+			data.position = 0;
+			const readable = data.byteLength;
+			if (!readable)
+				return;
+			this.#data = data;
+
+			this.#callbacks.onReadable?.(readable);
 		}
-
-		const data = this.#session.read(this.#socket);
-		if (undefined === data)		// nothing to read
-			return;
-		if (null === data)		// closed
-			return void this.#onError();
-		data.position = 0;
-		const readable = data.byteLength;
-		if (!readable)
-			return;
-		this.#data = data;
-
-		this.#callbacks.onReadable?.(readable);
+		catch (error) {
+			traceTLS419Error("messageHandler", error);
+			throw error;
+		}
 	}
 }
 
