@@ -1,12 +1,15 @@
 import {buildLLMBearerAuthHeader} from "../core/llmAuth.js";
 import {NVS_KEYS, LLM_BACKENDS} from "./config.js";
+import {isDebugTraceEnabled} from "./debug.js";
 import {resolveBackendConfig} from "./providers.js";
 
 const OPENROUTER_REFERER = "https://github.com/tnm/zclaw";
 const OPENROUTER_TITLE = "zclaw";
 const ANTHROPIC_VERSION = "2023-06-01";
 
-function traceLLM(message) {
+function traceLLM(message, force = false) {
+	if (!force && !isDebugTraceEnabled("llm"))
+		return;
 	trace(`zclaw llm ${message}\n`);
 }
 
@@ -121,7 +124,11 @@ export class LLMService {
 			: {ok: true, skipped: false, value: await perform()};
 		const response = result.value ?? {ok: false, text: ""};
 		const preview = String(response.text ?? "").slice(0, 160).replace(/\s+/g, " ");
-		traceLLM(`response ok=${response.ok === true ? "yes" : "no"} status=${response.status ?? 0} body=${preview}`);
+		traceLLM(
+			`response backend=${config.backend} ok=${response.ok === true ? "yes" : "no"} ` +
+			`status=${response.status ?? 0} body=${preview}`,
+			response.ok !== true
+		);
 
 		return {
 			ok: response.ok === true,

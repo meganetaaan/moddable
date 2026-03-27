@@ -1,4 +1,5 @@
 import {NVS_KEYS} from "./config.js";
+import {isDebugTraceEnabled, traceDebug} from "./debug.js";
 import {
 	parseSlackUserIds,
 	slackUserIdsContain,
@@ -256,7 +257,7 @@ export class SlackService {
 	}
 
 	async #performSlackRequest(owner, request, options = {}) {
-		traceSlack(`request owner=${owner} url=${request?.url ?? ""}`);
+		traceDebug("slack", `request owner=${owner} url=${request?.url ?? ""}`);
 		const execute = async () => normalizeTransportResponse(await this.transport.requestText(request));
 		const result = this.httpGate
 			? await this.httpGate.runExclusive(owner, options, execute)
@@ -275,6 +276,8 @@ export class SlackService {
 			traceSlack(`api_error owner=${owner} error=${root?.error ?? "invalid_response"}`);
 			return {ok: false, skipped: false, text: response.text ?? "", root};
 		}
+		if (isDebugTraceEnabled("slack"))
+			traceDebug("slack", `response owner=${owner} status=${response.status ?? 0}`);
 		return {ok: true, skipped: false, text: response.text ?? "", root};
 	}
 

@@ -90,6 +90,21 @@ The Slack app should grant at least these bot scopes:
 This polling design assumes an internal or customer-built Slack app. Slack's
 `conversations.history` limits are stricter for newly distributed non-Marketplace commercial apps.
 
+When you need handshake or request-level diagnostics in the simulator, enable them explicitly:
+
+```sh
+mcconfig -d -m -p lin \
+  openAIKey="$OPENAI_API_KEY" \
+  slackToken="$SLACK_BOT_TOKEN" \
+  slackUserIds="U12345678" \
+  traceNetwork=1 \
+  traceSlack=1 \
+  traceLLM=1
+```
+
+`traceNetwork` enables DNS/HTTP/TLS transport logs. `traceSlack` and `traceLLM` enable the
+service-level request/response traces without turning on the lower-level socket logs.
+
 Run the suite with:
 
 ```sh

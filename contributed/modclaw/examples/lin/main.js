@@ -37,6 +37,19 @@ function parseConfigFlag(value, fallback = false) {
 	return fallback;
 }
 
+function configureDebugFlags() {
+	const traceAll = parseConfigFlag(config.traceAll, false);
+	const traceNetwork = traceAll || parseConfigFlag(config.traceNetwork, false);
+	const traceSlack = traceAll || parseConfigFlag(config.traceSlack, false);
+	const traceLLM = traceAll || parseConfigFlag(config.traceLLM, false);
+	globalThis.__zclawDebug = {
+		all: traceAll,
+		slack: traceSlack,
+		llm: traceLLM,
+	};
+	return {traceNetwork};
+}
+
 function seedSimulatorPreferences({LLM_BACKENDS, NVS_KEYS}) {
 	const openAIKey = config.openAIKey ?? config.apiKey ?? null;
 	const llmBackend = config.llmBackend ?? config.backend ?? (openAIKey ? LLM_BACKENDS.OPENAI : null);
@@ -80,11 +93,15 @@ async function boot() {
 			import("zclaw/config"),
 			import("zclaw/liveApp"),
 		]);
+		const debug = configureDebugFlags();
 
 		seedSimulatorPreferences({LLM_BACKENDS, NVS_KEYS});
 
 		const zclaw = createLiveZclawApp({
 			version: "lin-simulator",
+			transportOptions: {
+				traceNetwork: debug.traceNetwork,
+			},
 		});
 		globalThis.zclaw = zclaw;
 

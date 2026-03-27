@@ -15,13 +15,15 @@
 import Session from "ssl/session";
 import Timer from "timer";
 
-function traceTLS419(message) {
+function traceTLS419(enabled, message) {
+	if (!enabled)
+		return;
 	trace(`zclaw tls419 ${message}\n`);
 }
 
-function traceTLS419Error(owner, error) {
-	traceTLS419(`${owner} error=${error}`);
-	if (error?.stack)
+function traceTLS419Error(enabled, owner, error) {
+	traceTLS419(enabled, `${owner} error=${error}`);
+	if (enabled && error?.stack)
 		trace(`${error.stack}\n`);
 }
 
@@ -33,6 +35,7 @@ class TLSSocket {
 	#data;
 	#format = true;		// true == buffer, false = number
 	#doRead;
+	#traceNetwork = false;
 
 /*
 	host (TLS server name indication extension)
@@ -47,7 +50,8 @@ class TLSSocket {
  */
 
 	constructor(options) {		
-		traceTLS419(`construct host=${options.host} port=${options.port ?? 443}`);
+		this.#traceNetwork = options.traceNetwork === true;
+		traceTLS419(this.#traceNetwork, `construct host=${options.host} port=${options.port ?? 443}`);
 		this.#callbacks = {
 			onReadable: options.onReadable,
 			onWritable: options.onWritable,
@@ -61,10 +65,10 @@ class TLSSocket {
 				protocolVersion: 0x303,
 			});
 			this.#session.initiateHandshake();
-			traceTLS419(`session_ready host=${options.host}`);
+			traceTLS419(this.#traceNetwork, `session_ready host=${options.host}`);
 		}
 		catch (error) {
-			traceTLS419Error(`session host=${options.host}`, error);
+			traceTLS419Error(this.#traceNetwork, `session host=${options.host}`, error);
 			throw error;
 		}
 
@@ -148,7 +152,7 @@ class TLSSocket {
 	}
 	#onWritable(count) {
 		try {
-			traceTLS419(`writable count=${count} ready=${this.#ready ? "yes" : "no"}`);
+			traceTLS419(this.#traceNetwork, `writable count=${count} ready=${this.#ready ? "yes" : "no"}`);
 			this.#socket.writable = count;
 			if (!this.#ready)
 				this.#messageHandler();
@@ -156,13 +160,13 @@ class TLSSocket {
 				this.#callbacks.onWritable?.(count - 96);
 		}
 		catch (error) {
-			traceTLS419Error("onWritable", error);
+			traceTLS419Error(this.#traceNetwork, "onWritable", error);
 			this.#onError();
 		}
 	}
 	#onReadable(count) {
 		try {
-			traceTLS419(`readable count=${count} ready=${this.#ready ? "yes" : "no"}`);
+			traceTLS419(this.#traceNetwork, `readable count=${count} ready=${this.#ready ? "yes" : "no"}`);
 			this.#socket.readable = count;
 			if (this.#data)
 				return;
@@ -172,12 +176,12 @@ class TLSSocket {
 				this.#messageHandler();
 		}
 		catch (error) {
-			traceTLS419Error("onReadable", error);
+			traceTLS419Error(this.#traceNetwork, "onReadable", error);
 			this.#onError();
 		}
 	}
 	#onError() {
-		traceTLS419("error");
+		traceTLS419(this.#traceNetwork, "error");
 		this.#callbacks.onError?.();
 	}
 	#messageHandler(read) {
@@ -185,7 +189,7 @@ class TLSSocket {
 			if (!this.#ready) {
 				if (this.#session.handshake(this.#socket)) {
 					this.#ready = true;
-					traceTLS419("handshake_complete");
+					traceTLS419(this.#traceNetwork, "handshake_complete");
 					this.#onWritable(this.#socket.writable);
 				}
 				if (read)
@@ -207,7 +211,7 @@ class TLSSocket {
 			this.#callbacks.onReadable?.(readable);
 		}
 		catch (error) {
-			traceTLS419Error("messageHandler", error);
+			traceTLS419Error(this.#traceNetwork, "messageHandler", error);
 			throw error;
 		}
 	}

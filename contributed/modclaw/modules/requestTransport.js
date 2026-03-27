@@ -1,9 +1,11 @@
-function traceTransport(message) {
+function traceTransport(enabled, message) {
+	if (!enabled)
+		return;
 	trace(`zclaw transport ${message}\n`);
 }
 
 function traceTransportError(owner, error) {
-	traceTransport(`${owner} error=${error}`);
+	trace(`zclaw transport ${owner} error=${error}\n`);
 	if (error?.stack)
 		trace(`${error.stack}\n`);
 }
@@ -91,10 +93,12 @@ function resolveNetwork(root, scheme, secureOptions) {
 export class RequestTransport {
 	constructor(options = {}) {
 		this.network = options.network ?? null;
+		this.traceNetwork = options.traceNetwork === true;
 	}
 
 	requestText(options = {}) {
 		const {scheme, host, port, path} = parseURL(options.url);
+		const traceNetwork = this.traceNetwork;
 		const network = resolveNetwork(this.network ?? globalThis.device?.network, scheme, options.secure);
 		if (!network?.io)
 			return Promise.resolve({ok: false, status: 0, text: ""});
@@ -122,11 +126,12 @@ export class RequestTransport {
 			};
 
 			try {
-				traceTransport(`request host=${host} port=${port} path=${path}`);
+				traceTransport(traceNetwork, `request host=${host} port=${port} path=${path}`);
 				client = new network.io({
 					...network,
 					host,
 					port,
+					traceNetwork,
 					onError(error) {
 						traceTransportError(`client_error host=${host}`, error);
 						finish({ok: false, status, text: ""});
@@ -140,7 +145,7 @@ export class RequestTransport {
 					onHeaders(receivedStatus) {
 						try {
 							status = Number(receivedStatus) || 0;
-							traceTransport(`headers host=${host} status=${status}`);
+							traceTransport(traceNetwork, `headers host=${host} status=${status}`);
 						}
 						catch (error) {
 							traceTransportError(`onHeaders host=${host}`, error);
@@ -149,7 +154,7 @@ export class RequestTransport {
 					},
 					onWritable(count) {
 						try {
-							traceTransport(`writable host=${host} count=${count}`);
+							traceTransport(traceNetwork, `writable host=${host} count=${count}`);
 							if (!bodyBuffer)
 								return;
 
@@ -168,7 +173,7 @@ export class RequestTransport {
 					},
 					onReadable(count) {
 						try {
-							traceTransport(`readable host=${host} count=${count}`);
+							traceTransport(traceNetwork, `readable host=${host} count=${count}`);
 							if (count <= 0)
 								return;
 							responseBuffer = appendChunk(responseBuffer, this.read(count));
@@ -180,7 +185,7 @@ export class RequestTransport {
 					},
 					onDone(error) {
 						try {
-							traceTransport(`done host=${host} error=${error ? "yes" : "no"} status=${status}`);
+							traceTransport(traceNetwork, `done host=${host} error=${error ? "yes" : "no"} status=${status}`);
 							if (error) {
 								finish({ok: false, status, text: ""});
 								return;

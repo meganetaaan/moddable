@@ -22,7 +22,9 @@ import Timer from "timer";
 
 const more = Object.freeze({more: true});
 
-function traceHTTP419(message) {
+function traceHTTP419(enabled, message) {
+	if (!enabled)
+		return;
 	trace(`zclaw http419 ${message}\n`);
 }
 
@@ -149,6 +151,7 @@ class HTTPClient {
 	#chunk;
 	#timer;
 	#onError;
+	#traceNetwork = false;
 	
 	constructor(options) {
 		const {host, port, onError} = options; 
@@ -156,36 +159,41 @@ class HTTPClient {
 		if (!host) throw new Error("host required");
 		this.#host = host;
 		this.#onError = onError;
-		traceHTTP419(`construct host=${host} port=${port ?? 80}`);
+		this.#traceNetwork = options.traceNetwork === true;
+		traceHTTP419(this.#traceNetwork, `construct host=${host} port=${port ?? 80}`);
 
-		const dns = new options.dns.io(options.dns);
+		const dns = new options.dns.io({
+			...options.dns,
+			traceNetwork: this.#traceNetwork,
+		});
 		dns.resolve({
 			host: this.#host, 
 
 			onResolved: (host, address) => {
 				try {
-					traceHTTP419(`resolved host=${host} address=${address}`);
+					traceHTTP419(this.#traceNetwork, `resolved host=${host} address=${address}`);
 					this.#socket = new options.socket.io({
 						...options.socket,
 						address,
 						host,
 						port: port ?? 80,
+						traceNetwork: this.#traceNetwork,
 						onReadable: count => this.#onReadable(count),
 						onWritable: count => this.#onWritable(count),
 						onError: () => this.#error()
 					});
-					traceHTTP419(`socket_ready host=${host}`);
+					traceHTTP419(this.#traceNetwork, `socket_ready host=${host}`);
 				}
 				catch (e) {
-					traceHTTP419(`socket_error host=${host} error=${e}`);
-					if (e?.stack)
+					traceHTTP419(this.#traceNetwork, `socket_error host=${host} error=${e}`);
+					if (this.#traceNetwork && e?.stack)
 						trace(`${e.stack}\n`);
 					this.#state = "error";
 					this.#error?.(e);
 				}
 			},
 			onError: e => {
-				traceHTTP419(`dns_error host=${this.#host} error=${e}`);
+				traceHTTP419(this.#traceNetwork, `dns_error host=${this.#host} error=${e}`);
 				this.#state = "error";
 				this.#error?.(e);
 			}
@@ -202,7 +210,7 @@ class HTTPClient {
 	}
 	request(options) {
 		options = {...options};
-		traceHTTP419(`request host=${this.#host} path=${options.path ?? "/"}`);
+		traceHTTP419(this.#traceNetwork, `request host=${this.#host} path=${options.path ?? "/"}`);
 		this.#requests.push(options);
 		if (("connected" === this.#state) && (1 === this.#requests.length)) {
 			this.#next();
@@ -433,8 +441,8 @@ class HTTPClient {
 		} while (this.#pendingWrite && this.#writable);
 	}
 	#error(e) {
-		traceHTTP419(`error host=${this.#host} state=${this.#state} error=${e}`);
-		if (e?.stack)
+		traceHTTP419(this.#traceNetwork, `error host=${this.#host} state=${this.#state} error=${e}`);
+		if (this.#traceNetwork && e?.stack)
 			trace(`${e.stack}\n`);
 		if (("receivedBody" === this.#state) && this.#timer) {		// completion not reported yet. report before handling error.
 			Timer.clear(this.#timer);
@@ -460,7 +468,7 @@ class HTTPClient {
 		this.close();
 	}
 	#done() {
-		traceHTTP419(`done host=${this.#host}`);
+		traceHTTP419(this.#traceNetwork, `done host=${this.#host}`);
 		this.#timer = undefined;
 
 		this.#state = "completing";
