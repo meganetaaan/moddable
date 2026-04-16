@@ -29,7 +29,7 @@ export const LLM_API_URLS = Object.freeze({
 
 export const LLM_DEFAULT_MODELS = Object.freeze({
 	[LLM_BACKENDS.ANTHROPIC]: "claude-sonnet-4-6",
-	[LLM_BACKENDS.OPENAI]: "gpt-5.4",
+	[LLM_BACKENDS.OPENAI]: "gpt-5.4-nano",
 	[LLM_BACKENDS.OPENROUTER]: "openrouter/auto",
 	[LLM_BACKENDS.OLLAMA]: "qwen3:8b",
 });

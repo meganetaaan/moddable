@@ -31,7 +31,7 @@ assert.sameValue(config.usesOpenAIFormat, false);
 config = resolveBackendConfig({backend: "mystery_backend"});
 assert.sameValue(config.backend, LLM_BACKENDS.OPENAI);
 assert.sameValue(config.apiUrl, "https://api.openai.com/v1/responses");
-assert.sameValue(config.model, "gpt-5.4");
+assert.sameValue(config.model, "gpt-5.4-nano");
 assert.sameValue(config.usesOpenAIFormat, true);
 
 let request = JSON.parse(buildRequest({
@@ -54,7 +54,7 @@ request = JSON.parse(buildRequest({
 	userMessage: "hello",
 	tools,
 }));
-assert.sameValue(request.model, "gpt-5.4");
+assert.sameValue(request.model, "gpt-5.4-nano");
 assert.sameValue(request.max_output_tokens, 1024);
 assert.sameValue(request.instructions, "sys prompt");
 assert.sameValue(request.messages, undefined);
