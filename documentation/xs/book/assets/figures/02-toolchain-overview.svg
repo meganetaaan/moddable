@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720" role="img" aria-labelledby="title desc">
+  <title id="title">Moddable ツールチェーン全体図</title>
+  <desc id="desc">mcconfig が manifest を解釈して JavaScript コンパイル、XS リンク、アセット変換、ネイティブコンパイル、書き込み、デバッグ接続までを駆動する図。</desc>
+  <style>
+    text { font-family: "Helvetica Neue", Arial, sans-serif; fill: #183231; }
+    .title { font-size: 30px; font-weight: 700; }
+    .label { font-size: 20px; font-weight: 700; }
+    .body { font-size: 16px; }
+    .mono { font-family: "JetBrains Mono", monospace; font-size: 21px; font-weight: 700; fill: #114f4a; }
+    .frame { fill: #f8fbfb; stroke: #2d6762; stroke-width: 2.4; rx: 18; ry: 18; }
+    .lane { fill: #eef6f5; stroke: #7da4a0; stroke-width: 1.8; rx: 14; ry: 14; }
+    .emph { fill: #e0f0ef; }
+    .native { fill: #fff3df; stroke: #bb7b1b; }
+    .asset { fill: #f6f2ff; stroke: #7d6aa8; }
+    .device { fill: #edf7e7; stroke: #648a55; }
+    .arrow { stroke: #2d6762; stroke-width: 4; fill: none; marker-end: url(#arrow); }
+    .dashed { stroke-dasharray: 10 8; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#2d6762"/>
+    </marker>
+  </defs>
+
+  <rect width="1280" height="720" fill="#ffffff"/>
+  <text x="54" y="58" class="title">Moddable ツールチェーン: `mcconfig` が全体を駆動し、`xsc` と `xsl` はその一部として働く</text>
+
+  <rect x="58" y="92" width="1164" height="102" class="frame emph"/>
+  <text x="88" y="132" class="mono">mcconfig</text>
+  <text x="88" y="164" class="body">manifest の解釈、platform ごとの差分解決、JavaScript 側と native 側のビルドパイプライン起動、書き込み、debug 起動を束ねる司令塔</text>
+
+  <rect x="58" y="238" width="270" height="144" class="lane"/>
+  <text x="82" y="278" class="label">入力</text>
+  <text x="82" y="310" class="body">・JavaScript modules</text>
+  <text x="82" y="336" class="body">・manifest.json</text>
+  <text x="82" y="362" class="body">・画像 / フォント / 証明書</text>
+
+  <rect x="384" y="238" width="230" height="144" class="lane"/>
+  <text x="418" y="278" class="mono">xsc</text>
+  <text x="418" y="312" class="body">JavaScript を `.xsb` へ変換</text>
+  <text x="418" y="338" class="body">`Native(...)` / `native(...)` も解析</text>
+
+  <rect x="668" y="238" width="250" height="144" class="lane emph"/>
+  <text x="704" y="278" class="mono">xsl</text>
+  <text x="704" y="312" class="body">link / preload / strip / freeze</text>
+  <text x="704" y="338" class="body">frozen preparation を生成</text>
+
+  <rect x="972" y="238" width="250" height="144" class="lane asset"/>
+  <text x="1008" y="278" class="label">asset 変換</text>
+  <text x="1008" y="312" class="body">png2bmp / font 変換 / data pack</text>
+  <text x="1008" y="338" class="body">flash 直参照向け形式へ変換</text>
+
+  <path d="M328 310 L384 310" class="arrow"/>
+  <path d="M614 310 L668 310" class="arrow"/>
+  <path d="M328 350 L972 350" class="arrow dashed"/>
+
+  <rect x="58" y="442" width="356" height="166" class="lane native"/>
+  <text x="88" y="482" class="label">native 側 toolchain の例: ESP32 + ESP-IDF</text>
+  <text x="88" y="516" class="body">・C / C++ source を compile</text>
+  <text x="88" y="542" class="body">・driver, FreeRTOS, Wi-Fi, TLS と link</text>
+  <text x="88" y="568" class="body">・XS preparation と resource を firmware に埋め込む</text>
+
+  <rect x="468" y="442" width="274" height="166" class="lane"/>
+  <text x="500" y="482" class="label">firmware image</text>
+  <text x="500" y="516" class="body">JavaScript bytecode / preload 結果</text>
+  <text x="500" y="542" class="body">native host code / assets / setup modules</text>
+  <text x="500" y="568" class="body">が 1 つの成果物へまとまる</text>
+
+  <rect x="796" y="442" width="190" height="166" class="lane device"/>
+  <text x="828" y="482" class="label">flash / install</text>
+  <text x="828" y="516" class="body">esptool / idf.py</text>
+  <text x="828" y="542" class="body">などで書き込む</text>
+
+  <rect x="1040" y="442" width="182" height="166" class="lane device"/>
+  <text x="1072" y="482" class="label">device 起動</text>
+  <text x="1072" y="516" class="body">machine を clone</text>
+  <text x="1072" y="542" class="body">setup → main を実行</text>
+  <text x="1072" y="568" class="body">debug build なら xsbug 接続</text>
+
+  <path d="M918 310 L1000 442" class="arrow"/>
+  <path d="M414 525 L468 525" class="arrow"/>
+  <path d="M742 525 L796 525" class="arrow"/>
+  <path d="M986 525 L1040 525" class="arrow"/>
+</svg>

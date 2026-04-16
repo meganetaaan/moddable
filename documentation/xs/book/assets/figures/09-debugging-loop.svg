@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 0 1200 600">
+  <style>
+    .title { font: 700 32px 'Noto Sans CJK JP', sans-serif; fill: #183f3f; }
+    .label { font: 700 22px 'Noto Sans CJK JP', sans-serif; fill: #183f3f; }
+    .body { font: 18px 'Noto Sans CJK JP', sans-serif; fill: #1f2c2b; }
+    .node { fill: #f7fbf8; stroke: #6b9c90; stroke-width: 2; rx: 18; }
+    .node2 { fill: #f4fbff; stroke: #7ea6b0; stroke-width: 2; rx: 18; }
+  </style>
+  <rect width="1200" height="600" fill="#ffffff"/>
+  <text x="60" y="60" class="title">図10 xsbug を中心にした観測ループ</text>
+
+  <rect x="460" y="120" width="280" height="90" class="node2"/>
+  <text x="530" y="165" class="label">症状を観測</text>
+  <text x="500" y="195" class="body">起動失敗、遅さ、メモリ増加</text>
+
+  <rect x="120" y="290" width="260" height="110" class="node"/>
+  <text x="185" y="335" class="label">Instrumentation</text>
+  <text x="160" y="370" class="body">heap / chunk / stack / keys</text>
+
+  <rect x="470" y="290" width="260" height="110" class="node"/>
+  <text x="565" y="335" class="label">Profile</text>
+  <text x="525" y="370" class="body">Self / Total / GC / native</text>
+
+  <rect x="820" y="290" width="260" height="110" class="node"/>
+  <text x="905" y="335" class="label">Breakpoints</text>
+  <text x="860" y="370" class="body">stack / locals / modules / EVAL</text>
+
+  <rect x="460" y="470" width="280" height="80" class="node2"/>
+  <text x="530" y="515" class="label">修正して再計測</text>
+
+  <path d="M600 210 L250 290" fill="none" stroke="#174d4d" stroke-width="5"/>
+  <path d="M600 210 L600 290" fill="none" stroke="#174d4d" stroke-width="5"/>
+  <path d="M600 210 L950 290" fill="none" stroke="#174d4d" stroke-width="5"/>
+  <path d="M250 400 C250 455, 480 455, 520 470" fill="none" stroke="#174d4d" stroke-width="5"/>
+  <path d="M600 400 L600 470" fill="none" stroke="#174d4d" stroke-width="5"/>
+  <path d="M950 400 C950 455, 720 455, 680 470" fill="none" stroke="#174d4d" stroke-width="5"/>
+  <path d="M600 550 L600 575 L1040 575 L1040 120 L740 120" fill="none" stroke="#999" stroke-width="2" stroke-dasharray="8 6"/>
+  <text x="790" y="565" class="body">計測せずに最適化しない</text>
+</svg>

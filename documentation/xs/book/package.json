@@ -1,0 +1,17 @@
+{
+  "name": "xs-deep-dive-book",
+  "description": "Vivliostyle project for the Japanese xs book",
+  "author": "OpenAI Codex",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "vivliostyle build",
+    "preview": "vivliostyle preview --no-open-viewer",
+    "preview:quick": "vivliostyle preview --quick --no-open-viewer"
+  },
+  "devDependencies": {
+    "@vivliostyle/cli": "10.3.1",
+    "@vivliostyle/theme-techbook": "2.0.1"
+  }
+}

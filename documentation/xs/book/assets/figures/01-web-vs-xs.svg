@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560">
+  <style>
+    .title { font: 700 32px 'Noto Sans CJK JP', sans-serif; fill: #183f3f; }
+    .label { font: 700 24px 'Noto Sans CJK JP', sans-serif; fill: #183f3f; }
+    .body { font: 18px 'Noto Sans CJK JP', sans-serif; fill: #1f2c2b; }
+    .small { font: 16px 'Noto Sans CJK JP', sans-serif; fill: #476160; }
+    .boxA { fill: #f4fbff; stroke: #7ea6b0; stroke-width: 2; rx: 18; }
+    .boxB { fill: #f7fbf8; stroke: #6b9c90; stroke-width: 2; rx: 18; }
+    .accent { fill: #174d4d; }
+  </style>
+  <rect width="1200" height="560" fill="#ffffff"/>
+  <text x="60" y="60" class="title">図1 Web の JavaScript と xs の設計圧力</text>
+
+  <rect x="60" y="110" width="500" height="370" class="boxA"/>
+  <text x="90" y="155" class="label">Web / Node.js 側の前提</text>
+  <text x="95" y="205" class="body">• 実行時にソースを読む</text>
+  <text x="95" y="245" class="body">• JIT や大きなランタイムを許容できる</text>
+  <text x="95" y="285" class="body">• 起動時コストを平均性能で回収しやすい</text>
+  <text x="95" y="325" class="body">• monkey patch / 動的生成を比較的許容しやすい</text>
+  <text x="95" y="365" class="body">• メモリ不足は遅さや OOM として現れやすい</text>
+  <text x="95" y="425" class="small">主な最適化対象: throughput, JIT, 多様な host API</text>
+
+  <rect x="640" y="110" width="500" height="370" class="boxB"/>
+  <text x="670" y="155" class="label">xs / 組み込み側の前提</text>
+  <text x="675" y="205" class="body">• ビルド時にできることを前倒しする</text>
+  <text x="675" y="245" class="body">• ROM を実行資源として積極利用する</text>
+  <text x="675" y="285" class="body">• freeze / const で mutable コストを減らす</text>
+  <text x="675" y="325" class="body">• strip で使わない言語機能を落とす</text>
+  <text x="675" y="365" class="body">• RAM 不足は即障害なので予算化が必要</text>
+  <text x="675" y="425" class="small">主な最適化対象: 起動時間, ROM/RAM 予算, 安定性</text>
+
+  <path d="M560 295 C610 295, 590 295, 640 295" fill="none" stroke="#174d4d" stroke-width="6" marker-end="url(#arrow)"/>
+  <text x="540" y="270" class="small accent">制約が変わると設計が変わる</text>
+
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 z" fill="#174d4d"/>
+    </marker>
+  </defs>
+</svg>

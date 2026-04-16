@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520">
+  <style>
+    .title { font: 700 30px 'Noto Sans CJK JP', sans-serif; fill: #183f3f; }
+    .label { font: 700 22px 'Noto Sans CJK JP', sans-serif; fill: #183f3f; }
+    .body { font: 16px 'Noto Sans CJK JP', sans-serif; fill: #1f2c2b; }
+    .box { fill: #f7fbff; stroke: #7ea6b0; stroke-width: 2; rx: 16; }
+    .box2 { fill: #f7fbf8; stroke: #7ba18e; stroke-width: 2; rx: 16; }
+  </style>
+  <rect width="1200" height="520" fill="#ffffff"/>
+  <text x="60" y="55" class="title">図5 Promise jobs は host によって起動されます</text>
+
+  <rect x="80" y="130" width="270" height="150" class="box"/>
+  <text x="110" y="170" class="label">JavaScript code</text>
+  <text x="110" y="210" class="body">Promise settle</text>
+  <text x="110" y="240" class="body">→ reaction を queue</text>
+
+  <rect x="465" y="130" width="270" height="150" class="box2"/>
+  <text x="495" y="170" class="label">xs runtime</text>
+  <text x="495" y="210" class="body">mxPendingJobs に job を積む</text>
+  <text x="495" y="240" class="body">必要なら fxQueuePromiseJobs()</text>
+
+  <rect x="850" y="130" width="270" height="150" class="box"/>
+  <text x="880" y="170" class="label">platform / host</text>
+  <text x="880" y="210" class="body">run loop / task / callback</text>
+  <text x="880" y="240" class="body">→ fxRunPromiseJobs()</text>
+
+  <path d="M350 205 L465 205" stroke="#174d4d" stroke-width="5" marker-end="url(#arrow)"/>
+  <path d="M735 205 L850 205" stroke="#174d4d" stroke-width="5" marker-end="url(#arrow)"/>
+
+  <rect x="140" y="340" width="930" height="100" fill="#f8faf9" stroke="#b8cbca" stroke-width="2" rx="18"/>
+  <text x="170" y="380" class="body">Node.js の event loop を暗黙前提にすると誤読しやすい点です。job queue は xs が持ちますが、「いつ回すか」の責任は host 側にあります。</text>
+
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 z" fill="#174d4d"/>
+    </marker>
+  </defs>
+</svg>

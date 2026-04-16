@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620">
+  <style>
+    .title { font: 700 32px 'Noto Sans CJK JP', sans-serif; fill: #183f3f; }
+    .label { font: 700 24px 'Noto Sans CJK JP', sans-serif; fill: #183f3f; }
+    .body { font: 18px 'Noto Sans CJK JP', sans-serif; fill: #1f2c2b; }
+    .small { font: 16px 'Noto Sans CJK JP', sans-serif; fill: #476160; }
+    .before { fill: #d8ecf4; }
+    .afterA { fill: #99c7b7; }
+    .afterB { fill: #c9ddd6; }
+    .box { fill: none; stroke: #6f8d8a; stroke-width: 2; }
+  </style>
+  <rect width="1200" height="620" fill="#ffffff"/>
+  <text x="60" y="60" class="title">図12 ケーススタディの予算イメージ</text>
+
+  <text x="170" y="120" class="label">初期案: single machine / preload 不十分</text>
+  <rect x="140" y="150" width="320" height="360" class="box"/>
+  <rect x="180" y="250" width="240" height="220" class="before"/>
+  <text x="215" y="235" class="body">main machine RAM 使用量</text>
+  <text x="220" y="540" class="small">起動時 allocation が大きくピークも高めです</text>
+
+  <text x="670" y="120" class="label">改善案: preload + 通信 Worker 分離</text>
+  <rect x="640" y="150" width="420" height="360" class="box"/>
+  <rect x="690" y="230" width="150" height="240" class="afterA"/>
+  <rect x="870" y="320" width="120" height="150" class="afterB"/>
+  <text x="705" y="205" class="body">main</text>
+  <text x="892" y="295" class="body">worker</text>
+  <text x="690" y="540" class="small">main の起動ピークを抑えつつ通信を別予算化できます</text>
+
+  <path d="M500 330 C560 330, 580 330, 640 330" fill="none" stroke="#174d4d" stroke-width="6" marker-end="url(#arrow)"/>
+  <text x="500" y="300" class="small">前倒しと分離</text>
+
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 z" fill="#174d4d"/>
+    </marker>
+  </defs>
+</svg>

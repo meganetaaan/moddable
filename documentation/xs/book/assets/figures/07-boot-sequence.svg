@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 520" width="960" height="520" role="img" aria-labelledby="title desc">
+  <title id="title">xs 起動シーケンス</title>
+  <desc id="desc">ビルド済みの frozen machine を準備し、setup と main を読み込んで起動する流れ。</desc>
+  <style>
+    text { font-family: "Helvetica Neue", Arial, sans-serif; fill: #183332; }
+    .title { font-size: 26px; font-weight: 700; }
+    .label { font-size: 20px; font-weight: 600; }
+    .body { font-size: 16px; }
+    .box { fill: #f5fbfb; stroke: #2b6460; stroke-width: 2; rx: 16; ry: 16; }
+    .accent { fill: #d9efee; }
+    .warn { fill: #fff4dc; stroke: #c2851d; }
+    .arrow { stroke: #2b6460; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2b6460" />
+    </marker>
+  </defs>
+  <text x="48" y="54" class="title">起動シーケンス: build time の準備を runtime で clone する</text>
+
+  <rect x="54" y="110" width="178" height="116" class="box accent" />
+  <text x="78" y="148" class="label">1. frozen preparation</text>
+  <text x="78" y="180" class="body">`xsl` が生成した</text>
+  <text x="78" y="204" class="body">read-only machine 状態</text>
+
+  <rect x="284" y="110" width="178" height="116" class="box" />
+  <text x="308" y="148" class="label">2. prepare / clone</text>
+  <text x="308" y="180" class="body">`fxPrepareMachine` が</text>
+  <text x="308" y="204" class="body">RAM 側の live machine を作る</text>
+
+  <rect x="514" y="110" width="178" height="116" class="box" />
+  <text x="538" y="148" class="label">3. setup import</text>
+  <text x="538" y="180" class="body">`setup/*` を読み込み</text>
+  <text x="538" y="204" class="body">host / device を初期化</text>
+
+  <rect x="744" y="110" width="160" height="116" class="box accent" />
+  <text x="768" y="148" class="label">4. main import</text>
+  <text x="768" y="180" class="body">`creation.main`</text>
+  <text x="768" y="204" class="body">の module を実行</text>
+
+  <path d="M 232 168 L 284 168" class="arrow" />
+  <path d="M 462 168 L 514 168" class="arrow" />
+  <path d="M 692 168 L 744 168" class="arrow" />
+
+  <rect x="86" y="302" width="772" height="138" class="box warn" />
+  <text x="118" y="338" class="label">重要な観点</text>
+  <text x="118" y="372" class="body">・`main.js` が最初から世界を構築するのではなく、host が machine を用意してから module を import します。</text>
+  <text x="118" y="400" class="body">・preload 済みの定義は ROM に残るため、起動時は「解析」ではなく「複製と少量の初期化」が中心です。</text>
+  <text x="118" y="428" class="body">・setup を重くしすぎると、最も短くしたい起動経路に native 初期化コストを集めてしまいます。</text>
+  </svg>

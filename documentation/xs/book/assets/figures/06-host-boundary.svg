@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620">
+  <style>
+    .title { font: 700 30px 'Noto Sans CJK JP', sans-serif; fill: #183f3f; }
+    .label { font: 700 22px 'Noto Sans CJK JP', sans-serif; fill: #183f3f; }
+    .body { font: 16px 'Noto Sans CJK JP', sans-serif; fill: #1e2a29; }
+    .boxA { fill: #f4fbff; stroke: #7ea6b0; stroke-width: 2; rx: 16; }
+    .boxB { fill: #f7fbf8; stroke: #7ea38e; stroke-width: 2; rx: 16; }
+  </style>
+  <rect width="1200" height="620" fill="#ffffff"/>
+  <text x="60" y="55" class="title">図6 JavaScript と native host の境界</text>
+
+  <rect x="80" y="130" width="390" height="360" class="boxA"/>
+  <text x="110" y="170" class="label">JavaScript 側</text>
+  <text x="110" y="215" class="body">• class / function / module</text>
+  <text x="110" y="250" class="body">• setup / main / control logic</text>
+  <text x="110" y="285" class="body">• readable API surface</text>
+  <text x="110" y="320" class="body">• preload / freeze しやすい構造</text>
+
+  <rect x="730" y="130" width="390" height="360" class="boxB"/>
+  <text x="760" y="170" class="label">native host 側</text>
+  <text x="760" y="215" class="body">• GPIO / I2C / SPI / display / TLS</text>
+  <text x="760" y="250" class="body">• packed struct / handle / host chunk</text>
+  <text x="760" y="285" class="body">• high-frequency hot path</text>
+  <text x="760" y="320" class="body">• GC hook / destructor / xsRemember</text>
+
+  <rect x="500" y="220" width="180" height="170" fill="#fff8ec" stroke="#cdb07c" stroke-width="2" rx="16"/>
+  <text x="530" y="260" class="label">XS in C</text>
+  <text x="520" y="300" class="body">slot</text>
+  <text x="520" y="330" class="body">@ syntax</text>
+  <text x="520" y="360" class="body">host object</text>
+
+  <path d="M470 305 L500 305" stroke="#174d4d" stroke-width="5" marker-end="url(#arrow)"/>
+  <path d="M680 305 L730 305" stroke="#174d4d" stroke-width="5" marker-end="url(#arrow)"/>
+
+  <rect x="180" y="530" width="840" height="50" fill="#f8faf9" stroke="#c2d0ce" stroke-width="2" rx="14"/>
+  <text x="205" y="562" class="body">設計の勘所: device I/O と hot path は native に寄せ、状態遷移や product logic は JavaScript に残すのが xs では筋が良いです。</text>
+
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 z" fill="#174d4d"/>
+    </marker>
+  </defs>
+</svg>

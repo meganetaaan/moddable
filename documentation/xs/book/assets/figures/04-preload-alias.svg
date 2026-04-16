@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 0 1200 600">
+  <style>
+    .title { font: 700 30px 'Noto Sans CJK JP', sans-serif; fill: #183f3f; }
+    .label { font: 700 22px 'Noto Sans CJK JP', sans-serif; fill: #183f3f; }
+    .body { font: 16px 'Noto Sans CJK JP', sans-serif; fill: #1e2a29; }
+    .boxA { fill: #f5fbff; stroke: #7ea6b0; stroke-width: 2; rx: 16; }
+    .boxB { fill: #f7fbf8; stroke: #78a08d; stroke-width: 2; rx: 16; }
+    .boxC { fill: #fff5e8; stroke: #caaf77; stroke-width: 2; rx: 16; }
+    .muted { font: 16px 'Noto Sans CJK JP', sans-serif; fill: #56706f; }
+  </style>
+  <rect width="1200" height="600" fill="#ffffff"/>
+  <text x="60" y="55" class="title">図4 preload, freeze, alias の関係</text>
+
+  <rect x="70" y="120" width="300" height="210" class="boxA"/>
+  <text x="100" y="160" class="label">build time</text>
+  <text x="100" y="205" class="body">1. module を preload 実行</text>
+  <text x="100" y="240" class="body">2. class / prototype / tables を構築</text>
+  <text x="100" y="275" class="body">3. read-only preparation に保存</text>
+
+  <rect x="450" y="120" width="300" height="210" class="boxB"/>
+  <text x="480" y="160" class="label">runtime, frozen</text>
+  <text x="480" y="205" class="body">• ROM object をそのまま使えます</text>
+  <text x="480" y="240" class="body">• alias pointer 不要です</text>
+  <text x="480" y="275" class="body">• RAM コストを削れます</text>
+
+  <rect x="830" y="120" width="300" height="210" class="boxC"/>
+  <text x="860" y="160" class="label">runtime, mutable</text>
+  <text x="860" y="205" class="body">• 書き換え時に RAM alias を作ります</text>
+  <text x="860" y="240" class="body">• 仕様適合は保てます</text>
+  <text x="860" y="275" class="body">• ただし常駐コストが増えます</text>
+
+  <path d="M370 225 L450 225" stroke="#174d4d" stroke-width="5" marker-end="url(#arrow)"/>
+  <path d="M750 225 L830 225" stroke="#174d4d" stroke-width="5" marker-end="url(#arrow)"/>
+
+  <rect x="150" y="400" width="900" height="120" fill="#f8faf9" stroke="#bacdca" stroke-width="2" rx="18"/>
+  <text x="180" y="440" class="label">読み方</text>
+  <text x="180" y="474" class="body">`Object.freeze` と `const` は style ではありません。preload 後に alias table を削るための設計指示です。</text>
+  <text x="180" y="504" class="muted">mutable を残すと「実行時に変更できる」かわりに RAM ポインタの常駐コストを支払います。</text>
+
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 z" fill="#174d4d"/>
+    </marker>
+  </defs>
+</svg>

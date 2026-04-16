@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720">
+  <style>
+    .title { font: 700 30px 'Noto Sans CJK JP', sans-serif; fill: #183f3f; }
+    .label { font: 700 22px 'Noto Sans CJK JP', sans-serif; fill: #183f3f; }
+    .body { font: 16px 'Noto Sans CJK JP', sans-serif; fill: #1e2a29; }
+    .mono { font: 700 18px 'JetBrains Mono', monospace; fill: #174d4d; }
+    .boxA { fill: #f4fbff; stroke: #7ea6b0; stroke-width: 2; rx: 14; }
+    .boxB { fill: #f7fbf8; stroke: #7ba18e; stroke-width: 2; rx: 14; }
+    .boxC { fill: #fff8ec; stroke: #d0b278; stroke-width: 2; rx: 14; }
+  </style>
+  <rect width="1200" height="720" fill="#ffffff"/>
+  <text x="60" y="55" class="title">図3 xs machine とメモリ表現</text>
+
+  <rect x="60" y="110" width="350" height="540" class="boxA"/>
+  <text x="90" y="150" class="label">machine</text>
+  <text x="90" y="195" class="mono">stack / scope / frame / code</text>
+  <text x="90" y="235" class="body">現在実行中の interpreter state</text>
+  <text x="90" y="285" class="mono">key array / name table / symbol table</text>
+  <text x="90" y="325" class="body">識別子管理と late remap の中心</text>
+  <text x="90" y="375" class="mono">pendingJobs / runningJobs</text>
+  <text x="90" y="415" class="body">Promise jobs や module queue も保持</text>
+  <text x="90" y="465" class="mono">cRoot / weak refs / finalization</text>
+  <text x="90" y="505" class="body">GC がたどる root 群</text>
+
+  <rect x="470" y="110" width="280" height="250" class="boxB"/>
+  <text x="500" y="150" class="label">slot heap</text>
+  <text x="500" y="195" class="body">固定長 cell</text>
+  <text x="500" y="230" class="body">• primitive tagged value</text>
+  <text x="500" y="265" class="body">• property node</text>
+  <text x="500" y="300" class="body">• frame / closure / module record</text>
+  <text x="500" y="335" class="body">• freeHeap で再利用</text>
+
+  <rect x="470" y="400" width="280" height="250" class="boxC"/>
+  <text x="500" y="440" class="label">chunk heap</text>
+  <text x="500" y="485" class="body">可変長 block</text>
+  <text x="500" y="520" class="body">• string / code / array buffer</text>
+  <text x="500" y="555" class="body">• table / bigint / host data</text>
+  <text x="500" y="590" class="body">• compact 対象</text>
+
+  <rect x="820" y="110" width="300" height="250" class="boxA"/>
+  <text x="850" y="150" class="label">stack frame layout</text>
+  <text x="850" y="195" class="body">this</text>
+  <text x="850" y="225" class="body">function</text>
+  <text x="850" y="255" class="body">target / result</text>
+  <text x="850" y="285" class="body">saved frame + saved code/scope</text>
+  <text x="850" y="315" class="body">argument count</text>
+  <text x="850" y="345" class="body">arguments...</text>
+
+  <rect x="820" y="400" width="300" height="250" class="boxB"/>
+  <text x="850" y="440" class="label">設計意図</text>
+  <text x="850" y="485" class="body">• slot は動かさず pointer 安定性を確保します。</text>
+  <text x="850" y="520" class="body">• chunk だけ動かして断片化に耐えます。</text>
+  <text x="850" y="555" class="body">• 1 種類の slot を多用途に使って実装を小さく保ちます。</text>
+
+  <path d="M410 240 L470 240" stroke="#174d4d" stroke-width="5" marker-end="url(#arrow)"/>
+  <path d="M410 520 L470 520" stroke="#174d4d" stroke-width="5" marker-end="url(#arrow)"/>
+  <path d="M750 240 L820 240" stroke="#174d4d" stroke-width="5" marker-end="url(#arrow)"/>
+  <path d="M750 520 L820 520" stroke="#174d4d" stroke-width="5" marker-end="url(#arrow)"/>
+
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 z" fill="#174d4d"/>
+    </marker>
+  </defs>
+</svg>
