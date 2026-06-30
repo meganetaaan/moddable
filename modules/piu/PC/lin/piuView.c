@@ -554,8 +554,13 @@ void PiuViewCreate(xsMachine* the)
 	(*self)->gtkWindow = GTK_WINDOW(gtkWindow);
 	
 	gtk_widget_show_all(GTK_WIDGET(gtkWindow));
-	gtk_widget_set_can_focus(GTK_WIDGET(gtkView), TRUE);
-	gtk_widget_grab_focus(GTK_WIDGET(gtkView));
+	const gchar* headless = g_getenv("MCSIM_HEADLESS");
+	if (headless && strcmp(headless, "0"))
+		gtk_widget_hide(GTK_WIDGET(gtkWindow));
+	else {
+		gtk_widget_set_can_focus(GTK_WIDGET(gtkView), TRUE);
+		gtk_widget_grab_focus(GTK_WIDGET(gtkView));
+	}
 	
 	xsResult = xsThis;
 }

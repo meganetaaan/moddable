@@ -48,6 +48,16 @@ char _debugStrBuffer[256];
 #endif
 static void fxVReportException(void* console, txString thePath, txInteger theLine, txString theFormat, c_va_list theArguments);
 
+static txBoolean fxReportToConsole(void)
+{
+#if mxLinux
+	char* log = getenv("MCSIM_LOG");
+	if (log && (!strcmp(log, "stdout") || !strcmp(log, "stderr")))
+		return 0;
+#endif
+	return 1;
+}
+
 #if defined(mxInstrument) || defined (mxDebug)	
 static const char gxHexaDigits[] ICACHE_FLASH_ATTR = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 #endif
@@ -2832,6 +2842,7 @@ void fxReport(txMachine* the, txString theFormat, ...)
 	fxVReport(the, theFormat, arguments);
 	c_va_end(arguments);
 #ifndef mxNoConsole
+	if (fxReportToConsole()) {
 	c_va_start(arguments, theFormat);
 #ifdef pebble
 char foo[128];
@@ -2841,6 +2852,7 @@ modLog_transmit(foo);
 	c_vprintf(theFormat, arguments);
 	c_va_end(arguments);
 #endif
+	}
 #endif
 }
 

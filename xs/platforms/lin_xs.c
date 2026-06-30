@@ -51,6 +51,10 @@ void fxCreateMachinePlatform(txMachine* the)
 	the->workerContext = g_main_context_get_thread_default();
 	g_mutex_init(&(the->workerMutex));
 	the->demarshall = fxDemarshall;
+	the->logStream = 0;
+	the->logState = 0;
+	the->logMatch = 0;
+	the->logEntityLength = 0;
 }
 
 void fxDeleteMachinePlatform(txMachine* the)
@@ -125,6 +129,164 @@ gboolean fxQueueWorkerJobsCallback(void *it)
 #ifdef mxDebug
 extern char *program_invocation_name;
 
+static FILE* fxLogFile(txMachine* the)
+{
+	return (the->logStream == 2) ? stderr : stdout;
+}
+
+static void fxLogPutCodepoint(txMachine* the, int value)
+{
+	FILE* file = fxLogFile(the);
+	if (value < 0x80)
+		fputc(value, file);
+	else if (value < 0x800) {
+		fputc(0xC0 | (value >> 6), file);
+		fputc(0x80 | (value & 0x3F), file);
+	}
+	else if (value < 0x10000) {
+		fputc(0xE0 | (value >> 12), file);
+		fputc(0x80 | ((value >> 6) & 0x3F), file);
+		fputc(0x80 | (value & 0x3F), file);
+	}
+}
+
+static int fxLogDecodeEntity(char* entity)
+{
+	int value = -1;
+	if (!strcmp(entity, "&lt;"))
+		return '<';
+	if (!strcmp(entity, "&gt;"))
+		return '>';
+	if (!strcmp(entity, "&amp;"))
+		return '&';
+	if (!strcmp(entity, "&quot;"))
+		return '"';
+	if (!strcmp(entity, "&apos;"))
+		return '\'';
+	if ((entity[0] == '&') && (entity[1] == '#')) {
+		char* scan = entity + 2;
+		int base = 10;
+		if ((*scan == 'x') || (*scan == 'X')) {
+			base = 16;
+			scan++;
+		}
+		value = (int)strtol(scan, NULL, base);
+	}
+	return value;
+}
+
+static void fxLogPutEntity(txMachine* the)
+{
+	int value;
+	the->logEntity[the->logEntityLength] = 0;
+	value = fxLogDecodeEntity(the->logEntity);
+	if (value >= 0)
+		fxLogPutCodepoint(the, value);
+	else
+		fwrite(the->logEntity, 1, the->logEntityLength, fxLogFile(the));
+	the->logEntityLength = 0;
+}
+
+static void fxLogPutMatchedEnd(txMachine* the)
+{
+	static const char gxEnd[] = "</log>";
+	int i;
+	FILE* file = fxLogFile(the);
+	for (i = 0; i < the->logMatch; i++)
+		fputc(gxEnd[i], file);
+}
+
+static void fxLogWrite(txMachine* the, char* buffer, int size)
+{
+	static const char gxStart[] = "<log";
+	static const char gxEnd[] = "</log>";
+	FILE* file = fxLogFile(the);
+	int i;
+	for (i = 0; i < size; i++) {
+		char c = buffer[i];
+		switch (the->logState) {
+		case 0:
+			if (c == '<') {
+				the->logState = 1;
+				the->logMatch = 1;
+			}
+			break;
+		case 1:
+			if (c == gxStart[the->logMatch]) {
+				the->logMatch++;
+				if (the->logMatch == 4)
+					the->logState = 2;
+			}
+			else {
+				the->logState = (c == '<') ? 1 : 0;
+				the->logMatch = (c == '<') ? 1 : 0;
+			}
+			break;
+		case 2:
+			if (the->logMatch == 4) {
+				if (c == '>') {
+					the->logState = 3;
+					the->logEntityLength = 0;
+				}
+				else if ((c == ' ') || (c == '\t') || (c == '\r') || (c == '\n'))
+					the->logMatch = 0;
+				else {
+					the->logState = 0;
+					the->logMatch = 0;
+				}
+			}
+			else if (c == '>') {
+				the->logState = 3;
+				the->logEntityLength = 0;
+			}
+			break;
+		case 3:
+			if (the->logEntityLength) {
+				if ((c == ';') && (the->logEntityLength < (int)sizeof(the->logEntity) - 1)) {
+					the->logEntity[the->logEntityLength++] = c;
+					fxLogPutEntity(the);
+				}
+				else if (the->logEntityLength >= (int)sizeof(the->logEntity) - 1) {
+					fwrite(the->logEntity, 1, the->logEntityLength, file);
+					the->logEntityLength = 0;
+					fputc(c, file);
+				}
+				else
+					the->logEntity[the->logEntityLength++] = c;
+			}
+			else if (c == '&') {
+				the->logEntity[0] = c;
+				the->logEntityLength = 1;
+			}
+			else if (c == '<') {
+				the->logState = 4;
+				the->logMatch = 1;
+			}
+			else
+				fputc(c, file);
+			break;
+		case 4:
+			if (c == gxEnd[the->logMatch]) {
+				the->logMatch++;
+				if (the->logMatch == 6) {
+					the->logState = 0;
+					the->logMatch = 0;
+					the->logEntityLength = 0;
+				}
+			}
+			else {
+				fxLogPutMatchedEnd(the);
+				the->logState = (c == '<') ? 4 : 3;
+				the->logMatch = (c == '<') ? 1 : 0;
+				if (c != '<')
+					fputc(c, file);
+			}
+			break;
+		}
+	}
+	fflush(file);
+}
+
 gboolean fxReadableCallback(GSocket *socket, GIOCondition condition, gpointer user_data)
 {
 	txMachine* the = user_data;
@@ -146,6 +308,15 @@ void fxConnect(txMachine* the)
 	int fd = -1;
 	int	flag;
 	char *hostname = "localhost";
+	char *log = getenv("MCSIM_LOG");
+	if (log && !strcmp(log, "stdout")) {
+		the->logStream = 1;
+		return;
+	}
+	if (log && !strcmp(log, "stderr")) {
+		the->logStream = 2;
+		return;
+	}
 	if (getenv("XSBUG_HOST"))
 		hostname = getenv("XSBUG_HOST"); 
 	host = gethostbyname(hostname);
@@ -207,6 +378,10 @@ bail:
 
 void fxDisconnect(txMachine* the)
 {
+	the->logStream = 0;
+	the->logState = 0;
+	the->logMatch = 0;
+	the->logEntityLength = 0;
 	if (the->source) {
 		g_source_destroy(the->source);
 		the->source = NULL;
@@ -220,6 +395,8 @@ void fxDisconnect(txMachine* the)
 
 txBoolean fxIsConnected(txMachine* the)
 {
+	if (the->logStream)
+		return 1;
 	return (the->socket) ? 1 : 0;
 }
 
@@ -237,6 +414,12 @@ txBoolean fxIsReadable(txMachine* the)
 
 void fxReceive(txMachine* the)
 {
+	if (the->logStream) {
+		static char go[] = "\r\n<xsbug><go/></xsbug>\r\n";
+		memcpy(the->debugBuffer, go, sizeof(go));
+		the->debugOffset = sizeof(go) - 1;
+		return;
+	}
 	if (the->socket) {
 		GError* error = NULL;
 		gssize count;
@@ -263,6 +446,10 @@ void fxReceive(txMachine* the)
 
 void fxSend(txMachine* the, txBoolean more)
 {
+	if (the->logStream) {
+		fxLogWrite(the, the->echoBuffer, the->echoOffset);
+		return;
+	}
 	if (the->socket) {
 		GError* error = NULL;
 		gssize count;

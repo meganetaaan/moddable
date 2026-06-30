@@ -1,0 +1,21 @@
+{
+	"build": {
+		"NAME": "mctest"
+	},
+	"include": [
+		"$(MODDABLE)/examples/manifest_base.json",
+		"$(MODDABLE)/examples/manifest_piu.json"
+	],
+	"modules": {
+		"*": [
+			"./main",
+			"./lib/*",
+			"./tests/*"
+		]
+	},
+	"resources": {
+		"*-alpha": [
+			"$(MODDABLE)/examples/assets/fonts/OpenSans-Regular-20"
+		]
+	}
+}

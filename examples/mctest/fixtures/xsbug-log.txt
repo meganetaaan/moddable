@@ -1,0 +1,7 @@
+#xsbug-log connected to "mctest"
+{"protocol":"mctest/1","type":"run:start","name":"fixture","count":2}
+{"protocol":"mctest/1","type":"test:start","name":"fixture pass"}
+{"protocol":"mctest/1","type":"test:pass","name":"fixture pass","durationMs":1}
+{"protocol":"mctest/1","type":"test:start","name":"fixture skip"}
+{"protocol":"mctest/1","type":"test:skip","name":"fixture skip","reason":"example","durationMs":0}
+{"protocol":"mctest/1","type":"run:done","name":"fixture","passed":1,"failed":0,"skipped":1,"durationMs":2}

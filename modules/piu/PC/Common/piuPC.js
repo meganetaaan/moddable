@@ -191,6 +191,7 @@ globalThis.system = {
 	get applicationPath() { return native("PiuSystem_get_applicationPath").call(this); },
 	get localDirectory() { return native("PiuSystem_get_localDirectory").call(this); },
 	get platform() { return native("PiuSystem_get_platform").call(this); },
+	getenv(name) { return native("PiuSystem_getenv").call(this, name); },
 
 	launchPath(url) { return native("PiuSystem_launchPath").call(this, url); },
 	launchURL(url) { return native("PiuSystem_launchURL").call(this, url); },
@@ -243,4 +244,3 @@ globalThis.system = {
 	getPathName(path) { return native("PiuSystem_getPathName").call(this, path); },
 }
 Object.freeze(globalThis.system);
-

@@ -149,6 +149,10 @@ class ApplicationBehavior extends Behavior {
 		let extension = (system.platform == "win") ? "dll" : "so";
 		global.model = this;
   		application.interval = 100;
+		this.mode = system.getenv("MCSIM_MODE") || "full";
+		this.headless = (this.mode == "headless");
+		this.minimal = (this.mode == "minimal") || this.headless;
+		this.screenshotPath = system.getenv("MCSIM_SCREENSHOT");
 		
 		this.keys = {};
 		this.appearance = 0;
@@ -180,6 +184,10 @@ class ApplicationBehavior extends Behavior {
 		this.localFFIPath = system.buildPath(system.localDirectory, "mc.ffi", extension);
 		
 		this.readPreferences();
+		if (this.minimal) {
+			this.controlsStatus = false;
+			this.infoStatus = false;
+		}
 		
 		try {
 			let directory = system.getPathDirectory(system.applicationPath);
@@ -195,16 +203,18 @@ class ApplicationBehavior extends Behavior {
 		}
 		catch {
 		}
+		this.readCommandLineOptions(extension);
 	}
 	onAppearanceChanged(application, which) {
 		this.appearance = which;
 		this.onColorsChanged(application);
 		if (!application.first) {
-			application.add(new MainContainer(this));
+			application.add(this.minimal ? new MinimalContainer(this) : new MainContainer(this));
 			if (this.devicesPath)
 				this.reloadDevices(application);
 			else
 				this.selectDevice(application, -1);
+			this.selectDeviceForLibraryPath(application, this.libraryPath);
 
 			if (this.onOpenFileList)
 				application.defer("onOpenFileCallback");
@@ -219,8 +229,9 @@ class ApplicationBehavior extends Behavior {
 		buildAssets(appearance);
 		if (application.first) {
 			this.quitScreen();
-			application.replace(application.first, new MainContainer(this));
+			application.replace(application.first, this.minimal ? new MinimalContainer(this) : new MainContainer(this));
 			this.reloadDevices(application);
+			this.selectDeviceForLibraryPath(application, this.libraryPath);
 			this.launchScreen();
 		}
 	}
@@ -252,9 +263,21 @@ class ApplicationBehavior extends Behavior {
 			else
 				this.SCREEN.launch(this.localLibraryPath);
 			this.DEVICE.first.delegate("onLaunch");
+			if (this.screenshotPath && !this.screenshotDone) {
+				this.screenshotDone = true;
+				this.writeCommandLineScreenshot();
+			}
 		}
 		application.updateMenus();
 		application.distribute("onInfoChanged");
+	}
+	writeCommandLineScreenshot() {
+		try {
+			this.SCREEN.writePNG(this.screenshotPath);
+		}
+		catch (e) {
+			trace(`mcsim: failed to save screenshot ${this.screenshotPath}: ${e}\n`);
+		}
 	}
 	quitScreen() {
 		if (this.screenOnce)
@@ -267,6 +290,30 @@ class ApplicationBehavior extends Behavior {
 			system.deleteFile(this.localArchivePath);
 		if (system.fileExists(this.localLibraryPath))
 			system.deleteFile(this.localLibraryPath);
+	}
+	readCommandLineOptions(extension) {
+		const path = system.getenv("MCSIM_APP");
+		if (!path)
+			return;
+		if (path.endsWith((system.platform == "win") ? ".dll" : ".so"))
+			this.libraryPath = path;
+		else if (path.endsWith(".xsa")) {
+			this.archivePath = path;
+			const directory = system.getPathDirectory(path);
+			const ffiPath = system.buildPath(directory, "mc.ffi", extension);
+			if (system.fileExists(ffiPath))
+				this.ffiPath = ffiPath;
+		}
+	}
+	selectDeviceForLibraryPath(application, path) {
+		const devices = this.devices;
+		if (!path || !devices.length)
+			return;
+		let index = devices.findIndex(device => device.applicationFilter && device.applicationFilter.test(path));
+		if (index < 0)
+			index = 0;
+		if (index != this.deviceIndex)
+			this.selectDevice(application, index);
 	}
 	reloadDevices(application, flag) {
 		let devices = this.devices = [];
@@ -397,10 +444,12 @@ class ApplicationBehavior extends Behavior {
 		this.launchScreen();
 	}
 	onPlayingTouches(application, it) {
-		this.TOUCHES.string = it ? "Playing Touches" : "";
+		if (this.TOUCHES)
+			this.TOUCHES.string = it ? "Playing Touches" : "";
 	}
 	onRecordingTouches(application, it) {
-		this.TOUCHES.string = it ? "Recording Touches" : "";
+		if (this.TOUCHES)
+			this.TOUCHES.string = it ? "Recording Touches" : "";
 	}
 	onQuit(application) {
 		this.quitScreen();
@@ -493,13 +542,7 @@ class ApplicationBehavior extends Behavior {
 		let extension = (system.platform == "win") ? ".dll" : ".so";
 		if (path.endsWith(extension)) {
 			this.quitScreen();
-			const devices = this.devices;
-			if (devices.length > 0) {
-				let index = devices.findIndex(device => device.applicationFilter.test(path));
-				if (index < 0) index = 0;
-				if (index != this.deviceIndex)
-					this.selectDevice(application, index);
-			}
+			this.selectDeviceForLibraryPath(application, path);
 			this.libraryPath = path;
 			this.launchScreen();
 		}
@@ -579,20 +622,28 @@ class ApplicationBehavior extends Behavior {
 /* VIEW MENU */
 	canToggleControls(target, item) {
 		let divider = this.VERTICAL_DIVIDER;
+		if (!divider)
+			return false;
 		item.state = divider.behavior.status ? 1 : 0;
 		return true;
 	}
 	doToggleControls(target, item) {
 		let divider = this.VERTICAL_DIVIDER;
+		if (!divider)
+			return;
 		divider.behavior.toggle(divider);
 		this.controlsStatus = divider.behavior.status;
 		application.updateMenus();
 	}
 	canToggleInfo(target, item) {
+		if (!this.BODY || !this.FOOTER)
+			return false;
 		item.state = this.infoStatus ? 1 : 0;
 		return true;
 	}
 	doToggleInfo(target, item) {
+		if (!this.BODY || !this.FOOTER)
+			return;
 		if (this.infoStatus) {
 			this.infoStatus = false;
 			this.BODY.coordinates = { left:0, right:0, top:27, bottom:0 };
@@ -649,6 +700,8 @@ class ApplicationBehavior extends Behavior {
 		}
 	}
 	writePreferences() {
+		if (!this.VERTICAL_DIVIDER)
+			return;
 		this.controlsCurrent = this.VERTICAL_DIVIDER.behavior.current;
 		this.controlsStatus = this.VERTICAL_DIVIDER.behavior.status;
 		try {
@@ -790,6 +843,15 @@ class ColorsMenuBehavior extends PopupMenuBehavior {
 	}
 }
 
+var MinimalContainer = Container.template($ => ({
+	left:0, right:0, top:0, bottom:0,
+	contents: [
+		Container($, { anchor:"DEVICE", left:0, right:0, top:0, bottom:0, skin:skins.background, clip:true, contents:[
+			Content($, {}),
+		]}),
+	]
+}));
+
 var MainContainer = Container.template($ => ({ 
 	left:0, right:0, top:0, bottom:0, 
 	contents: [
@@ -927,4 +989,3 @@ let mcsimApplication = Application.template($ => ({
 export default new mcsimApplication(null, { 
 	touchCount:1,
 });
-

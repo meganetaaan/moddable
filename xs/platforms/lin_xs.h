@@ -90,7 +90,12 @@ extern void fxQueueWorkerJob(void* machine, void* job);
 	GMainContext* workerContext; \
 	GMutex workerMutex; \
 	txWorkerJob* workerQueue; \
-	void* demarshall;
+	void* demarshall; \
+	int logStream; \
+	int logState; \
+	int logMatch; \
+	char logEntity[16]; \
+	int logEntityLength;
 	
 #ifdef mxDebug
 	#define MODDEF_XS_TEST 1

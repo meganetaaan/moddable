@@ -44,6 +44,13 @@ void PiuSystem_get_platform(xsMachine* the)
 	xsResult = xsString("mac");
 }
 
+void PiuSystem_getenv(xsMachine* the)
+{
+	char* value = getenv(xsToString(xsArg(0)));
+	if (value)
+		xsResult = xsString(value);
+}
+
 void PiuSystem_buildPath(xsMachine* the)
 {
  	xsIntegerValue argc = xsToInteger(xsArgc);
@@ -346,5 +353,4 @@ void PiuSystem_DirectoryNotifier_close(xsMachine* the)
 	PiuSystem_DirectoryNotifierDelete(*self);
 	xsSetHostData(xsThis, NULL);
 }
-
 

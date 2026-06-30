@@ -34,13 +34,20 @@ struct _GtkPiuApplicationClass {
 
 G_DEFINE_TYPE (GtkPiuApplication, gtk_piu_application, GTK_TYPE_APPLICATION);
 
+static gboolean gtk_piu_application_is_headless(void)
+{
+	const gchar* value = g_getenv("MCSIM_HEADLESS");
+	return value && strcmp(value, "0");
+}
+
 static void gtk_piu_application_activate(GApplication *app)
 {
 	GtkPiuApplication* gtkApplication = GTK_PIU_APPLICATION(app);
 	PiuApplication* application = gtkApplication->piuApplication;
 	PiuView* view = (*application)->view;
 	GtkWindow *gtkWindow = (*view)->gtkWindow;
-	gtk_window_present(gtkWindow);
+	if (!gtk_piu_application_is_headless())
+		gtk_window_present(gtkWindow);
 }
 
 static void gtk_piu_application_command(GSimpleAction *action, GVariant *parameter, gpointer it)
@@ -77,7 +84,8 @@ static void gtk_piu_application_open(GApplication *app, GFile **files, gint c, c
 	PiuView* view = (*application)->view;
 	GtkWindow *gtkWindow = (*view)->gtkWindow;
 	char buffer[PATH_MAX];
-	gtk_window_present(gtkWindow);
+	if (!gtk_piu_application_is_headless())
+		gtk_window_present(gtkWindow);
 	gint i;
 	for (i = 0; i < c; i++) {
 		char* path = realpath(g_file_get_path(files[i]), buffer);
@@ -157,9 +165,50 @@ char gtkApplicationPath[PATH_MAX];
 
 int main(int argc, char** argv)
 {
+	int argi;
+	int filteredArgc = 1;
+	char** filteredArgv = calloc(argc + 1, sizeof(char*));
+	filteredArgv[0] = argv[0];
+	for (argi = 1; argi < argc; argi++) {
+		if (!strcmp(argv[argi], "--app") && (argi + 1 < argc)) {
+			char path[PATH_MAX];
+			char* app = argv[++argi];
+			if (realpath(app, path))
+				app = path;
+			setenv("MCSIM_APP", app, 1);
+		}
+		else if (!strcmp(argv[argi], "--mode") && (argi + 1 < argc)) {
+			char* mode = argv[++argi];
+			setenv("MCSIM_MODE", mode, 1);
+			setenv("MCSIM_HEADLESS", strcmp(mode, "headless") ? "0" : "1", 1);
+		}
+		else if (!strcmp(argv[argi], "--minimal")) {
+			setenv("MCSIM_MODE", "minimal", 1);
+			setenv("MCSIM_HEADLESS", "0", 1);
+		}
+		else if (!strcmp(argv[argi], "--headless")) {
+			setenv("MCSIM_MODE", "headless", 1);
+			setenv("MCSIM_HEADLESS", "1", 1);
+		}
+		else if (!strcmp(argv[argi], "--screenshot") && (argi + 1 < argc)) {
+			char path[PATH_MAX];
+			char* screenshot = argv[++argi];
+			if (realpath(screenshot, path))
+				screenshot = path;
+			setenv("MCSIM_SCREENSHOT", screenshot, 1);
+		}
+		else if (!strcmp(argv[argi], "--log") && (argi + 1 < argc)) {
+			setenv("MCSIM_LOG", argv[++argi], 1);
+		}
+		else {
+			filteredArgv[filteredArgc++] = argv[argi];
+		}
+	}
 	realpath(argv[0], gtkApplicationPath);
 	gtkApplication = GTK_APPLICATION(gtk_piu_application_new());
-  	return g_application_run(G_APPLICATION(gtkApplication), argc, argv);
+	int result = g_application_run(G_APPLICATION(gtkApplication), filteredArgc, filteredArgv);
+	free(filteredArgv);
+	return result;
 }
 
 void fxAbort(xsMachine *the, int status)
@@ -418,9 +467,3 @@ const void *mcGetResource(xsMachine* the, const char* path, size_t* size)
 	*size = 0;
 	return NULL;\
 }
-
-
-
-
-
-

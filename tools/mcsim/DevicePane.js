@@ -35,9 +35,27 @@ export class DeviceBehavior extends Behavior {
 	}
 	onJSON(container, json) {
 	}
+	onMcsimCommand(container, json) {
+		const command = json?.mcsim;
+		if (!command)
+			return false;
+		if (command.screenshot) {
+			try {
+				model.SCREEN.writePNG(command.screenshot);
+				this.postJSON(container, { mcsim:{ screenshot:command.screenshot, status:"ok" } });
+			}
+			catch (e) {
+				this.postJSON(container, { mcsim:{ screenshot:command.screenshot, status:"error", message:String(e) } });
+			}
+			return true;
+		}
+		return false;
+	}
 	onMessage(container, message) {
 		trace.right(message, "sim");
-		this.onJSON(container, JSON.parse(message));
+		const json = JSON.parse(message);
+		if (!this.onMcsimCommand(container, json))
+			this.onJSON(container, json);
 	}
 	postJSON(container, json) {
 		const message = JSON.stringify(json);
