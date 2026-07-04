@@ -50,6 +50,33 @@ const portIn = process.env.XSBUG_LOG_PORT ?? 5002;
 let connections = 0;
 let autoexit = false;
 
+function readBooleanEnvironment(name) {
+	const value = process.env[name];
+	if (value === undefined)
+		return false;
+	return /^(1|true|yes|on)$/i.test(value);
+}
+
+function parseArguments(argv) {
+	const result = [];
+	let exceptionStack = readBooleanEnvironment('XSBUG_LOG_EXCEPTION_STACK');
+	let passthrough = false;
+
+	for (const arg of argv) {
+		if (!passthrough && (arg === '--')) {
+			passthrough = true;
+			continue;
+		}
+		if (!passthrough && (arg === '--exception-stack')) {
+			exceptionStack = true;
+			continue;
+		}
+		result.push(arg);
+	}
+
+	return { args: result, exceptionStack };
+}
+
 let probe = net.connect({
 	port: portIn,
 	host: "127.0.0.1"
@@ -87,6 +114,8 @@ const xsdbRouter = {
 	activeThreadId: 0,
 	nextThreadId: 1,
 	showMcsim: false,
+	exceptionStack: false,
+	persistedExceptionsMode: undefined,
 
 	prefsPath() {
 		try { return require('node:path').join(process.env.XSBUG_PROJECT || process.cwd(), '.xsdb.json'); } catch (e) { return null; }
@@ -108,6 +137,9 @@ const xsdbRouter = {
 		this.globalExceptionsMode = this.globalExceptionsMode ?? 'off';
 		this.globalOutputFormat = this.globalOutputFormat ?? 'text';
 		this.globalBreakpoints = this.globalBreakpoints ?? [];
+		this.persistedExceptionsMode = this.globalExceptionsMode;
+		if (this.exceptionStack)
+			this.globalExceptionsMode = 'on';
 		if (this.globalBreakpointIdCounter === undefined) {
 			this.globalBreakpointIdCounter = 0;
 			this.globalBreakpoints.forEach(bp => {
@@ -126,7 +158,7 @@ const xsdbRouter = {
 				fs.writeFileSync(p, JSON.stringify({
 					showMcsim: this.showMcsim,
 					outputFormat: this.globalOutputFormat,
-					exceptionsMode: this.globalExceptionsMode,
+					exceptionsMode: this.persistedExceptionsMode ?? this.globalExceptionsMode,
 					breakOnStart: this.globalBreakOnStart,
 					breakpoints: this.globalBreakpoints,
 					breakpointIdCounter: this.globalBreakpointIdCounter
@@ -390,12 +422,13 @@ const xsdbRouter = {
 		m.outputFormat = this.globalOutputFormat;
 		m.exceptionsMode = this.globalExceptionsMode;
 		m.breakOnStart = this.globalBreakOnStart;
+		m.exceptionStack = this.exceptionStack;
 		const originalCmdSet = m.cmdSet.bind(m);
 		m.cmdSet = (args) => {
 			originalCmdSet(args);
 			let save = false;
 			if (args[0] === 'output') { this.globalOutputFormat = m.outputFormat; save = true; }
-			if (args[0] === 'exceptions') { this.globalExceptionsMode = m.exceptionsMode; save = true; }
+			if (args[0] === 'exceptions') { this.globalExceptionsMode = m.exceptionsMode; this.persistedExceptionsMode = m.exceptionsMode; save = true; }
 			if (args[0] === 'start') { this.globalBreakOnStart = m.breakOnStart; save = true; }
 			if (save) {
 				this.machines.forEach(mach => {
@@ -472,6 +505,9 @@ const xsdbRouter = {
 };
 
 function launch() {
+	let { args, exceptionStack } = parseArguments(process.argv.slice(2));
+	xsdbRouter.exceptionStack = exceptionStack;
+
 	const server = net.createServer(target => {
 		connections++;
 		target.setEncoding("utf8");
@@ -514,7 +550,6 @@ function launch() {
 	   console.log(`xsdb listening on port ${portIn}. Type "quit" to exit.`);
 	});
 
-	let args = process.argv.slice(2);
 	if (args.length === 0) {
 		console.log("xsdb: no command line arguments. Waiting for connection.");
 		return;

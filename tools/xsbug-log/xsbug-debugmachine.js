@@ -48,6 +48,7 @@ class DebugMachine extends Machine {
 	// Settings
 	exceptionsMode = 'off';
 	breakOnStart = false;
+	exceptionStack = false;
 
 	// User breakpoints: array of { path, line }
 	breakpoints = [];
@@ -586,6 +587,7 @@ class DebugMachine extends Machine {
 		this.clearLine();
 
 		const msg = text ? text.replace(/\n$/, '') : '';
+		const exceptionStack = this.exceptionStack && this.isExceptionBreak(msg) ? this.buildExceptionStack(msg) : null;
 		if (this.onBreakpointHit) this.onBreakpointHit();
 
 		this.report('stopped', { 
@@ -594,8 +596,12 @@ class DebugMachine extends Machine {
 			reason: msg 
 		}, undefined, (data) => {
 			this.printLocation(data.reason);
+			if (exceptionStack)
+				this.printExceptionStack(exceptionStack);
 			this.showPrompt();
 		});
+		if ((this.outputFormat === 'json') && exceptionStack)
+			this.report('exception_stack', exceptionStack);
 	}
 
 	onLogged(path, line, data) {
@@ -666,6 +672,76 @@ class DebugMachine extends Machine {
 	}
 
 	// --- Display helpers ---
+
+	isExceptionBreak(reason) {
+		if (!reason || !reason.startsWith('# Break: '))
+			return false;
+
+		const text = reason.slice(9).trim();
+		return ![
+			'breakpoint!',
+			'step!',
+			'debugger!',
+			'C: xsDebugger!',
+		].includes(text);
+	}
+
+	cleanBreakReason(reason) {
+		if (!reason)
+			return '';
+		let text = reason.startsWith('# Break: ') ? reason.slice(9).trim() : reason.trim();
+		if (text.endsWith('!'))
+			text = text.slice(0, -1);
+		return text;
+	}
+
+	buildExceptionStack(reason) {
+		const frames = (this.view.frames ?? []).map((frame, index) => {
+			const line = frame.line === undefined ? undefined : parseInt(frame.line, 10);
+			return {
+				index,
+				name: frame.name || '<anonymous>',
+				path: frame.path,
+				shortPath: this.shortPath(frame.path),
+				line: Number.isNaN(line) ? undefined : line,
+			};
+		});
+
+		// XS sends <frames> immediately before the exception <break>. This is the
+		// current JS stack at the debug break, before exception unwinding resumes.
+		return {
+			reason: this.cleanBreakReason(reason),
+			frames,
+		};
+	}
+
+	printExceptionStack(stack) {
+		this.report('exception_stack', stack, undefined, (data) => {
+			console.log('');
+			console.log('### Exception break');
+			if (data.reason)
+				console.log(data.reason);
+			console.log('');
+			console.log('### Call stack');
+			if (!data.frames.length) {
+				console.log('    <no stack frames available>');
+				return;
+			}
+			for (const frame of data.frames)
+				console.log(this.formatExceptionStackFrame(frame));
+		});
+	}
+
+	formatExceptionStackFrame(frame) {
+		const name = frame.name || '<anonymous>';
+		if (frame.path) {
+			const location = frame.line === undefined ? frame.shortPath : `${frame.shortPath}:${frame.line}`;
+			return `    at ${name} (${location})`;
+		}
+		if (frame.line !== undefined)
+			return `    at ${name} (<unknown>:${frame.line})`;
+		return `    at ${name} (<unknown>)`;
+	}
 
 	printLocation(reason) {
 		// Reset list position on each stop
