@@ -82,6 +82,8 @@ import {
 	Switch,
 } from "piu/Switches";	
 
+const buttonsRowVariant = 0x4252;
+
 export var ControlsPane = Container.template($ => ({ 
 	left:0, right:0, top:0, bottom:0, 
 	contents:[
@@ -127,13 +129,17 @@ class ButtonsRowBehavior extends ButtonBehavior {
 }
 
 export var ButtonsRow = Row.template(function($) { return {
-	left:0, right:0, height:30,
+	left:0, right:0, height:30, variant:buttonsRowVariant,
 	contents: [
 		Label($, { width:120, style:styles.controlName, string:$.label }),
 		$.buttons.map($$ => new Button($$, { Behavior:ButtonsRowBehavior, string: $$.label })),
 		Content($, { left:0, right:0 }),
 	],
 }});
+
+export function isButtonsRow(content) {
+	return content?.variant === buttonsRowVariant;
+}
 
 export var InfoRow = Row.template(function($) { return {
 	left:0, right:0, height:30,

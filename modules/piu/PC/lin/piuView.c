@@ -20,6 +20,13 @@
 
 #include "piuPC.h"
 
+#ifndef MODDEF_PIU_WINDOWMINIMUMWIDTH
+	#define MODDEF_PIU_WINDOWMINIMUMWIDTH 640
+#endif
+#ifndef MODDEF_PIU_WINDOWMINIMUMHEIGHT
+	#define MODDEF_PIU_WINDOWMINIMUMHEIGHT 480
+#endif
+
 struct _GtkPiuClip {
 	GtkFixed parent;
 	PiuContent* piuContent;
@@ -289,7 +296,7 @@ static gboolean gtk_piu_window_delete_event(GtkWidget *widget, GdkEventAny *even
 static void gtk_piu_window_get_preferred_height(GtkWidget *widget, gint *minimum_height, gint *natural_height)
 {
 	GTK_WIDGET_CLASS(gtk_piu_window_parent_class)->get_preferred_height(widget, minimum_height, natural_height);
-	*minimum_height = 480;
+	*minimum_height = MODDEF_PIU_WINDOWMINIMUMHEIGHT;
 	if (*natural_height < *minimum_height)
 		*natural_height = *minimum_height;
 }
@@ -297,7 +304,7 @@ static void gtk_piu_window_get_preferred_height(GtkWidget *widget, gint *minimum
 static void gtk_piu_window_get_preferred_width(GtkWidget *widget, gint *minimum_width, gint *natural_width)
 {
 	GTK_WIDGET_CLASS(gtk_piu_window_parent_class)->get_preferred_width(widget, minimum_width, natural_width);
-	*minimum_width = 640;
+	*minimum_width = MODDEF_PIU_WINDOWMINIMUMWIDTH;
 	if (*natural_width < *minimum_width)
 		*natural_width = *minimum_width;
 }

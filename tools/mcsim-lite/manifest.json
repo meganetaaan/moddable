@@ -1,0 +1,80 @@
+{
+	"build": {
+		"NAME": "mcsim-lite",
+		"MODULES": "$(MODDABLE)/modules",
+		"PIU": "$(MODULES)/piu",
+		"SIMULATOR": "$(MODDABLE)/build/simulators"
+	},
+	"creation": {
+		"chunk": {
+			"initial": 16386,
+			"incremental": 1024
+		},
+		"heap": {
+			"initial": 8192,
+			"incremental": 1024
+		},
+		"stack": 2048,
+		"keys": {
+			"available": 16386,
+			"name": 1993,
+			"symbol": 127
+		},
+		"main": "main"
+	},
+	"defines": {
+		"piu": {
+			"windowMinimumWidth": 1,
+			"windowMinimumHeight": 1
+		}
+	},
+	"include": [
+		"$(MODULES)/base/easing/manifest.json"
+	],
+	"modules": {
+		"~": [
+			"$(SIMULATOR)/modules/screen"
+		],
+		"piu/*": [
+			"$(PIU)/All/piu*",
+			"$(PIU)/PC/piu*",
+			"$(PIU)/PC/Code/piu*",
+			"$(PIU)/PC/Common/piu*",
+			"$(PIU)/PC/Screen/piu*"
+		],
+		"ControlsPane": "../mcsim/ControlsPane",
+		"DevicePane": "../mcsim/DevicePane",
+		"assets": "../mcsim/assets",
+		"*": [
+			"./*",
+			"$(SIMULATOR)/modules/screen",
+			"$(MODULES)/base/worker/pcWorker",
+			"$(MODULES)/data/binaryMessage/*"
+		]
+	},
+	"preload": [
+		"piu/All",
+		"piu/Buttons",
+		"piu/PC",
+		"piu/Scrollbars",
+		"BinaryMessage",
+		"ControlsPane",
+		"DevicePane",
+		"Window",
+		"assets"
+	],
+	"resources": {
+		"assets/*": "../mcsim/assets/*",
+		"fonts/*": "../mcsim/fonts/*"
+	},
+	"platforms": {
+		"x-lin": {
+			"modules": {
+				"piu/*": [
+					"$(PIU)/PC/lin/piu*",
+					"$(PIU)/PC/Screen/lin/piu*"
+				]
+			}
+		}
+	}
+}
