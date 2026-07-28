@@ -31,6 +31,8 @@ class ChatWebSocketWorker extends ChatWorker {
 	#state = 0;
 	#writable = 0;
 	#encoder = new TextEncoder;
+	#closed = true;
+	#failed = false;
 
 	constructor(options) {
 		super(options);
@@ -39,18 +41,65 @@ class ChatWebSocketWorker extends ChatWorker {
 		this.silence = new ArrayBuffer(this.outputMinimum);
 	}
 	close() {
-		this.ws.close();
+		if (this.#closed)
+			return;
+		this.#closed = true;
+		const ws = this.ws;
 		this.ws = null;
 		this.#buffers = [];
 		this.#state = 0;
 		this.#writable = 0;
+		try {
+			ws?.close();
+		}
+		catch {
+		}
+	}
+	#fail(error) {
+		if (this.#failed || this.#closed)
+			return;
+		this.#failed = true;
+		const string = error?.message ?? String(error ?? "network error");
+		this.close();
+		this.postMessage({ id:"failed", string });
+	}
+	#safe(callback) {
+		return (...args) => {
+			if (this.#failed || this.#closed)
+				return;
+			try {
+				return callback(...args);
+			}
+			catch (error) {
+				this.#fail(error);
+			}
+		}
+	}
+	#open(options) {
+		try {
+			return new WebSocketClient(options);
+		}
+		catch (error) {
+			this.#fail(error);
+		}
+	}
+	#write(data, options) {
+		try {
+			return this.ws.write(data, options);
+		}
+		catch (error) {
+			this.#fail(error);
+			return 0;
+		}
 	}
 	
 	connect(message) {
 		super.connect(message);
+		this.#closed = false;
+		this.#failed = false;
 		this.parser = new JSONBase64Parser(this, this.outputBuffer, 2, this.outputMinimum);
 		this.parser.barrier = message.barrier;
-		this.ws = new WebSocketClient({
+		this.ws = this.#open({
 			...device.network.wss,
 			host: this.host,
 			path: this.path,
@@ -59,19 +108,19 @@ class ChatWebSocketWorker extends ChatWorker {
 			onClose: () => {
 // 				trace(`onClose\n`);
 			},
-			onControl: (opcode, data) => {
+			onControl: this.#safe((opcode, data) => {
 				switch (opcode) {
-				case WebSocketClient.close: 
+				case WebSocketClient.close:
 					data = new Uint8Array(data);
 					const code = (data[0] << 8) | data[1];
 					const reason = String.fromArrayBuffer(data.buffer.slice(2));
 					if (code != 1000)
-						this.postMessage({ id:"failed", string:reason });
+						this.#fail(reason);
 					else
 						this.postMessage({ id:"disconnected" });
 					this.close();
 					break;
-					
+
 				case WebSocketClient.ping:
 //					trace("PING!\n");
 					break;
@@ -79,18 +128,17 @@ class ChatWebSocketWorker extends ChatWorker {
 //					trace("PONG!\n");
 					break;
 				}
+			}),
+			onError: error => {
+				this.#fail(error ?? "network error");
 			},
-			onError: () => {
-				this.postMessage({ id:"failed", string:"network error" });
-				this.close();
-			},
-			onReadable: (count, options) => {
+			onReadable: this.#safe((count, options) => {
 				const buffer = this.ws.read(count);
 				if (this.#state == 1) {
 					this.read(buffer, options);
 				}
-			},
-			onWritable: (count) => {
+			}),
+			onWritable: this.#safe((count) => {
 				if (!count)
 					return;
 				this.#writable = count;
@@ -107,19 +155,19 @@ class ChatWebSocketWorker extends ChatWorker {
 					const dataLength = data.byteLength;
 					const writable = this.#writable;
 					if (dataLength <= writable) {
-						this.#writable = this.ws.write(data, options);
+						this.#writable = this.#write(data, options);
 						buffers.shift();
 					}
 					else if (0 < writable) {
 						let moreOptions = { ...options, more:true };
-						this.#writable = this.ws.write(data.slice(0, writable), moreOptions);
+						this.#writable = this.#write(data.slice(0, writable), moreOptions);
 						buffer.data = data.slice(writable);
 						break;
 					}
 					else
 						break;
 				}
-			}
+			})
 		});
 	}
 	disconnect() {
@@ -167,6 +215,8 @@ class ChatWebSocketWorker extends ChatWorker {
 		this.write(data, text);
 	}
 	write(data, options) {
+		if (this.#failed || this.#closed)
+			return;
 		let buffers = this.#buffers;
 		if (buffers.length)
 			buffers.push({ data, options });
@@ -174,11 +224,11 @@ class ChatWebSocketWorker extends ChatWorker {
 			const dataLength = data.byteLength;
 			const writable = this.#writable;
 			if (dataLength <= writable) {
-				this.#writable = this.ws.write(data, options);
+				this.#writable = this.#write(data, options);
 			}
 			else if (0 < writable) {
 				let moreOptions = { ...options, more:true };
-				this.#writable = this.ws.write(data.slice(0, writable), moreOptions);
+				this.#writable = this.#write(data.slice(0, writable), moreOptions);
 				buffers.push({ data: data.slice(writable), options });
 			}
 			else {
@@ -189,4 +239,3 @@ class ChatWebSocketWorker extends ChatWorker {
 }
 
 export default ChatWebSocketWorker;
-
