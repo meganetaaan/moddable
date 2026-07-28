@@ -23,6 +23,7 @@ class TLSSocket {
 	#data;
 	#format = true;		// true == buffer, false = number
 	#doRead;
+	#failed = false;
 
 /*
 	host (TLS server name indication extension)
@@ -54,18 +55,23 @@ class TLSSocket {
 			...options,
 			onReadable: count => this.#onReadable(count),
 			onWritable: count => this.#onWritable(count),
-			onError: () => this.#onError()
+			onError: error => this.#fail(error)
 		});
 		this.#socket.readable =
 		this.#socket.writable = 0;
 	}
 	close() {
-		this.#socket?.close();
-		Timer.clear(this.#doRead);
-
+		const socket = this.#socket;
 		this.#socket =
-		this.#session = 
+		this.#session =
+		this.#data = undefined;
+		Timer.clear(this.#doRead);
 		this.#doRead = undefined;
+		try {
+			socket?.close();
+		}
+		catch {
+		}
 	}
 	read(count) {
 		const data = this.#data;
@@ -118,7 +124,12 @@ class TLSSocket {
 	write(buffer, options) {
 		if (buffer instanceof DataView)
 			buffer = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-		return this.#session.write(this.#socket, buffer, options);
+		try {
+			return this.#session.write(this.#socket, buffer, options);
+		}
+		catch (error) {
+			this.#fail(error);
+		}
 	}
 	set format(format) {
 		if (("buffer" != format) && ("number" != format))
@@ -129,23 +140,42 @@ class TLSSocket {
 		return this.#format ? "buffer" : "number";
 	}
 	#onWritable(count) {
-		this.#socket.writable = count;
-		if (!this.#ready)
-			this.#messageHandler();
-		else if (count > 96)			// 96 is an estimate of TLS overhead
-			this.#callbacks.onWritable?.(count - 96);
+		if (this.#failed || !this.#socket)
+			return;
+		try {
+			this.#socket.writable = count;
+			if (!this.#ready)
+				this.#messageHandler();
+			else if (count > 96)			// 96 is an estimate of TLS overhead
+				this.#callbacks.onWritable?.(count - 96);
+		}
+		catch (error) {
+			this.#fail(error);
+		}
 	}
 	#onReadable(count) {
-		this.#socket.readable = count;
-		if (this.#data)
+		if (this.#failed || !this.#socket)
 			return;
+		try {
+			this.#socket.readable = count;
+			if (this.#data)
+				return;
 
-		this.#messageHandler(true);
-		if (!this.#ready)
-			this.#messageHandler();
+			this.#messageHandler(true);
+			if (!this.#ready)
+				this.#messageHandler();
+		}
+		catch (error) {
+			this.#fail(error);
+		}
 	}
-	#onError() {
-		this.#callbacks.onError?.();
+	#fail(error) {
+		if (this.#failed || !this.#socket)
+			return;
+		this.#failed = true;
+		const onError = this.#callbacks.onError;
+		this.close();
+		onError?.(error);
 	}
 	#messageHandler(read) {
 		if (!this.#ready) {
@@ -162,7 +192,7 @@ class TLSSocket {
 		if (undefined === data)		// nothing to read
 			return;
 		if (null === data)		// closed
-			return void this.#onError();
+			return void this.#fail();
 		data.position = 0;
 		const readable = data.byteLength;
 		if (!readable)
