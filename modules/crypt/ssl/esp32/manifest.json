@@ -3,6 +3,7 @@
 		"C_INCLUDES": "-I$(IDF_PATH)/components/esp_hal_security/include"
 	},
 	"modules": {
+		"~": "../ssl_gcm",
 		"ssl/gcm": "./ssl_gcm"
 	},
 	"preload": "ssl/gcm",
