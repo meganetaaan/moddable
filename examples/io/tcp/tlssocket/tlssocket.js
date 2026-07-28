@@ -88,16 +88,18 @@ class TLSSocket {
 				else {
 					if (count > available)
 						throw new Error("invalid")
-					result = data.slice(data.position, data.position + count).buffer;
-					data.position += count;
+					if (count === available)
+						result = this.#takeRemainingBuffer(data);
+					else {
+						result = data.slice(data.position, data.position + count).buffer;
+						data.position += count;
+					}
 				}
-				if (data.position === data.byteLength)
+				if (this.#data && (data.position === data.byteLength))
 					this.#data = undefined;
 			}
-			else {	// could optimize when entire buffer is requested
-				result = data.slice(data.position, data.position + data.byteLength).buffer;
-				this.#data = undefined;
-			}
+			else
+				result = this.#takeRemainingBuffer(data);
 		}
 		else {
 			result = data[data.position++];
@@ -114,6 +116,21 @@ class TLSSocket {
 		}
 
 		return result;
+	}
+	#takeRemainingBuffer(data) {
+		const buffer = data.buffer;
+		const start = data.byteOffset + data.position;
+		const length = data.byteLength - data.position;
+		this.#data = undefined;
+
+		if ((0 === start) && (length === buffer.byteLength))
+			return buffer;
+		if (buffer.resizable) {
+			new Uint8Array(buffer).copyWithin(0, start, start + length);
+			buffer.resize(length);
+			return buffer;
+		}
+		return buffer.slice(start, start + length);
 	}
 	write(buffer, options) {
 		if (buffer instanceof DataView)
