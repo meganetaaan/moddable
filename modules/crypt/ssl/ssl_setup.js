@@ -39,9 +39,9 @@ import PRF from "ssl/prf";
 import HMAC from "hmac";
 import SSLStream from "ssl/stream";
 import TLSError from "ssl/error";
+import Gcm from "ssl/gcm";
 import {BlockCipher, Digest, Mode, StreamCipher} from "crypt";
 import {AES, CBC, DES, GCM, MD5, NONE, RC4, SHA1, SHA256, SHA384, TDES} from "ssl/constants";
-import Gcm from "gcm";
 
 function setupSub(o, cipher)
 {
@@ -55,7 +55,10 @@ function setupSub(o, cipher)
 		enc = new BlockCipher("TDES", o.key);
 		break;
 	case AES:
-		enc = new BlockCipher("AES", o.key);
+		if (cipher.encryptionMode == GCM)
+			enc = new Gcm(o.key);
+		else
+			enc = new BlockCipher("AES", o.key);
 		break;
 	case RC4:
 		enc = new StreamCipher("RC4", o.key);
@@ -81,7 +84,9 @@ function setupSub(o, cipher)
 			o.enc = enc;
 		break;
 	case GCM:
-		o.enc = new Gcm(enc);
+		if (cipher.cipherAlgorithm != AES)
+			throw new TLSError("SetupCipher: unsupported GCM cipher");
+		o.enc = enc;
 		o.nonce = BigInt(1);
 		break;
 	default:

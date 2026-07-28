@@ -1,0 +1,13 @@
+{
+	"build": {
+		"C_INCLUDES": "-I$(IDF_PATH)/components/esp_hal_security/include"
+	},
+	"modules": {
+		"ssl/gcm": "./ssl_gcm"
+	},
+	"preload": "ssl/gcm",
+	"dependency": [
+		{ "idf": "mbedtls" },
+		{ "idf": "esp_hal_security" }
+	]
+}
