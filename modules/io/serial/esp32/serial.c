@@ -55,6 +55,8 @@ static void _uart_disable_rx_intr(uart_dev_t *dev);
 static void _uart_disable_tx_intr(uart_dev_t *dev);
 static void _uart_enable_tx_intr(uart_dev_t *dev, int enable, int thresh);
 
+static portMUX_TYPE spinlock = portMUX_INITIALIZER_UNLOCKED;
+
 typedef struct SerialRecord SerialRecord;
 typedef struct SerialRecord *Serial;
 
@@ -67,11 +69,13 @@ struct SerialRecord {
 	uint8_t		useCount;
 	uint8_t		txInterruptEnabled;
 	uint8_t		hasOnReadableOrWritable;
+	uint8_t		rs485;
 	uint8_t		uart_intr;
 	intr_handle_t	interrupt;
 	uart_dev_t	*uart_reg;
 	uint32_t	transmit;
 	uint32_t	receive;
+	uint32_t	requestToSend;
 	xsMachine	*the;
 	xsSlot		*onReadable;
 	xsSlot		*onWritable;
@@ -93,12 +97,12 @@ void xs_serial_constructor(xsMachine *the)
 {
 	Serial serial;
 	int baud;
-	uint8_t hasReadable, hasWritable, format;
+	uint8_t hasReadable, hasWritable, format, rs485 = 0;
 	xsSlot *onReadable, *onWritable;
 	esp_err_t err;
 	uart_config_t uartConfig = {0};
 	int uart = 0;
-	uint32_t transmit = UART_PIN_NO_CHANGE, receive = UART_PIN_NO_CHANGE;
+	uint32_t transmit = UART_PIN_NO_CHANGE, receive = UART_PIN_NO_CHANGE, requestToSend = UART_PIN_NO_CHANGE;
 
 	xsmcVars(1);
 
@@ -115,6 +119,16 @@ void xs_serial_constructor(xsMachine *the)
 	}
 	else if (UART_PIN_NO_CHANGE == transmit)
 		xsUnknownError("invalid");
+
+	if (xsmcGet(xsVar(0), xsArg(0), xsID_rs485))
+		rs485 = xsmcToBoolean(xsVar(0));
+	if (rs485) {
+		if (!xsmcGet(xsVar(0), xsArg(0), xsID_requestToSend))
+			xsUnknownError("requestToSend required");
+		requestToSend = builtinGetPin(the, &xsVar(0));
+		if (!builtinIsPinFree(requestToSend))
+			xsUnknownError("in use");
+	}
 
 	if (xsmcGet(xsVar(0), xsArg(0), xsID_port)) {
 		uart = builtinGetSignedInteger(the, &xsVar(0));
@@ -153,11 +167,11 @@ void xs_serial_constructor(xsMachine *the)
 	if (err)
 		xsUnknownError("uart failed");
 
-	err = uart_set_pin(uart, transmit, receive, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+	err = uart_set_pin(uart, transmit, receive, requestToSend, UART_PIN_NO_CHANGE);
 	if (err)
 		xsUnknownError("uart failed");
 
-	serial = c_malloc((hasReadable || hasWritable) ? sizeof(SerialRecord) : offsetof(SerialRecord, the));
+	serial = c_malloc((hasReadable || hasWritable || rs485) ? sizeof(SerialRecord) : offsetof(SerialRecord, the));
 	if (!serial)
 		xsRangeError("no memory");
 
@@ -167,8 +181,10 @@ void xs_serial_constructor(xsMachine *the)
 
 	serial->transmit = transmit;
 	serial->receive = receive;
+	serial->requestToSend = requestToSend;
 	serial->format = format;
 	serial->uart = (uint8_t)uart;
+	serial->rs485 = rs485;
 	serial->isReadable = 0;
 	serial->isWritable = 0;
 	serial->interrupt = C_NULL;
@@ -183,12 +199,16 @@ void xs_serial_constructor(xsMachine *the)
 		serial->uart_reg = uart ? &UART1 : &UART0;
 		serial->uart_intr = uart ? ETS_UART1_INTR_SOURCE : ETS_UART0_INTR_SOURCE;
 	}
+	if (rs485) {
+		uart_ll_set_mode(serial->uart_reg, UART_MODE_RS485_HALF_DUPLEX);
+		uart_ll_set_rts_active_level(serial->uart_reg, 1);
+	}
 	serial->useCount = 1;
 	serial->hasOnReadableOrWritable = hasReadable || hasWritable;
 
 	xsSetHostHooks(xsThis, (xsHostHooks *)&xsSerialHooks);
 
-	if (serial->hasOnReadableOrWritable) {
+	if (serial->hasOnReadableOrWritable || rs485) {
 		serial->the = the;
 
 		// store callbacks & configure interrupts
@@ -224,6 +244,8 @@ void xs_serial_constructor(xsMachine *the)
 		builtinUsePin(transmit);
 	if (UART_PIN_NO_CHANGE != receive)
 		builtinUsePin(receive);
+	if (UART_PIN_NO_CHANGE != requestToSend)
+		builtinUsePin(requestToSend);
 }
 
 void xs_serial_destructor(void *data)
@@ -233,6 +255,11 @@ void xs_serial_destructor(void *data)
 
 	uart_disable_tx_intr(serial->uart_reg);
 	uart_disable_rx_intr(serial->uart_reg);
+	if (serial->rs485) {
+		uart_disable_intr_mask(serial->uart_reg, UART_INTR_TX_DONE);
+		uart_ll_set_rts_active_level(serial->uart_reg, 1);
+		uart_ll_set_mode(serial->uart_reg, UART_MODE_UART);
+	}
 
 	if (serial->interrupt)
 		esp_intr_free(serial->interrupt);
@@ -241,6 +268,8 @@ void xs_serial_destructor(void *data)
 		builtinFreePin(serial->transmit);
 	if (UART_PIN_NO_CHANGE != serial->receive)
 		builtinFreePin(serial->receive);
+	if (UART_PIN_NO_CHANGE != serial->requestToSend)
+		builtinFreePin(serial->requestToSend);
 
 #if !mxUseGCCAtomics
 		if (0 == --serial->useCount)
@@ -329,26 +358,32 @@ void xs_serial_write(xsMachine *the)
 {
 	Serial serial = xsmcGetHostDataValidate(xsThis, (void *)&xsSerialHooks);
 	int count = uart_ll_get_txfifo_len(serial->uart_reg);
+	uint8_t byte;
+	void *buffer;
+	xsUnsignedValue requested;
 
 	if (kIOFormatNumber == serial->format) {
-		uint8_t byte;
-
 		if (0 == count)
 			xsUnknownError("output full");
-
 		byte = (uint8_t)xsmcToInteger(xsArg(0));
-		uart_ll_write_txfifo(serial->uart_reg, &byte, 1);
+		buffer = &byte;
+		requested = 1;
 	}
 	else {
-		void *buffer;
-		xsUnsignedValue requested;
-
 		xsmcGetBufferReadable(xsArg(0), &buffer, &requested);
 		if (requested > count)
 			xsUnknownError("output full");
-
-		uart_ll_write_txfifo(serial->uart_reg, buffer, requested);
 	}
+	if (serial->rs485) {
+		portENTER_CRITICAL(&spinlock);
+		uart_ll_set_rts_active_level(serial->uart_reg, 0);
+		uart_ll_clr_intsts_mask(serial->uart_reg, UART_INTR_TX_DONE);
+		uart_ll_ena_intr_mask(serial->uart_reg, UART_INTR_TX_DONE);
+		uart_ll_write_txfifo(serial->uart_reg, buffer, requested);
+		portEXIT_CRITICAL(&spinlock);
+	}
+	else
+		uart_ll_write_txfifo(serial->uart_reg, buffer, requested);
 
 	if (serial->onWritable && !serial->txInterruptEnabled) {
 		serial->txInterruptEnabled = 1;
@@ -369,6 +404,14 @@ void ICACHE_RAM_ATTR serial_isr(void * arg)
 	Serial serial = arg;
 	uint8_t post = 0;
 	int status = serial->uart_reg->int_st.val;
+	if ((status & UART_INTR_TX_DONE) && serial->rs485 && uart_ll_is_tx_idle(serial->uart_reg)) {
+		portENTER_CRITICAL_ISR(&spinlock);
+		uart_ll_disable_intr_mask(serial->uart_reg, UART_INTR_TX_DONE);
+		uart_ll_clr_intsts_mask(serial->uart_reg, UART_INTR_TX_DONE);
+		uart_ll_rxfifo_rst(serial->uart_reg);
+		uart_ll_set_rts_active_level(serial->uart_reg, 1);
+		portEXIT_CRITICAL_ISR(&spinlock);
+	}
 
 	if ((status & UART_INTR_TXFIFO_EMPTY) && serial->onWritable) {
 		post |= (0 == serial->isWritable);
@@ -454,8 +497,6 @@ void xs_serial_mark(xsMachine* the, void* it, xsMarkRoot markRoot)
 	
 	https://github.com/Moddable-OpenSource/moddable/issues/931
 */
-
-static portMUX_TYPE spinlock = portMUX_INITIALIZER_UNLOCKED;
 
 void _uart_disable_intr_mask(uart_dev_t *dev, uint32_t disable_mask)
 {
