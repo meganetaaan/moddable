@@ -47,6 +47,7 @@ struct I2CRecord {
 	uint8_t						address;		// 7-bit
 	uint8_t						pullup;
 	uint8_t						stop;			// SMBus
+	uint8_t						ownsBus;
 	i2c_port_num_t				port;
 	xsSlot						obj;
 	struct I2CRecord			*next;
@@ -64,6 +65,8 @@ static uint8_t usingPins(uint32_t data, uint32_t clock);
 static void _xs_i2c_mark(xsMachine* the, void* it, xsMarkRoot markRoot);
 
 static SemaphoreHandle_t gI2CMutex;
+
+__attribute__((weak)) i2c_master_bus_handle_t modI2CGetExternalBus(i2c_port_num_t port, uint32_t data, uint32_t clock);
 
 static void *modI2CValidate(xsMachine *the, xsSlot *instance);
 static uint8_t modI2CDeactivate(void *instanceData);
@@ -167,6 +170,11 @@ void _xs_i2c_constructor(xsMachine *the)
 	xSemaphoreGive(gI2CMutex);
 
 	if (!bus) {
+		if (modI2CGetExternalBus)
+			bus = modI2CGetExternalBus(port, data, clock);
+	}
+
+	if (!bus) {
 #if MODDEF_ECMA419_I2C_PINS_COMPATIBLE
 		if (modI2CUninit)
 			modI2CUninit(C_NULL);		// make pins release these pins
@@ -212,6 +220,7 @@ void _xs_i2c_constructor(xsMachine *the)
 	i2c->timeout = timeout;
 	i2c->pullup = pullup;
 	i2c->port = port;
+	i2c->ownsBus = busIsNew;
 	i2c->bus = bus;
 	i2c->device = device;
 
@@ -244,9 +253,18 @@ void _xs_i2c_destructor(void *data)
 				busCount++;
 		}
 		if (1 == busCount) {
-			i2c_del_master_bus(i2c->bus);
-			i2c->bus = C_NULL;
+			if (i2c->ownsBus)
+				i2c_del_master_bus(i2c->bus);
 		}
+		else if (i2c->ownsBus) {
+			for (walker = gI2C; walker; walker = walker->next) {
+				if ((walker != i2c) && (walker->bus == i2c->bus)) {
+					walker->ownsBus = 1;
+					break;
+				}
+			}
+		}
+		i2c->bus = C_NULL;
 	}
 	xSemaphoreGive(gI2CMutex);
 
@@ -432,6 +450,10 @@ uint8_t i2cActivate(I2C i2c)
 
 		uint8_t busIsNew = 0;
 		if (!bus) {
+			if (modI2CGetExternalBus)
+				bus = modI2CGetExternalBus(i2c->port, i2c->data, i2c->clock);
+		}
+		if (!bus) {
 			if (modI2CUninit)
 				modI2CUninit(C_NULL);		// make pins release these pins
 
@@ -464,6 +486,7 @@ uint8_t i2cActivate(I2C i2c)
 
 		i2c->bus = bus;
 		i2c->device = device;
+		i2c->ownsBus = busIsNew;
 		return 1;		// mutex held
 	}
 
@@ -478,12 +501,17 @@ uint8_t i2cActivate(I2C i2c)
 	for (walker = gI2C; walker; walker = walker->next) {
 		if (walker->bus) {
 			i2c_master_bus_handle_t bus = walker->bus;
+			uint8_t ownsBus = 0;
 			I2C w2;
 			for (w2 = walker; w2; w2 = w2->next) {
-				if (w2->bus == bus)
+				if (w2->bus == bus) {
+					ownsBus |= w2->ownsBus;
 					w2->bus = C_NULL;
+					w2->ownsBus = 0;
+				}
 			}
-			i2c_del_master_bus(bus);
+			if (ownsBus)
+				i2c_del_master_bus(bus);
 		}
 	}
 

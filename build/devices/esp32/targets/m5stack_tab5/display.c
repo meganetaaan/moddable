@@ -74,6 +74,32 @@ static volatile uint8_t SPM_DRAM_ATTR gSPMReserve[0x1E00];
 static tab5Panel gPanel = kTab5PanelILI9881C;
 static const char *gTag = "m5stack-tab5";
 
+static esp_err_t tab5I2CGetBus(i2c_master_bus_handle_t *bus)
+{
+	esp_err_t err = i2c_master_get_bus_handle(I2C_NUM_1, bus);
+	if (ESP_ERR_INVALID_STATE == err) {
+		const i2c_master_bus_config_t config = {
+			.i2c_port = I2C_NUM_1,
+			.sda_io_num = GPIO_NUM_31,
+			.scl_io_num = GPIO_NUM_32,
+			.clk_source = I2C_CLK_SRC_DEFAULT,
+			.glitch_ignore_cnt = 7,
+			.flags.enable_internal_pullup = 1,
+		};
+		err = i2c_new_master_bus(&config, bus);
+	}
+	return err;
+}
+
+i2c_master_bus_handle_t modI2CGetExternalBus(i2c_port_num_t port, uint32_t data, uint32_t clock)
+{
+	i2c_master_bus_handle_t bus = C_NULL;
+
+	if ((I2C_NUM_1 == port) && (31 == data) && (32 == clock))
+		tab5I2CGetBus(&bus);
+	return bus;
+}
+
 static int displayBegin(void *hostData, int x, int y, int width, int height, void **frameBuffer, int32_t *rowBytes, int flags);
 static int displaySend(void *hostData, void *buffer, uint32_t length);
 static int displayEnd(void *hostData);
@@ -114,7 +140,6 @@ static esp_err_t tab5BoardPrepare(void)
 	i2c_master_dev_handle_t expander1 = C_NULL;
 	i2c_master_dev_handle_t expander2 = C_NULL;
 	i2c_master_dev_handle_t touch = C_NULL;
-	uint8_t ownsBus = 0;
 	esp_err_t err;
 
 	if (gBoardReady)
@@ -127,19 +152,7 @@ static esp_err_t tab5BoardPrepare(void)
 	if (ESP_OK != err)
 		goto done;
 
-	err = i2c_master_get_bus_handle(I2C_NUM_1, &bus);
-	if (ESP_ERR_INVALID_STATE == err) {
-		const i2c_master_bus_config_t config = {
-			.i2c_port = I2C_NUM_1,
-			.sda_io_num = GPIO_NUM_31,
-			.scl_io_num = GPIO_NUM_32,
-			.clk_source = I2C_CLK_SRC_DEFAULT,
-			.glitch_ignore_cnt = 7,
-			.flags.enable_internal_pullup = 1,
-		};
-		err = i2c_new_master_bus(&config, &bus);
-		ownsBus = (ESP_OK == err);
-	}
+	err = tab5I2CGetBus(&bus);
 	if (ESP_OK != err)
 		goto done;
 
@@ -220,8 +233,6 @@ done:
 		i2c_master_bus_rm_device(expander2);
 	if (expander1)
 		i2c_master_bus_rm_device(expander1);
-	if (ownsBus && bus)
-		i2c_del_master_bus(bus);
 	if (ESP_OK != err)
 		gpio_set_direction(GPIO_NUM_23, GPIO_MODE_INPUT);
 	return err;
