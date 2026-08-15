@@ -1,0 +1,8 @@
+{
+	"modules": {
+		"embedded:peripheral/AudioCodec/ES8388": "./es8388"
+	},
+	"preload": [
+		"embedded:peripheral/AudioCodec/ES8388"
+	]
+}
