@@ -1,0 +1,60 @@
+{
+	"build": {
+		"ESP32_SUBCLASS": "esp32p4",
+		"ESP32P4_HWVER": "hw_ver1",
+		"USE_USB": "2",
+		"SDKCONFIGPATH": "./sdkconfig",
+		"PARTITIONS_FILE_FOR_TARGET": "./sdkconfig/partitions.csv",
+		"PROGRAMMING_MODE_MESSAGE": "INSTRUCTIONS: Hold RESET, hold BOOT, release RESET, then release BOOT.",
+		"BEFORE_DEBUGGING_MESSAGE": "Press and release RESET."
+	},
+	"include": [
+		"$(MODULES)/io/manifest.json",
+		"$(MODULES)/io/display/manifest.json",
+		"$(MODULES)/drivers/sensors/gt911/manifest.json",
+		"$(MODULES)/drivers/sensors/st712x/manifest.json"
+	],
+	"modules": {
+		"embedded:display/m5stack-tab5": "$(MODULES)/io/display/display",
+		"m5stack-tab5/board": "./board",
+		"*": "./display"
+	},
+	"preload": [
+		"embedded:display/m5stack-tab5",
+		"m5stack-tab5/board"
+	],
+	"config": {
+		"format": "RGB565LE",
+		"rotation": 90,
+		"brightness": 100,
+		"touchCount": 5
+	},
+	"creation": {
+		"static": 0,
+		"chunk": {
+			"initial": 78848,
+			"incremental": 0
+		},
+		"heap": {
+			"initial": 4928,
+			"incremental": 0
+		},
+		"stack": 512
+	},
+	"defines": {
+		"wifi": {
+			"remote": 1
+		}
+	},
+	"platforms": {
+		"esp32": {
+			"dependency": [
+				{ "idf": "esp_lcd" },
+				{ "idf": "esp_hw_support" },
+				{ "name": "esp_lcd_ili9881c", "version": "^1.1.0" },
+				{ "name": "esp_lcd_st7121", "version": "^1.0.1" },
+				{ "name": "esp_lcd_st7123", "version": "^1.0.2" }
+			]
+		}
+	}
+}
