@@ -1133,7 +1133,7 @@ otadata, data, ota, , ${OTADATA_SIZE},`;
 			}
 			if (tool.environment.USE_USB == 1)
 				depStr.push(`grep -q 'espressif/esp_tinyusb' ${idf_component} || idf.py add-dependency "espressif/esp_tinyusb"`);
-			this.line("BUILD_DEPENDENCIES = " + depStr.join("& "));
+			this.line("BUILD_DEPENDENCIES = " + depStr.join(tool.windows ? "& " : "; "));
 			this.line();
 
 			let cmakeTweakFile = tool.outputConfigDirectory + tool.slash + "xs_idf_deps.txt";
