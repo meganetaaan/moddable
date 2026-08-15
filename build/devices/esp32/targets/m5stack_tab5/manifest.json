@@ -11,6 +11,7 @@
 	},
 	"include": [
 		"$(MODULES)/io/manifest.json",
+		"$(MODULES)/io/expander/manifest_pi4ioe5v6408.json",
 		"$(MODULES)/io/display/manifest.json",
 		"$(MODULES)/drivers/sensors/gt911/manifest.json",
 		"$(MODULES)/drivers/sensors/st712x/manifest.json"
