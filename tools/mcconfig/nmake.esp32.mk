@@ -269,7 +269,9 @@ INC_DIRS = \
 	-I$(IDF_PATH)\components\esp_hw_support\etm\include \
 	-I$(IDF_PATH)\components\esp_hw_support\include \
 	-I$(IDF_PATH)\components\esp_hw_support\include\soc \
+	-I$(IDF_PATH)\components\esp_hw_support\ldo\include \
 	-I$(IDF_PATH)\components\esp_hw_support\port\$(ESP32_SUBCLASS)\private_include \
+	-I$(IDF_PATH)\components\esp_lcd\dsi\include \
  	-I$(IDF_PATH)\components\esp_lcd\include \
  	-I$(IDF_PATH)\components\esp_hal_lcd\include \
  	-I$(IDF_PATH)\components\esp_libc\platform_include \
@@ -339,7 +341,7 @@ INC_DIRS = \
 	-I$(IDF_PATH)\components\vfs\include \
 	-I$(IDF_PATH)\components\tinyusb\additions\include
 
-!IF "$(ESP32_SUBCLASS)"=="esp323p4"
+!IF "$(ESP32_SUBCLASS)"=="esp32p4"
 INC_DIRS = $(INC_DIRS) \
 	-I$(IDF_PATH)\components\soc\$(ESP32_SUBCLASS)\register\$(ESP32P4_HWVER)
 !ENDIF
