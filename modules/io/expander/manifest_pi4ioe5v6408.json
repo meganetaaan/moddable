@@ -1,0 +1,8 @@
+{
+	"modules": {
+		"embedded:io/provider/PI4IOE5V6408": "./pi4ioe5v6408"
+	},
+	"preload": [
+		"embedded:io/provider/PI4IOE5V6408"
+	]
+}
