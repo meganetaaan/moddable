@@ -1,0 +1,8 @@
+{
+	"modules": {
+		"embedded:RTC/RX8130CE": "$(MODDABLE)/modules/drivers/peripherals/rx8130ce/rx8130ce"
+	},
+	"preload": [
+		"embedded:RTC/RX8130CE"
+	]
+}
