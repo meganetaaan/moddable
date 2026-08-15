@@ -22,6 +22,7 @@
 		"$(MODDABLE)/modules/io/storage/manifest.json",
 		"$(MODDABLE)/modules/io/audioout/manifest.json",
 		"$(MODDABLE)/modules/io/audioin/manifest.json",
+		"$(MODDABLE)/modules/drivers/sensors/st712x/manifest.json",
 		"$(MODDABLE)/modules/io/crypt/digest/manifest.json",
 		"$(MODDABLE)/modules/io/update/manifest.json",
 		"$(MODDABLE)/modules/io/flash/manifest.json"
