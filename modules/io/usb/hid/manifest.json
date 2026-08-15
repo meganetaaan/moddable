@@ -1,0 +1,31 @@
+{
+	"platforms": {
+		"esp32/m5stack_tab5": {
+			"modules": {
+				"*": [
+					"$(MODDABLE)/modules/io/common/builtinCommon",
+					"./esp32/hid.c"
+				],
+				"embedded:io/usb/hid": "./esp32/hid.js"
+			},
+			"dependency": [
+				{
+					"name": "usb",
+					"version": "==1.5.0",
+					"includes": ["include"]
+				},
+				{
+					"name": "usb_host_hid",
+					"version": "==1.2.0",
+					"includes": ["include"]
+				}
+			]
+		},
+		"...": {
+			"error": "USB HID host is only available on M5Stack Tab5"
+		}
+	},
+	"preload": [
+		"embedded:io/usb/hid"
+	]
+}

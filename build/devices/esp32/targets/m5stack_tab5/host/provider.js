@@ -28,6 +28,7 @@ import PWM from "embedded:io/pwm";
 import Serial from "embedded:io/serial";
 import SMBus from "embedded:io/smbus";
 import SPI from "embedded:io/spi";
+import USBHID from "embedded:io/usb/hid";
 import Timer from "timer";
 import Display from "embedded:display/m5stack-tab5";
 import PI4IOE5V6408 from "embedded:io/provider/PI4IOE5V6408";
@@ -271,7 +272,13 @@ const device = {
 			pin: 17
 		}
 	},
-	io: {Analog, Digital, DigitalBank, I2C, PulseCount, PulseWidth, PWM, Serial, SMBus, SPI},
+	USBHID: {
+		default: {
+			io: USBHID,
+			protocol: "mouse"
+		}
+	},
+	io: {Analog, Digital, DigitalBank, I2C, PulseCount, PulseWidth, PWM, Serial, SMBus, SPI, USBHID},
 	power: {
 		io: Tab5Power,
 		i2c: internalI2C,
