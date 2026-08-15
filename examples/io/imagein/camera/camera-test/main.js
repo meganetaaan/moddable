@@ -23,8 +23,9 @@ const format = "buffer/disposable";	// or "buffer"
 class CameraModel {
 	constructor() {
 		const imageType = screen.pixelFormat;
+		let { width, height } = screen;
 		
-		let frame;
+		let frame, frames = 0;
 		const camera = new Camera({
 			width,
 			height,
@@ -39,6 +40,8 @@ class CameraModel {
 					frame = camera.read();
 					if (!frame)
 						return trace("read failed: no frame\n");
+					if ((1 === ++frames) || (100 === frames))
+						trace(`Camera frame ${frames}: ${frame.byteLength} bytes\n`);
 				}
 				this.PREVIEW.buffer = frame;
 			}

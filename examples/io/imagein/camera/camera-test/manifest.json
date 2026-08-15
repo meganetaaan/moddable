@@ -10,6 +10,13 @@
 		"rotation": 0,
 		"startupSound": false
 	},
+	"platforms": {
+		"esp32/m5stack_tab5": {
+			"config": {
+				"rotation": 90
+			}
+		}
+	},
 	"creation": {
 		"static": 0,
         "chunk": {
