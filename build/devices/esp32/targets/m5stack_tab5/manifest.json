@@ -16,6 +16,7 @@
 		"$(MODULES)/io/expander/manifest_pi4ioe5v6408.json",
 		"$(MODULES)/io/display/manifest.json",
 		"$(MODULES)/io/files/sdmmc/manifest.json",
+		"$(MODULES)/io/usb/hid/manifest.json",
 		"$(MODULES)/drivers/peripherals/es7210/manifest.json",
 		"$(MODULES)/drivers/peripherals/es8388/manifest.json",
 		"$(MODULES)/drivers/peripherals/rx8130ce/manifest.json",

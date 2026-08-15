@@ -176,13 +176,15 @@ ESP32-P4 is a dual-core RISC-V SoC with MIPI DSI and external PSRAM support. It 
 | :---: | :--- | :--- | :--- |
 | M5Stack Tab5 | `esp32/m5stack_tab5` | 5" IPS touch display<BR>1280 x 720<BR>16-bit color<BR>ESP32-C6 Wi-Fi over SDIO | <li>[Product page](https://docs.m5stack.com/en/core/Tab5)</li> |
 
-The Tab5 target detects the ILI9881C, ST7121, and ST7123 display revisions and their GT911 or ST712x touch controller at startup. It exposes the display, touch controller, and Wi-Fi through ECMA-419 APIs. Build an application with:
+The Tab5 target detects the ILI9881C, ST7121, and ST7123 display revisions and their GT911 or ST712x touch controller at startup. It exposes the display, touch controller, Wi-Fi, and built-in peripherals through ECMA-419 APIs. Build an application with:
 
 ```text
 mcconfig -d -m -p esp32/m5stack_tab5
 ```
 
 Wi-Fi requires compatible ESP-Hosted slave firmware on the Tab5's ESP32-C6. The target builds and flashes only the ESP32-P4; it does not update the ESP32-C6 firmware.
+
+The USB-A port supports boot-protocol mice and keyboards through the Moddable IO Class Pattern extension `embedded:io/usb/hid`. The default `device.USBHID.default` selects a mouse; set its `protocol` option to `"keyboard"` for a keyboard. See `examples/io/usb/hid` for raw input report handling.
 
 <a id="platforms-esp32-c3"></a>
 ### ESP32-C3
