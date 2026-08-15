@@ -1,6 +1,6 @@
 {
 	"modules": {
-		"embedded:display/zephyr": "./display"
+		"embedded:display/zephyr": "../display"
 	},
 	"preload": [
 		"embedded:display/zephyr"

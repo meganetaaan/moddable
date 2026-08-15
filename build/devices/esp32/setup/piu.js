@@ -19,13 +19,15 @@
  */
 
 import config from "mc/config";
+import Bitmap from "commodetto/Bitmap";
 import Time from "time";
 import Timer from "timer";
 
-if (!config.Screen)
+const display = globalThis.device?.display?.default;
+if (!config.Screen && !display)
 	throw new Error("no screen configured");
 
-class Screen extends config.Screen {
+class Screen extends (config.Screen ?? display.io) {
 	#timer;
 	#touch;
 
@@ -198,7 +200,20 @@ Object.freeze(rotate, true);
 
 export default function (done) {
 	if (!global.screen) {
-		globalThis.screen = new Screen({});
+		const descriptor = config.Screen ? undefined : display;
+		globalThis.screen = new Screen(descriptor ?? {});
+
+		if (descriptor) {
+			screen.pixelFormat ??= Bitmap[config.format];
+			let brightness = config.brightness;
+			if ((undefined === brightness) || ("none" === brightness))
+				brightness = (descriptor.brightness ?? 1) * 100;
+			else if ("off" === brightness)
+				brightness = 0;
+			else
+				brightness = parseInt(brightness);
+			screen.configure({format: screen.pixelFormat, brightness: brightness / 100});
+		}
 
 		if (config.corner)
 			screen.corner ??= config.corner;
@@ -210,7 +225,7 @@ export default function (done) {
 				screen.rotation = config.driverRotation;
 		}
 
-		if (globalThis.Host?.Backlight || globalThis.device?.peripheral?.Backlight) {
+		if (!descriptor && (globalThis.Host?.Backlight || globalThis.device?.peripheral?.Backlight)) {
 			let brightness = config.brightness;
 			if ((undefined === brightness) || ("none" === brightness))
 				brightness = 100;

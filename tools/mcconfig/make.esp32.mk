@@ -223,7 +223,9 @@ INC_DIRS = \
 	$(IDF_PATH)/components/esp_hw_support/etm/include \
 	$(IDF_PATH)/components/esp_hw_support/include \
 	$(IDF_PATH)/components/esp_hw_support/include/soc \
+	$(IDF_PATH)/components/esp_hw_support/ldo/include \
 	$(IDF_PATH)/components/esp_hw_support/port/$(ESP32_SUBCLASS)/private_include \
+	$(IDF_PATH)/components/esp_lcd/dsi/include \
 	$(IDF_PATH)/components/esp_lcd/include \
 	$(IDF_PATH)/components/esp_hal_lcd/include \
 	$(IDF_PATH)/components/esp_libc/platform_include \
@@ -831,4 +833,3 @@ MAKEFLAGS += $(MAKEFLAGS_JOBS)
 ifneq ($(VERBOSE),1)
 MAKEFLAGS += --silent
 endif
-

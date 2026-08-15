@@ -19,13 +19,29 @@
  */
 
 import config from "mc/config";
+import Bitmap from "commodetto/Bitmap";
 
-if (!config.Screen)
+const display = globalThis.device?.display?.default;
+if (!config.Screen && !display)
 	trace("WARNING: no screen configured\n");
 
 export default function (done) {
-	if (!global.screen && config.Screen) {
-		globalThis.screen = new config.Screen({});
+	if (!global.screen && (config.Screen || display)) {
+		const descriptor = config.Screen ? undefined : display;
+		const Screen = config.Screen ?? descriptor.io;
+		globalThis.screen = new Screen(descriptor ?? {});
+
+		if (descriptor) {
+			screen.pixelFormat ??= Bitmap[config.format];
+			let brightness = config.brightness;
+			if ((undefined === brightness) || ("none" === brightness))
+				brightness = (descriptor.brightness ?? 1) * 100;
+			else if ("off" === brightness)
+				brightness = 0;
+			else
+				brightness = parseInt(brightness);
+			screen.configure({format: screen.pixelFormat, brightness: brightness / 100});
+		}
 
 		if (config.driverRotation) {
 			if (config.rotation)
@@ -34,7 +50,7 @@ export default function (done) {
 				screen.rotation = config.driverRotation;
 		}
 
-		if (globalThis.Host?.Backlight || globalThis.device?.peripheral?.Backlight) {
+		if (!descriptor && (globalThis.Host?.Backlight || globalThis.device?.peripheral?.Backlight)) {
 			let brightness = config.brightness;
 			if ((undefined === brightness) || ("none" === brightness))
 				brightness = 100;
