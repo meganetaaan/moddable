@@ -223,6 +223,12 @@ class Tab5Energy {
 	}
 }
 
+class Tab5RS485 extends Serial {
+	constructor(options = {}) {
+		super({...options, port: 1, receive: 21, transmit: 20, requestToSend: 34, rs485: true});
+	}
+}
+
 const device = {
 	display: {
 		default: {
@@ -239,6 +245,17 @@ const device = {
 		},
 		internal: internalI2C
 	},
+	Serial: {
+		default: {
+			io: Serial,
+			port: 2,
+			receive: 7,
+			transmit: 6
+		},
+		rs485: {
+			io: Tab5RS485
+		}
+	},
 	SPI: {
 		default: {
 			io: SPI,
@@ -246,6 +263,12 @@ const device = {
 			in: 19,
 			out: 18,
 			port: 1
+		}
+	},
+	Analog: {
+		default: {
+			io: Analog,
+			pin: 17
 		}
 	},
 	io: {Analog, Digital, DigitalBank, I2C, PulseCount, PulseWidth, PWM, Serial, SMBus, SPI},
@@ -270,7 +293,14 @@ const device = {
 		Power: Tab5Energy,
 		Touch: Tab5Touch
 	},
-	pin: {}
+	pin: {
+		portAData: 53,
+		portAClock: 54,
+		portBIn: 17,
+		portBOut: 52,
+		portCReceive: 7,
+		portCTransmit: 6
+	}
 };
 
 export default device;
