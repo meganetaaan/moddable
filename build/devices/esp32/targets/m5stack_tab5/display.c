@@ -25,6 +25,7 @@
 #include "display419.h"
 
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
 #include "driver/i2c_master.h"
@@ -55,7 +56,8 @@ typedef struct {
 	esp_lcd_panel_io_handle_t io;
 	esp_lcd_dsi_bus_handle_t bus;
 	esp_ldo_channel_handle_t ldo;
-	void *frameBuffer;
+	void *frameBuffers[2];
+	SemaphoreHandle_t refreshDone;
 	uint16_t updateX;
 	uint16_t updateY;
 	uint16_t updateWidth;
@@ -64,6 +66,8 @@ typedef struct {
 	uint8_t didBegin;
 	uint8_t direct;
 	uint8_t dma2d;
+	uint8_t renderBuffer;
+	volatile uint8_t waitingForRefresh;
 } modDisplayRecord, *modDisplay;
 
 static uint8_t gBoardReady;
@@ -120,6 +124,19 @@ static const xsDisplayHostHooksRecord xsDisplayHooks = {
 	.doAdaptInvalid = displayAdaptInvalid,
 	.doGet = displayGet,
 };
+
+static bool IRAM_ATTR tab5RefreshDone(esp_lcd_panel_handle_t panel, esp_lcd_dpi_panel_event_data_t *data, void *userContext)
+{
+	modDisplay display = userContext;
+	BaseType_t taskWoken = pdFALSE;
+	(void)panel;
+	(void)data;
+	if (display->waitingForRefresh) {
+		display->waitingForRefresh = 0;
+		xSemaphoreGiveFromISR(display->refreshDone, &taskWoken);
+	}
+	return pdTRUE == taskWoken;
+}
 
 static esp_err_t tab5WriteRegister(i2c_master_dev_handle_t device, uint8_t reg, uint8_t value)
 {
@@ -367,7 +384,7 @@ static esp_err_t tab5DisplayCreate(modDisplay display)
 		.dpi_clock_freq_mhz = dpiClock,
 		.in_color_format = LCD_COLOR_FMT_RGB565,
 		.out_color_format = LCD_COLOR_FMT_RGB565,
-		.num_fbs = 1,
+		.num_fbs = 2,
 		.video_timing = {
 			.h_size = TAB5_WIDTH,
 			.v_size = TAB5_HEIGHT,
@@ -417,7 +434,17 @@ static esp_err_t tab5DisplayCreate(modDisplay display)
 	if (ESP_OK != err)
 		return err;
 	display->dma2d = 1;
-	err = esp_lcd_dpi_panel_get_frame_buffer(display->panel, 1, &display->frameBuffer);
+	err = esp_lcd_dpi_panel_get_frame_buffer(display->panel, 2, &display->frameBuffers[0], &display->frameBuffers[1]);
+	if (ESP_OK != err)
+		return err;
+	display->renderBuffer = 1;
+	display->refreshDone = xSemaphoreCreateBinary();
+	if (!display->refreshDone)
+		return ESP_ERR_NO_MEM;
+	const esp_lcd_dpi_panel_event_callbacks_t callbacks = {
+		.on_refresh_done = tab5RefreshDone,
+	};
+	err = esp_lcd_dpi_panel_register_event_callbacks(display->panel, &callbacks, display);
 	if (ESP_OK != err)
 		return err;
 	err = esp_lcd_panel_reset(display->panel);
@@ -447,6 +474,8 @@ void xs_display_destructor(void *data)
 		esp_lcd_del_dsi_bus(display->bus);
 	if (display->ldo)
 		esp_ldo_release_channel(display->ldo);
+	if (display->refreshDone)
+		vSemaphoreDelete(display->refreshDone);
 	c_free(display);
 }
 
@@ -579,7 +608,7 @@ static int displayBegin(void *hostData, int x, int y, int width, int height, voi
 	display->didBegin = 1;
 	display->direct = !!frameBuffer;
 	if (frameBuffer)
-		*frameBuffer = display->frameBuffer;
+		*frameBuffer = display->frameBuffers[display->renderBuffer];
 	if (rowBytes)
 		*rowBytes = TAB5_WIDTH * 2;
 	return 0;
@@ -614,11 +643,20 @@ static int displayEnd(void *hostData)
 	display->didBegin = 0;
 	if (display->direct) {
 		display->direct = 0;
-		return (ESP_OK == esp_lcd_panel_draw_bitmap(display->panel,
+		xSemaphoreTake(display->refreshDone, 0);
+		if (ESP_OK != esp_lcd_panel_draw_bitmap(display->panel,
 			display->updateX, display->updateY,
 			display->updateX + display->updateWidth,
 			display->updateY + display->updateHeight,
-			display->frameBuffer)) ? 0 : -2;
+			display->frameBuffers[display->renderBuffer]))
+			return -2;
+		display->waitingForRefresh = 1;
+		if (pdTRUE != xSemaphoreTake(display->refreshDone, pdMS_TO_TICKS(100))) {
+			display->waitingForRefresh = 0;
+			return -3;
+		}
+		display->renderBuffer ^= 1;
+		return 0;
 	}
 	return display->updateHeight ? -2 : 0;
 }
@@ -626,7 +664,10 @@ static int displayEnd(void *hostData)
 static void displayAdaptInvalid(void *hostData, CommodettoRectangle r)
 {
 	(void)hostData;
-	(void)r;
+	r->x = 0;
+	r->y = 0;
+	r->w = TAB5_WIDTH;
+	r->h = TAB5_HEIGHT;
 }
 
 static int displayGet(void *hostData, int32_t what, void *result)
@@ -634,6 +675,6 @@ static int displayGet(void *hostData, int32_t what, void *result)
 	modDisplay display = hostData;
 	if (1 != what)
 		return -1;
-	*(uint8_t *)result = !!display->frameBuffer;
+	*(uint8_t *)result = !!display->frameBuffers[0];
 	return 0;
 }

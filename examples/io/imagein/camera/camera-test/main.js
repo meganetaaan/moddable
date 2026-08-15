@@ -13,6 +13,7 @@
  */
 import {} from "piu/MC";
 import Bitmap from "commodetto/Bitmap";
+import config from "mc/config";
 import Camera from "embedded:io/image/in/camera";
 
 const applicationSkin = new Skin({ fill:"gray" });
@@ -29,6 +30,7 @@ class CameraModel {
 		const camera = new Camera({
 			width,
 			height,
+			rotation: config.rotation,
 			imageType,
 			format,
 			onReadable: () => {
@@ -49,6 +51,9 @@ class CameraModel {
 
 		width = camera.width;
 		height = camera.height;
+		const rotation = camera.configuration.rotation ?? 0;
+		if ((90 === rotation) || (270 === rotation))
+			[width, height] = [height, width];
 
 		this.width = width;
 		this.height = height;
@@ -77,7 +82,7 @@ let CameraApplication = Application.template($ => ({
 		Container($, {
 			width:$.width, height:$.height, clip:true,
 			contents: [
-				ImageBuffer($, { anchor:"PREVIEW", imageWidth:$.camera.width, imageHeight:$.camera.height }),
+				ImageBuffer($, { anchor:"PREVIEW", imageWidth:$.width, imageHeight:$.height }),
 			]
 		}),
 		Label($, { top:0, string:`${$.width} x ${$.height}` }),
