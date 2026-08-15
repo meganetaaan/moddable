@@ -21,9 +21,10 @@
 #include "xsmc.h"
 #include "xsHost.h"
 #include "mc.xs.h"
+#include "mc.defines.h"
 #include "builtinCommon.h"
 
-#if ! kCPUESP32P4
+#if !kCPUESP32P4 || MODDEF_WIFI_REMOTE
 
 #include "esp_wifi.h"
 #include "esp_netif.h"
@@ -56,7 +57,14 @@ static void doWiFiEvent(void *arg, esp_event_base_t event_base, int32_t event_id
 static void doIPEvent(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
 static void wifiScanDeliver(void *the, void *refcon, uint8_t *msgIn, uint16_t msgLen);
 static void wifiConnectDeliver(void *the, void *refcon, uint8_t *msgIn, uint16_t msgLen);
-static void initWiFi(void);
+static void initWiFi(xsMachine *the);
+
+#if kCPUESP32P4
+__attribute__((weak)) esp_err_t modWiFiPlatformInit(void)
+{
+	return ESP_ERR_NOT_SUPPORTED;
+}
+#endif
 
 static void formatMAC(const uint8_t *mac, char *str)
 {
@@ -141,7 +149,7 @@ void xs_wifi419(xsMachine *the)
 	xsSetHostHooks(xsThis, &xsWiFiHooks);
 	xsRemember(wf->obj);
 
-	initWiFi();
+	initWiFi(the);
 
 	wifi_ap_record_t ap_info;
 	if (ESP_OK == esp_wifi_sta_get_ap_info(&ap_info)) {
@@ -203,10 +211,11 @@ void xs_wifi419_close(xsMachine *the)
 	xsSetHostDestructor(xsThis, C_NULL);
 }
 
-static void initWiFi(void)
+static void initWiFi(xsMachine *the)
 {
 	if (gStation) return;
 
+#if !MODDEF_WIFI_REMOTE
 	wifi_mode_t mode;
 	if (ESP_OK == esp_wifi_get_mode(&mode)) {
 		gStation = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
@@ -225,11 +234,17 @@ static void initWiFi(void)
 		ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, ESP_EVENT_ANY_ID, doIPEvent, C_NULL));
 		return;
 	}
+#endif
 
 	esp_netif_init();
 	esp_err_t err = esp_event_loop_create_default();
 	if (ESP_ERR_INVALID_STATE != err)
 		ESP_ERROR_CHECK(err);
+
+#if kCPUESP32P4
+	if (ESP_OK != modWiFiPlatformInit())
+		xsUnknownError("can't initialize Wi-Fi transport");
+#endif
 
 	gStation = esp_netif_create_default_wifi_sta();
 
@@ -652,4 +667,3 @@ void xs_wifi419_RSSI_get(xsMachine *the) { }
 void xs_wifi419_channel_get(xsMachine *the) { }
 
 #endif
-

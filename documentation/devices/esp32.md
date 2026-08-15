@@ -1,8 +1,8 @@
 # Using the Moddable SDK with ESP32
 Copyright 2016-2026 Moddable Tech, Inc.<BR>
-Revised: August 4, 2026
+Revised: August 15, 2026
 
-This document provides a guide to building apps for the ESP32 line of SoCs from Espressif. The Moddable SDK supports [ESP32](https://www.espressif.com/en/products/socs/esp32), [ESP32-S2](https://www.espressif.com/en/products/socs/esp32-s2), [ESP32-S3](https://www.espressif.com/en/products/socs/esp32-s3), [ESP32-C3](https://www.espressif.com/en/products/socs/esp32-c3), [ESP32-C5](https://www.espressif.com/en/products/socs/esp32-c5), [ESP32-C6](https://www.espressif.com/en/products/socs/esp32-c6), and [ESP32-H2](https://www.espressif.com/en/products/socs/esp32-h2).
+This document provides a guide to building apps for the ESP32 line of SoCs from Espressif. The Moddable SDK supports [ESP32](https://www.espressif.com/en/products/socs/esp32), [ESP32-S2](https://www.espressif.com/en/products/socs/esp32-s2), [ESP32-S3](https://www.espressif.com/en/products/socs/esp32-s3), [ESP32-P4](https://www.espressif.com/en/products/socs/esp32-p4), [ESP32-C3](https://www.espressif.com/en/products/socs/esp32-c3), [ESP32-C5](https://www.espressif.com/en/products/socs/esp32-c5), [ESP32-C6](https://www.espressif.com/en/products/socs/esp32-c6), and [ESP32-H2](https://www.espressif.com/en/products/socs/esp32-h2).
 
 ## Table of Contents
 
@@ -12,6 +12,7 @@ This document provides a guide to building apps for the ESP32 line of SoCs from 
 	* [ESP32-S2](#platforms-esp32-s2)
 	* [ESP32-S3](#platforms-esp32-s3)
 	* [ESP32-S3 Cameras](#platforms-esp32-s3-cameras)
+	* [ESP32-P4](#platforms-esp32-p4)
 	* [ESP32-C3](#platforms-esp32-c3)
 	* [ESP32-C5](#platforms-esp32-c5)
 	* [ESP32-C6](#platforms-esp32-c6)
@@ -55,7 +56,7 @@ When building with `mcconfig`, you specify your device target by providing the *
 mcconfig -d -m -p esp32/moddable_two
 ```
 
-A list of available ESP32, ESP32-S2, ESP32-S3, ESP32-C3, ESP32-C5, ESP32-C6 and ESP32-H2 subplatforms and their platform identifiers is provided in the **Platforms** section below.
+A list of available ESP32, ESP32-S2, ESP32-S3, ESP32-P4, ESP32-C3, ESP32-C5, ESP32-C6 and ESP32-H2 subplatforms and their platform identifiers is provided in the **Platforms** section below.
 
 <a id="platforms"></a>
 ## Platforms
@@ -165,6 +166,23 @@ The Moddable SDK supports devices built on ESP32-S3. The following table lists e
 | <img src="../assets/devices/m5atom_s3r_m12.png" width=140></a><BR>M5 ATOMS3R Camera Kit M12 Version | `esp32/m5atom_s3r_m12` | OV3660 Camera<br>BMI270 IMU<Br>8MB PSRAM| <li>[Product info](https://shop.m5stack.com/products/atoms3r-camera-kit-m12-version-ov3660)</li> |
 | <img src="../assets/devices/m5stack_cores3.jpg" width=140></a><BR>M5Stack Core S3 | `esp32/m5stack_cores3` | GC0308 Camera<br>Microphone<br>Speaker<br>ili9341 QVGA Touchscreen<BR>320 x 240<BR>BMI270 IMU<Br>BM8563 RTC<BR>8MB PSRAM | <li>[Product info](https://shop.m5stack.com/products/m5stack-cores3-esp32s3-lotdevelopment-kit)</li> |
 | <img src="../assets/devices/xiao_esp32s3_sense.jpg" width=140></a><BR>Seed Studio<br>XIAO ESP32S3 Sense | `esp32/xiao_esp32s3_sense` | OV2640 Camera<br>Microphone<br>8MB PSRAM | <li>[Getting Started](https://wiki.seeedstudio.com/xiao_esp32s3_getting_started/)</li><li>[Display Wiring Guide](../displays/images/xiao-qtpy-ili9341-wiring.png)</li> |
+
+<a id="platforms-esp32-p4"></a>
+### ESP32-P4
+
+ESP32-P4 is a dual-core RISC-V SoC with MIPI DSI and external PSRAM support. It does not contain a wireless radio.
+
+| Name | Platform identifier | Key features | Links |
+| :---: | :--- | :--- | :--- |
+| M5Stack Tab5 | `esp32/m5stack_tab5` | 5" IPS touch display<BR>1280 x 720<BR>16-bit color<BR>ESP32-C6 Wi-Fi over SDIO | <li>[Product page](https://docs.m5stack.com/en/core/Tab5)</li> |
+
+The Tab5 target detects the ILI9881C, ST7121, and ST7123 display revisions and their GT911 or ST712x touch controller at startup. It exposes the display, touch controller, and Wi-Fi through ECMA-419 APIs. Build an application with:
+
+```text
+mcconfig -d -m -p esp32/m5stack_tab5
+```
+
+Wi-Fi requires compatible ESP-Hosted slave firmware on the Tab5's ESP32-C6. The target builds and flashes only the ESP32-P4; it does not update the ESP32-C6 firmware.
 
 <a id="platforms-esp32-c3"></a>
 ### ESP32-C3
