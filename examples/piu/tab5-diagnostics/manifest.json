@@ -1,0 +1,40 @@
+{
+	"include": [
+		"$(MODDABLE)/examples/manifest_base.json",
+		"$(MODDABLE)/modules/io/manifest.json",
+		"$(MODDABLE)/examples/manifest_piu.json",
+		"$(MODDABLE)/modules/io/wifi/manifest.json",
+		"$(MODDABLE)/modules/io/imagein/camera/manifest.json",
+		"$(MODDABLE)/modules/piu/MC/imageBuffer/manifest.json"
+	],
+	"config": {
+		"startupSound": false
+	},
+	"creation": {
+		"static": 0,
+		"chunk": {
+			"initial": 1048576,
+			"incremental": 0
+		},
+		"heap": {
+			"initial": 8192,
+			"incremental": 0
+		},
+		"stack": 512
+	},
+	"modules": {
+		"*": "./main"
+	},
+	"resources": {
+		"*-alpha": [
+			"$(MODDABLE)/examples/assets/fonts/OpenSans-Regular-20",
+			"$(MODDABLE)/examples/assets/fonts/OpenSans-Semibold-28"
+		]
+	},
+	"platforms": {
+		"esp32/m5stack_tab5": {},
+		"...": {
+			"error": "M5Stack Tab5 required"
+		}
+	}
+}
