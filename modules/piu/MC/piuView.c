@@ -1106,7 +1106,7 @@ void PiuViewUpdateStep(PiuView* self, PocoCoordinate x, PocoCoordinate y, PocoDi
 
 #if MODDEF_ECMA419_DISPLAY
 			if (poco->displayHooks) {
-				int rowBytesInt;
+				int32_t rowBytesInt;
 				(((xsDisplayHostHooks)poco->displayHooks)->doBegin)(poco->outputRefcon, poco->x, poco->y, poco->w, poco->h, (void **)&pixels, &rowBytesInt, 0);
 				rowBytes = (int16_t)rowBytesInt;
 			}
@@ -1712,4 +1712,3 @@ void PiuView_onTouchMoved(xsMachine* the)
 #endif
 	PiuApplicationTouchMoved(application, index, x, y, ticks);
 }
-

@@ -55,12 +55,15 @@ typedef struct {
 	esp_lcd_panel_io_handle_t io;
 	esp_lcd_dsi_bus_handle_t bus;
 	esp_ldo_channel_handle_t ldo;
+	void *frameBuffer;
 	uint16_t updateX;
 	uint16_t updateY;
 	uint16_t updateWidth;
 	uint16_t updateHeight;
 	uint8_t format;
 	uint8_t didBegin;
+	uint8_t direct;
+	uint8_t dma2d;
 } modDisplayRecord, *modDisplay;
 
 static uint8_t gBoardReady;
@@ -400,6 +403,13 @@ static esp_err_t tab5DisplayCreate(modDisplay display)
 	}
 	if (ESP_OK != err)
 		return err;
+	err = esp_lcd_dpi_panel_enable_dma2d(display->panel);
+	if (ESP_OK != err)
+		return err;
+	display->dma2d = 1;
+	err = esp_lcd_dpi_panel_get_frame_buffer(display->panel, 1, &display->frameBuffer);
+	if (ESP_OK != err)
+		return err;
 	err = esp_lcd_panel_reset(display->panel);
 	if (ESP_OK == err)
 		err = esp_lcd_panel_init(display->panel);
@@ -417,6 +427,8 @@ void xs_display_destructor(void *data)
 		return;
 	if (display->panel) {
 		esp_lcd_panel_disp_on_off(display->panel, false);
+		if (display->dma2d)
+			esp_lcd_dpi_panel_disable_dma2d(display->panel);
 		esp_lcd_panel_del(display->panel);
 	}
 	if (display->io)
@@ -555,10 +567,11 @@ static int displayBegin(void *hostData, int x, int y, int width, int height, voi
 	display->updateWidth = width;
 	display->updateHeight = height;
 	display->didBegin = 1;
+	display->direct = !!frameBuffer;
 	if (frameBuffer)
-		*frameBuffer = C_NULL;
+		*frameBuffer = display->frameBuffer;
 	if (rowBytes)
-		*rowBytes = 0;
+		*rowBytes = TAB5_WIDTH * 2;
 	return 0;
 }
 
@@ -589,6 +602,14 @@ static int displayEnd(void *hostData)
 	if (!display->didBegin)
 		return -1;
 	display->didBegin = 0;
+	if (display->direct) {
+		display->direct = 0;
+		return (ESP_OK == esp_lcd_panel_draw_bitmap(display->panel,
+			display->updateX, display->updateY,
+			display->updateX + display->updateWidth,
+			display->updateY + display->updateHeight,
+			display->frameBuffer)) ? 0 : -2;
+	}
 	return display->updateHeight ? -2 : 0;
 }
 
@@ -600,9 +621,9 @@ static void displayAdaptInvalid(void *hostData, CommodettoRectangle r)
 
 static int displayGet(void *hostData, int32_t what, void *result)
 {
-	(void)hostData;
+	modDisplay display = hostData;
 	if (1 != what)
 		return -1;
-	*(uint8_t *)result = 0;
+	*(uint8_t *)result = !!display->frameBuffer;
 	return 0;
 }

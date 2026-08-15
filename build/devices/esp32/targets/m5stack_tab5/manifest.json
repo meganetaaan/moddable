@@ -2,6 +2,7 @@
 	"build": {
 		"ESP32_SUBCLASS": "esp32p4",
 		"ESP32P4_HWVER": "hw_ver1",
+		"C_FLAGS_SUBPLATFORM": "-DkPocoFrameBuffer=1",
 		"USE_USB": "2",
 		"SDKCONFIGPATH": "./sdkconfig",
 		"PARTITIONS_FILE_FOR_TARGET": "./sdkconfig/partitions.csv",
