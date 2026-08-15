@@ -97,7 +97,15 @@ class Tab5Touch {
 		return this.#touch.configuration;
 	}
 	sample() {
-		return this.#touch.sample();
+		const sample = this.#touch.sample();
+		if (!sample)
+			return;
+		for (const point of sample) {
+			const x = point.x;
+			point.x = point.y;
+			point.y = 1280 - x;
+		}
+		return sample;
 	}
 
 	static {
