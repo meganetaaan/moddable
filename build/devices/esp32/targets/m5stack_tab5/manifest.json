@@ -13,7 +13,10 @@
 		"$(MODULES)/io/manifest.json",
 		"$(MODULES)/io/expander/manifest_pi4ioe5v6408.json",
 		"$(MODULES)/io/display/manifest.json",
+		"$(MODULES)/drivers/peripherals/rx8130ce/manifest.json",
+		"$(MODULES)/drivers/sensors/bmi270/manifest.json",
 		"$(MODULES)/drivers/sensors/gt911/manifest.json",
+		"$(MODULES)/drivers/sensors/ina226/manifest.json",
 		"$(MODULES)/drivers/sensors/st712x/manifest.json"
 	],
 	"modules": {

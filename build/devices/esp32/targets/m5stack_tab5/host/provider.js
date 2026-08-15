@@ -31,6 +31,9 @@ import SPI from "embedded:io/spi";
 import Timer from "timer";
 import Display from "embedded:display/m5stack-tab5";
 import PI4IOE5V6408 from "embedded:io/provider/PI4IOE5V6408";
+import RTC from "embedded:RTC/RX8130CE";
+import IMU from "embedded:sensor/Accelerometer-Gyroscope-Magnetometer/BMI270";
+import Energy from "embedded:sensor/Energy/INA226";
 import GT911 from "embedded:sensor/Touch/GT911";
 import ST712x from "embedded:sensor/Touch/ST712x";
 import prepare from "m5stack-tab5/board";
@@ -200,6 +203,26 @@ const internalI2C = {
 	port: 1
 };
 
+class Tab5IMU {
+	constructor(options = {}) {
+		return new IMU({
+			...options,
+			sensor: {...internalI2C, address: 0x68, io: SMBus}
+		});
+	}
+}
+
+class Tab5Energy {
+	constructor(options = {}) {
+		return new Energy({
+			shuntResistance: 0.005,
+			maximumCurrent: 8.192,
+			...options,
+			sensor: {...internalI2C, address: 0x41, io: SMBus}
+		});
+	}
+}
+
 const device = {
 	display: {
 		default: {
@@ -237,7 +260,14 @@ const device = {
 		quickCharge: true,
 		externalAntenna: false
 	},
+	rtc: {
+		io: RTC,
+		clock: {...internalI2C, address: 0x32, io: SMBus},
+		backup: Object.freeze({charge: true, powerSwitch: true})
+	},
 	sensor: {
+		IMU: Tab5IMU,
+		Power: Tab5Energy,
 		Touch: Tab5Touch
 	},
 	pin: {}

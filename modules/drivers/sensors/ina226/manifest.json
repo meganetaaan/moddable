@@ -1,0 +1,8 @@
+{
+	"modules": {
+		"embedded:sensor/Energy/INA226": "$(MODDABLE)/modules/drivers/sensors/ina226/ina226"
+	},
+	"preload": [
+		"embedded:sensor/Energy/INA226"
+	]
+}
