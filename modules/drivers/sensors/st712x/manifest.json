@@ -1,0 +1,8 @@
+{
+	"modules": {
+		"embedded:sensor/Touch/ST712x": "./st712x"
+	},
+	"preload": [
+		"embedded:sensor/Touch/ST712x"
+	]
+}
