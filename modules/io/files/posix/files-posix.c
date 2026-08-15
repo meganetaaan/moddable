@@ -23,14 +23,29 @@
 #include "mc.xs.h"      // for xsID_ values
 
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <dirent.h>
+#include <errno.h>
 #include <fcntl.h>
-#include <pwd.h>
+#include <string.h>
 #include <unistd.h>
+
+#if ESP32
+	#include "mc.defines.h"
+	#include "driver/sdmmc_host.h"
+	#include "esp_vfs_fat.h"
+	#include "sd_pwr_ctrl_by_on_chip_ldo.h"
+#else
+	#include <pwd.h>
+#endif
 
 #define kCreateFilePermissions (0666)
 #define kCreateDirectoryPermissions (0777)
 #define kOpenDirFlags (O_RDONLY)
+
+#ifndef AT_SYMLINK_NOFOLLOW
+	#define AT_SYMLINK_NOFOLLOW 0
+#endif
 
 /*
 	helpers
@@ -86,6 +101,65 @@ static char *_getPath(xsMachine *the, xsSlot *slot)
 	return NULL;		// can never reach here
 }
 
+#if ESP32
+
+#ifndef MODDEF_FILE_SDMMC_SLOT
+	#define MODDEF_FILE_SDMMC_SLOT SDMMC_HOST_SLOT_0
+#endif
+#ifndef MODDEF_FILE_SDMMC_WIDTH
+	#define MODDEF_FILE_SDMMC_WIDTH 4
+#endif
+#ifndef MODDEF_FILE_SDMMC_MAX_FILES
+	#define MODDEF_FILE_SDMMC_MAX_FILES 5
+#endif
+#ifndef MODDEF_FILE_SDMMC_LDO
+	#define MODDEF_FILE_SDMMC_LDO 4
+#endif
+
+static sdmmc_card_t *gCard;
+static sd_pwr_ctrl_handle_t gPower;
+
+static void mountSDCard(xsMachine *the, const char *path)
+{
+	if (gCard)
+		return;
+
+	esp_err_t result;
+	if (!gPower) {
+		sd_pwr_ctrl_ldo_config_t powerConfig = {
+			.ldo_chan_id = MODDEF_FILE_SDMMC_LDO
+		};
+		result = sd_pwr_ctrl_new_on_chip_ldo(&powerConfig, &gPower);
+		if (ESP_OK != result)
+			xsUnknownError("SD card power failed: 0x%x", result);
+	}
+
+	sdmmc_host_t host = SDMMC_HOST_DEFAULT();
+	host.slot = MODDEF_FILE_SDMMC_SLOT;
+	host.max_freq_khz = SDMMC_FREQ_HIGHSPEED;
+	host.pwr_ctrl_handle = gPower;
+
+	sdmmc_slot_config_t slot = SDMMC_SLOT_CONFIG_DEFAULT();
+	slot.width = MODDEF_FILE_SDMMC_WIDTH;
+	slot.clk = MODDEF_FILE_SDMMC_CLK;
+	slot.cmd = MODDEF_FILE_SDMMC_CMD;
+	slot.d0 = MODDEF_FILE_SDMMC_D0;
+	slot.d1 = MODDEF_FILE_SDMMC_D1;
+	slot.d2 = MODDEF_FILE_SDMMC_D2;
+	slot.d3 = MODDEF_FILE_SDMMC_D3;
+
+	esp_vfs_fat_sdmmc_mount_config_t mount = {
+		.format_if_mount_failed = false,
+		.max_files = MODDEF_FILE_SDMMC_MAX_FILES,
+		.allocation_unit_size = 16 * 1024
+	};
+	result = esp_vfs_fat_sdmmc_mount(path, &host, &slot, &mount, &gCard);
+	if (ESP_OK != result)
+		xsUnknownError("SD card mount failed: 0x%x", result);
+}
+
+#else
+
 #if mxLinux
 #include <linux/openat2.h>
 #include <sys/syscall.h>
@@ -104,6 +178,8 @@ static int do_openat2(int dirfd, const char *pathname, int flags)
 	return openat(dirfd, pathname, flags);
 }
 #endif
+
+#endif /* ESP32 */
 
 /*
 	File
@@ -213,7 +289,11 @@ void xs_fileposix_flush(xsMachine *the)
 */
 
 struct xsDirectoryRecord {
+#if ESP32
+	char	path[];
+#else
 	int		fd;
+#endif
 };
 typedef struct xsDirectoryRecord xsDirectoryRecord;
 typedef struct xsDirectoryRecord *xsDirectory;
@@ -221,11 +301,43 @@ typedef struct xsDirectoryRecord *xsDirectory;
 void xs_directoryposix_destructor(void *data)
 {
 	xsDirectory d = data;
-	if (d)
+	if (d) {
+#if ESP32
+		c_free(d);
+#else
 		close(d->fd);
+#endif
+	}
 }
 
-#define getDirectory(slot) ((xsDirectory)xsmcGetHostChunkValidate(slot, xs_directoryposix_destructor))->fd
+#if ESP32
+	#define getDirectory(slot) ((xsDirectory)xsmcGetHostDataValidate(slot, xs_directoryposix_destructor))
+
+	#define resolvePath(directory, slot) _resolvePath(the, directory, &slot)
+	static char *_resolvePath(xsMachine *the, xsDirectory directory, xsSlot *slot)
+	{
+		char *path = _getPath(the, slot);
+		size_t directoryLength = c_strlen(directory->path);
+		char *result = fxNewChunk(the, directoryLength + c_strlen(path) + 2);
+		path = xsmcToString(*slot);
+		c_strcpy(result, directory->path);
+		c_strcat(result, "/");
+		c_strcat(result, path);
+		if ('/' == result[c_strlen(result) - 1])
+			result[c_strlen(result) - 1] = 0;
+		return result;
+	}
+
+	#define directoryStat(directory, path, statbuf, flags) stat(path, statbuf)
+	#define directoryOpen(directory, path, flags) open(path, flags, kCreateFilePermissions)
+	#define directoryMkdir(directory, path) mkdir(path, kCreateDirectoryPermissions)
+#else
+	#define getDirectory(slot) ((xsDirectory)xsmcGetHostChunkValidate(slot, xs_directoryposix_destructor))
+	#define resolvePath(directory, slot) getPath(slot)
+	#define directoryStat(directory, path, statbuf, flags) fstatat((directory)->fd, path, statbuf, flags)
+	#define directoryOpen(directory, path, flags) openat((directory)->fd, path, flags, kCreateFilePermissions)
+	#define directoryMkdir(directory, path) mkdirat((directory)->fd, path, kCreateDirectoryPermissions)
+#endif
 
 void xs_directoryposix(xsMachine *the)
 {
@@ -234,14 +346,28 @@ void xs_directoryposix(xsMachine *the)
 
 void xs_directoryposix_bootstrap(xsMachine *the)
 {
-    char *path;
+	char *path;
 	struct stat buf;
+
+#if ESP32
+	path = xsmcTest(xsArg(1)) ? xsmcToString(xsArg(1)) : "/sdcard";
+	mountSDCard(the, path);
+	throwIf(stat(path, &buf));
+	if (!S_ISDIR(buf.st_mode))
+		xsUnknownError("not directory");
+
+	xsDirectory d = c_malloc(sizeof(xsDirectoryRecord) + c_strlen(path) + 1);
+	if (!d)
+		xsUnknownError("no memory");
+	c_strcpy(d->path, path);
+	xsmcSetHostData(xsArg(0), d);
+#else
 	xsDirectoryRecord d;
 	
-    if (xsmcTest(xsArg(1))) {
+	if (xsmcTest(xsArg(1))) {
 		path = xsmcToString(xsArg(1));
-    }
-    else {
+	}
+	else {
 		path = getenv("HOME");
 		if (!path) {
 			struct passwd* pwd = getpwuid(getuid());
@@ -258,21 +384,29 @@ void xs_directoryposix_bootstrap(xsMachine *the)
 	throwIf(d.fd);
 
 	xsmcSetHostChunk(xsArg(0), &d, sizeof(d));
+#endif
 }
 
 
 void xs_directoryposix_close(xsMachine *the)
 {
-	if (!xsGetHostChunkIf(xsThis)) 
+#if ESP32
+	if (!xsmcGetHostData(xsThis))
 		return;
-		
-	close(getDirectory(xsThis));
+	xs_directoryposix_destructor(xsmcGetHostData(xsThis));
 	xsmcSetHostData(xsThis, NULL);
+	xsSetHostDestructor(xsThis, NULL);
+#else
+	if (!xsGetHostChunkIf(xsThis))
+		return;
+	close(getDirectory(xsThis)->fd);
+	xsmcSetHostData(xsThis, NULL);
+#endif
 }
 
 void xs_directoryposix_openFile(xsMachine *the)
 {
-	int fd = getDirectory(xsThis);
+	xsDirectory directory = getDirectory(xsThis);
 
 	xsResult = xsNewHostInstance(xsArg(1));
 
@@ -296,10 +430,10 @@ void xs_directoryposix_openFile(xsMachine *the)
 		xsUnknownError("invalid mode");
 
 	xsmcGet(xsVar(0), xsArg(0), xsID_path);
-	char *path = getPath(xsVar(0));
+	char *path = resolvePath(directory, xsVar(0));
 
 	struct stat buf;
-	int result = fstatat(fd, path, &buf, kOpenDirFlags);
+	int result = directoryStat(directory, path, &buf, kOpenDirFlags);
 	if (result < 0) {
 		if (!(mode & O_CREAT))
 			throwIf(result);
@@ -310,7 +444,7 @@ void xs_directoryposix_openFile(xsMachine *the)
 	}
 
 	xsFileRecord f;
-	f.fd = openat(fd, path, mode, kCreateFilePermissions);
+	f.fd = directoryOpen(directory, path, mode);
 	throwIf(f.fd);
 
 	xsmcSetHostChunk(xsResult, &f, sizeof(f));
@@ -318,34 +452,41 @@ void xs_directoryposix_openFile(xsMachine *the)
 
 void xs_directoryposix_openDirectory(xsMachine *the)
 {
-	int fd = getDirectory(xsThis);
+	xsDirectory directory = getDirectory(xsThis);
 
 	xsResult = xsNewHostInstance(xsArg(1));
 
 	xsmcVars(1);
 	xsmcGet(xsVar(0), xsArg(0), xsID_path);
-	char *path = getPath(xsVar(0));
+	char *path = resolvePath(directory, xsVar(0));
 
 	struct stat buf;
-	throwIf(fstatat(fd, path, &buf, 0));
+	throwIf(directoryStat(directory, path, &buf, 0));
 
 	if (!S_ISDIR(buf.st_mode))
 		xsUnknownError("not directory");
 
+#if ESP32
+	xsDirectory d = c_malloc(sizeof(xsDirectoryRecord) + c_strlen(path) + 1);
+	if (!d)
+		xsUnknownError("no memory");
+	c_strcpy(d->path, path);
+	xsmcSetHostData(xsResult, d);
+#else
 	xsDirectoryRecord d;
-	d.fd = do_openat2(fd, path, kOpenDirFlags);
-	throwIf(d.fd); 
-
+	d.fd = do_openat2(directory->fd, path, kOpenDirFlags);
+	throwIf(d.fd);
 	xsmcSetHostChunk(xsResult, &d, sizeof(d));
+#endif
 }
 
 void xs_directoryposix_delete(xsMachine *the)
 {
-	int fd = getDirectory(xsThis);
-	char *path = getPath(xsArg(0));
+	xsDirectory directory = getDirectory(xsThis);
+	char *path = resolvePath(directory, xsArg(0));
 
 	struct stat buf;
-	int result = fstatat(fd, path, &buf, AT_SYMLINK_NOFOLLOW);
+	int result = directoryStat(directory, path, &buf, AT_SYMLINK_NOFOLLOW);
 	if (result < 0) {
 		if (ENOENT == errno) {
 			xsmcSetFalse(xsResult);
@@ -354,32 +495,49 @@ void xs_directoryposix_delete(xsMachine *the)
 		throwIf(result);
 	}
 
-	int flags = S_ISDIR(buf.st_mode) ? AT_REMOVEDIR : 0;
-	throwIf(unlinkat(fd, path, flags));
+#if ESP32
+	result = S_ISDIR(buf.st_mode) ? rmdir(path) : unlink(path);
+#else
+	result = unlinkat(directory->fd, path, S_ISDIR(buf.st_mode) ? AT_REMOVEDIR : 0);
+#endif
+	throwIf(result);
 	xsmcSetTrue(xsResult);
 }
 
 void xs_directoryposix_move(xsMachine *the)
 {
-	int fd = getDirectory(xsThis), toFD = fd;
+	xsDirectory directory = getDirectory(xsThis);
 	xsmcToString(xsArg(0));		// coerce both before getPath to avoid problem if memory moves
 	xsmcToString(xsArg(1));
+	xsDirectory toDirectory = (xsmcArgc > 2) ? getDirectory(xsArg(2)) : directory;
+
+#if ESP32
+	char *resolved = resolvePath(directory, xsArg(0));
+	char *fromPath = c_malloc(c_strlen(resolved) + 1);
+	if (!fromPath)
+		xsUnknownError("no memory");
+	c_strcpy(fromPath, resolved);
+	xsTry {
+		char *toPath = resolvePath(toDirectory, xsArg(1));
+		throwIf(rename(fromPath, toPath));
+		c_free(fromPath);
+	}
+	xsCatch {
+		c_free(fromPath);
+		xsThrow(xsException);
+	}
+#else
 	char *fromPath = getPath(xsArg(0));
 	char *toPath = getPath(xsArg(1));
-
-	if (xsmcArgc > 2)
-		toFD = getDirectory(xsArg(2));
-
 	fromPath = xsmcToString(xsArg(0));		// refresh pointer
-
-	throwIf(renameat(fd, fromPath, toFD, toPath));
+	throwIf(renameat(directory->fd, fromPath, toDirectory->fd, toPath));
+#endif
 }
 
 void xs_directoryposix_status(xsMachine *the)
 {
-	int fd = getDirectory(xsThis);
+	xsDirectory directory = getDirectory(xsThis);
 	struct stat statbuf;
-	char *path = getPath(xsArg(0));
 	int flags = 0;
 	
 	if (xsmcTest(xsArg(1))) {
@@ -391,8 +549,9 @@ void xs_directoryposix_status(xsMachine *the)
 
 	xsResult = xsArg(2);
 	xsmcVars(1);
+	char *path = resolvePath(directory, xsArg(0));
 
-	int result = fstatat(fd, path, &statbuf, flags);
+	int result = directoryStat(directory, path, &statbuf, flags);
 	if (result < 0) {
 		if (ENOENT != errno)
 			throwIf(result);
@@ -411,14 +570,14 @@ void xs_directoryposix_status(xsMachine *the)
 
 void xs_directoryposix_createDirectory(xsMachine *the)
 {
-	int fd = getDirectory(xsThis);
-	char *path = getPath(xsArg(0));
+	xsDirectory directory = getDirectory(xsThis);
+	char *path = resolvePath(directory, xsArg(0));
 
-	int result = mkdirat(fd, path, kCreateDirectoryPermissions);
+	int result = directoryMkdir(directory, path);
 	if (result < 0) {
 		if (EEXIST == errno) {
 			struct stat buf;
-			if ((0 == fstatat(fd, path, &buf, 0)) && S_ISDIR(buf.st_mode)) {
+			if ((0 == directoryStat(directory, path, &buf, 0)) && S_ISDIR(buf.st_mode)) {
 				xsmcSetFalse(xsResult);
 				return;
 			}
@@ -430,27 +589,35 @@ void xs_directoryposix_createDirectory(xsMachine *the)
 
 void xs_directoryposix_createLink(xsMachine *the)
 {
-	int fd = getDirectory(xsThis);
+#if ESP32
+	xsUnknownError("unsupported");
+#else
+	xsDirectory directory = getDirectory(xsThis);
 	xsmcToString(xsArg(0));		// coerce both before getPath to avoid problem if memory moves
 	xsmcToString(xsArg(1));
 	char *path = getPath(xsArg(0));
 	char *target = getPath(xsArg(1));
 
-	throwIf(symlinkat(target, fd, path));
+	throwIf(symlinkat(target, directory->fd, path));
+#endif
 }
 
 void xs_directoryposix_readLink(xsMachine *the)
 {
-	int fd = getDirectory(xsThis);
+#if ESP32
+	xsUnknownError("unsupported");
+#else
+	xsDirectory directory = getDirectory(xsThis);
 	char *path = getPath(xsArg(0));
 	char *s;
 
 	xsmcSetStringBuffer(xsResult, NULL, 1024);
 	s = xsmcToString(xsResult);
 	path = xsmcToString(xsArg(0));
-	ssize_t length = readlinkat(fd, path, s, 1024 - 1);
+	ssize_t length = readlinkat(directory->fd, path, s, 1024 - 1);
 	throwIf(length);
 	s[length] = 0;
+#endif
 }
 
 /*
@@ -467,21 +634,33 @@ typedef struct xsScanRecord *xsScan;
 void xs_directory_iterator_posix(xsMachine *the)
 {
 	xsScanRecord scan;
-	int fd = getDirectory(xsArg(0));
+	xsDirectory directory = getDirectory(xsArg(0));
+#if ESP32
+	char *path;
+	if (xsmcArgc > 1)
+		path = resolvePath(directory, xsArg(1));
+	else
+		path = directory->path;
+	scan.fd = -1;
+	scan.dir = opendir(path);
+#else
 	if (xsmcArgc > 1) {
 		char *path = getPath(xsArg(1));
 		struct stat buf;
-		throwIf(fstatat(fd, path, &buf, 0));
+		throwIf(fstatat(directory->fd, path, &buf, 0));
 		if (!S_ISDIR(buf.st_mode))
 			xsUnknownError("not directory");
-		scan.fd = openat(fd, path, kOpenDirFlags);
+		scan.fd = openat(directory->fd, path, kOpenDirFlags);
 	}
 	else
-		scan.fd = dup(fd);
+		scan.fd = dup(directory->fd);
 	throwIf(scan.fd);
 	scan.dir = fdopendir(scan.fd);
+#endif
 	if (!scan.dir) {
+#if !ESP32
 		close(scan.fd);
+#endif
 		xsUnknownError(strerror(errno));
 	}
 	

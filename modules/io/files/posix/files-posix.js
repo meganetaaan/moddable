@@ -18,6 +18,8 @@
  *
  */
  
+import config from "mc/config";
+
 class Status {
 	isFile() { return native("xs_stat_isFile").call(this); }
 	isDirectory() { return native("xs_stat_isDirectory").call(this); }
@@ -86,5 +88,9 @@ class Directory extends Native("xs_directoryposix_destructor") {
 	}
 }
 Directory.prototype[Symbol.iterator] = Directory.prototype.scan;
+if (false === config.filesSymlinks) {
+	delete Directory.prototype.createLink;
+	delete Directory.prototype.readLink;
+}
 
 export {Directory}

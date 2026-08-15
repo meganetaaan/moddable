@@ -1,0 +1,14 @@
+{
+	"platforms": {
+		"esp32": {
+			"modules": {
+				"embedded:x-files-implementation": "../posix/files-posix",
+				"embedded:storage/files": "../posix/files"
+			},
+			"preload": "embedded:x-files-implementation",
+			"dependency": [
+				{ "idf": "fatfs" }
+			]
+		}
+	}
+}

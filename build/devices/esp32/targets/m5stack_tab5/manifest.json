@@ -15,6 +15,7 @@
 		"$(MODULES)/io/audioout/manifest.json",
 		"$(MODULES)/io/expander/manifest_pi4ioe5v6408.json",
 		"$(MODULES)/io/display/manifest.json",
+		"$(MODULES)/io/files/sdmmc/manifest.json",
 		"$(MODULES)/drivers/peripherals/es7210/manifest.json",
 		"$(MODULES)/drivers/peripherals/es8388/manifest.json",
 		"$(MODULES)/drivers/peripherals/rx8130ce/manifest.json",
@@ -38,7 +39,9 @@
 		"format": "RGB565LE",
 		"rotation": 90,
 		"brightness": 100,
-		"touchCount": 5
+		"touchCount": 5,
+		"files": "/sdcard",
+		"filesSymlinks": false
 	},
 	"creation": {
 		"static": 0,
@@ -84,6 +87,20 @@
 		},
 		"wifi": {
 			"remote": 1
+		},
+		"file": {
+			"sdmmc": {
+				"slot": 0,
+				"width": 4,
+				"max_files": 5,
+				"ldo": 4,
+				"clk": 43,
+				"cmd": 44,
+				"d0": 39,
+				"d1": 40,
+				"d2": 41,
+				"d3": 42
+			}
 		}
 	},
 	"platforms": {

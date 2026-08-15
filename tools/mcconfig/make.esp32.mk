@@ -193,6 +193,12 @@ DRIVER_DIRS = \
 	$(IDF_PATH)/components/esp_driver_rmt/include \
 	$(IDF_PATH)/components/esp_hal_rmt/include \
 	$(IDF_PATH)/components/esp_driver_sdmmc/include \
+	$(IDF_PATH)/components/esp_driver_sdmmc/legacy/include \
+	$(IDF_PATH)/components/esp_driver_sd_intf/include \
+	$(IDF_PATH)/components/esp_hal_sd/include \
+	$(IDF_PATH)/components/esp_hal_sd/$(ESP32_SUBCLASS)/include \
+	$(IDF_PATH)/components/esp_driver_sdspi/include \
+	$(IDF_PATH)/components/sdmmc/include \
 	$(IDF_PATH)/components/esp_driver_spi/include \
 	$(IDF_PATH)/components/esp_hal_gpspi/include \
 	$(IDF_PATH)/components/esp_hal_timg/include \
