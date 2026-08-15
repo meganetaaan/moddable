@@ -11,8 +11,12 @@
 	},
 	"include": [
 		"$(MODULES)/io/manifest.json",
+		"$(MODULES)/io/audioin/manifest.json",
+		"$(MODULES)/io/audioout/manifest.json",
 		"$(MODULES)/io/expander/manifest_pi4ioe5v6408.json",
 		"$(MODULES)/io/display/manifest.json",
+		"$(MODULES)/drivers/peripherals/es7210/manifest.json",
+		"$(MODULES)/drivers/peripherals/es8388/manifest.json",
 		"$(MODULES)/drivers/peripherals/rx8130ce/manifest.json",
 		"$(MODULES)/drivers/sensors/bmi270/manifest.json",
 		"$(MODULES)/drivers/sensors/gt911/manifest.json",
@@ -22,11 +26,13 @@
 	"modules": {
 		"embedded:display/m5stack-tab5": "$(MODULES)/io/display/display",
 		"m5stack-tab5/board": "./board",
+		"setup/target": "./setup-target",
 		"*": "./display"
 	},
 	"preload": [
 		"embedded:display/m5stack-tab5",
-		"m5stack-tab5/board"
+		"m5stack-tab5/board",
+		"setup/target"
 	],
 	"config": {
 		"format": "RGB565LE",
@@ -47,6 +53,35 @@
 		"stack": 512
 	},
 	"defines": {
+		"audioIn": {
+			"sampleRate": 48000,
+			"bitsPerSample": 16,
+			"numChannels": 2,
+			"i2s": {
+				"num": 0,
+				"slot": "I2S_STD_SLOT_BOTH",
+				"format_i2s": 1,
+				"bck_pin": 27,
+				"lr_pin": 29,
+				"mck_pin": 30,
+				"datain": 28
+			}
+		},
+		"audioOut": {
+			"sampleRate": 48000,
+			"bitsPerSample": 16,
+			"numChannels": 1,
+			"i2s": {
+				"num": 0,
+				"slot": "I2S_STD_SLOT_BOTH",
+				"format_i2s": 1,
+				"bitsPerSample": 16,
+				"bck_pin": 27,
+				"lr_pin": 29,
+				"mck_pin": 30,
+				"dataout_pin": 26
+			}
+		},
 		"wifi": {
 			"remote": 1
 		}
