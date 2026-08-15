@@ -58,3 +58,6 @@ add_prebuilt_library(xsesp32 ${CMAKE_BINARY_DIR}/xs_${ESP32_SUBCLASS}.a
 
 target_link_libraries(${COMPONENT_LIB} PRIVATE xsesp32)
 
+if (SUBPLATFORM STREQUAL "m5stack_tab5")
+	target_link_options(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=esp_ipa_pipeline_get_config")
+endif()

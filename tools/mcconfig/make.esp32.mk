@@ -141,7 +141,7 @@ ifeq ($(MAKEFLAGS_JOBS),)
 	MAKEFLAGS_JOBS = --jobs=$(CORES)
 endif
 
-IDF_BUILD_OPTIONS =
+IDF_BUILD_OPTIONS = -DSUBPLATFORM=$(SUBPLATFORM)
 
 SDKCONFIG_H_DIR = $(BLD_DIR)/config
 
@@ -182,6 +182,8 @@ DRIVER_DIRS = \
 	$(IDF_PATH)/components/esp_hal_i2c/include \
 	$(IDF_PATH)/components/esp_driver_i2s/include \
 	$(IDF_PATH)/components/esp_hal_i2s/include \
+	$(IDF_PATH)/components/esp_driver_isp/include \
+	$(IDF_PATH)/components/esp_hal_cam/include \
 	$(IDF_PATH)/components/esp_driver_ledc/include \
 	$(IDF_PATH)/components/esp_hal_ledc/include \
 	$(IDF_PATH)/components/esp_driver_mcpwm/include \
@@ -190,6 +192,8 @@ DRIVER_DIRS = \
 	$(IDF_PATH)/components/esp_hal_parlio/include \
 	$(IDF_PATH)/components/esp_driver_pcnt/include \
 	$(IDF_PATH)/components/esp_hal_pcnt/include \
+	$(IDF_PATH)/components/esp_driver_ppa/include \
+	$(IDF_PATH)/components/esp_hal_ppa/include \
 	$(IDF_PATH)/components/esp_driver_rmt/include \
 	$(IDF_PATH)/components/esp_hal_rmt/include \
 	$(IDF_PATH)/components/esp_driver_sdmmc/include \

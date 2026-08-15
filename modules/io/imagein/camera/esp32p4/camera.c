@@ -33,6 +33,9 @@
 #include <unistd.h>
 
 #include "driver/i2c_master.h"
+#include "driver/ppa.h"
+#include "esp_heap_caps.h"
+#include "esp_ipa.h"
 #include "esp_video_device.h"
 #include "esp_video_init.h"
 #include "linux/videodev2.h"
@@ -71,6 +74,7 @@ typedef struct CameraFrameRecord *CameraFrame;
 
 struct CameraBufferRecord {
 	void *data;
+	void *rotatedData;
 	uint32_t length;
 };
 typedef struct CameraBufferRecord CameraBufferRecord;
@@ -91,12 +95,18 @@ struct CameraRecord {
 	uint8_t bufferCount;
 	uint8_t streaming;
 	uint8_t videoInitialized;
+	uint16_t rotation;
 	int fd;
 	int initErr;
 	int imageType;
 	uint32_t width;
 	uint32_t height;
+	uint32_t captureWidth;
+	uint32_t captureHeight;
+	uint32_t frameLength;
 	uint32_t frameID;
+	ppa_client_handle_t ppa;
+	ppa_srm_rotation_angle_t ppaRotation;
 
 	CameraBufferRecord buffers[kCameraBufferCount];
 	CameraFrameRecord frames[kCameraFrameCount];
@@ -117,6 +127,25 @@ static const xsHostHooks ICACHE_RODATA_ATTR xsCameraHooks = {
 	NULL
 };
 
+const esp_ipa_config_t *__real_esp_ipa_pipeline_get_config(const char *name);
+
+/* The generic SC202CS LSC table overcorrects the Tab5 lens, adding magenta corners. */
+const esp_ipa_config_t *__wrap_esp_ipa_pipeline_get_config(const char *name)
+{
+	static esp_ipa_config_t config;
+	static esp_ipa_acc_config_t acc;
+	const esp_ipa_config_t *source = __real_esp_ipa_pipeline_get_config(name);
+
+	if (!source || !source->acc)
+		return source;
+	config = *source;
+	acc = *source->acc;
+	acc.lsc_table = C_NULL;
+	acc.lsc_table_size = 0;
+	config.acc = &acc;
+	return &config;
+}
+
 static int cameraQueueBuffer(Camera camera, uint8_t index)
 {
 	struct v4l2_buffer buffer = {
@@ -126,6 +155,34 @@ static int cameraQueueBuffer(Camera camera, uint8_t index)
 	};
 
 	return ioctl(camera->fd, VIDIOC_QBUF, &buffer);
+}
+
+static int cameraRotateBuffer(Camera camera, uint8_t index)
+{
+	CameraBufferRecord *buffer = &camera->buffers[index];
+	ppa_srm_oper_config_t config = {
+		.in = {
+			.buffer = buffer->data,
+			.pic_w = camera->captureWidth,
+			.pic_h = camera->captureHeight,
+			.block_w = camera->captureWidth,
+			.block_h = camera->captureHeight,
+			.srm_cm = PPA_SRM_COLOR_MODE_RGB565,
+		},
+		.out = {
+			.buffer = buffer->rotatedData,
+			.buffer_size = camera->frameLength,
+			.pic_w = camera->width,
+			.pic_h = camera->height,
+			.srm_cm = PPA_SRM_COLOR_MODE_RGB565,
+		},
+		.rotation_angle = camera->ppaRotation,
+		.scale_x = 1,
+		.scale_y = 1,
+		.mode = PPA_TRANS_MODE_BLOCKING,
+	};
+
+	return ppa_do_scale_rotate_mirror(camera->ppa, &config);
 }
 
 static int cameraInitialize(Camera camera)
@@ -179,8 +236,28 @@ static int cameraInitialize(Camera camera)
 		return -errno;
 	if (V4L2_PIX_FMT_RGB565 != format.fmt.pix.pixelformat)
 		return -EINVAL;
-	camera->width = format.fmt.pix.width;
-	camera->height = format.fmt.pix.height;
+	camera->captureWidth = format.fmt.pix.width;
+	camera->captureHeight = format.fmt.pix.height;
+	camera->frameLength = camera->captureWidth * camera->captureHeight * 2;
+	if (format.fmt.pix.bytesperline && (format.fmt.pix.bytesperline != (camera->captureWidth * 2)))
+		return -ENOTSUP;
+	if ((90 == camera->rotation) || (270 == camera->rotation)) {
+		camera->width = camera->captureHeight;
+		camera->height = camera->captureWidth;
+	}
+	else {
+		camera->width = camera->captureWidth;
+		camera->height = camera->captureHeight;
+	}
+	if (camera->rotation) {
+		ppa_client_config_t ppaConfig = {
+			.oper_type = PPA_OPERATION_SRM,
+			.max_pending_trans_num = 1,
+		};
+		err = ppa_register_client(&ppaConfig, &camera->ppa);
+		if (ESP_OK != err)
+			return err;
+	}
 
 	if (ioctl(camera->fd, VIDIOC_REQBUFS, &request))
 		return -errno;
@@ -202,6 +279,12 @@ static int cameraInitialize(Camera camera)
 		if (MAP_FAILED == camera->buffers[i].data) {
 			camera->buffers[i].data = C_NULL;
 			return -errno;
+		}
+		if (camera->rotation) {
+			camera->buffers[i].rotatedData = heap_caps_aligned_calloc(4, camera->frameLength, 1,
+				MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA);
+			if (!camera->buffers[i].rotatedData)
+				return -ENOMEM;
 		}
 		if (cameraQueueBuffer(camera, i))
 			return -errno;
@@ -226,6 +309,14 @@ static void cameraShutdown(Camera camera)
 			munmap(camera->buffers[i].data, camera->buffers[i].length);
 			camera->buffers[i].data = C_NULL;
 		}
+		if (camera->buffers[i].rotatedData) {
+			heap_caps_free(camera->buffers[i].rotatedData);
+			camera->buffers[i].rotatedData = C_NULL;
+		}
+	}
+	if (camera->ppa) {
+		ppa_unregister_client(camera->ppa);
+		camera->ppa = C_NULL;
 	}
 	if (camera->fd >= 0) {
 		close(camera->fd);
@@ -279,8 +370,19 @@ static void cameraLoop(void *refcon)
 			continue;
 		}
 
+		if (buffer.bytesused != camera->frameLength) {
+			camera->initErr = -EMSGSIZE;
+			break;
+		}
 		void *data = camera->buffers[buffer.index].data;
 		uint32_t length = buffer.bytesused;
+		if (camera->rotation) {
+			camera->initErr = cameraRotateBuffer(camera, buffer.index);
+			if (camera->initErr)
+				break;
+			data = camera->buffers[buffer.index].rotatedData;
+			length = camera->frameLength;
+		}
 		if (camera->swap16) {
 			uint16_t *pixels = data;
 			for (uint32_t i = 0; i < (length >> 1); i++)
@@ -362,6 +464,7 @@ void xs_camera_constructor(xsMachine *the)
 {
 	uint8_t format;
 	int imageType = kCommodettoBitmapRGB565LE;
+	int rotation = 0;
 	Camera camera;
 
 	xsmcVars(1);
@@ -375,6 +478,10 @@ void xs_camera_constructor(xsMachine *the)
 	}
 	if ((kCommodettoBitmapRGB565LE != imageType) && (kCommodettoBitmapRGB565BE != imageType))
 		xsRangeError("unsupported imageType");
+	if (xsmcGet(xsVar(0), xsArg(0), xsID_rotation))
+		rotation = xsmcToInteger(xsVar(0));
+	if ((0 != rotation) && (90 != rotation) && (180 != rotation) && (270 != rotation))
+		xsRangeError("invalid rotation");
 
 	camera = c_calloc(1, sizeof(CameraRecord));
 	if (!camera)
@@ -392,6 +499,13 @@ void xs_camera_constructor(xsMachine *the)
 	camera->object = xsThis;
 	camera->format = format;
 	camera->imageType = imageType;
+	camera->rotation = rotation;
+	switch (rotation) {
+		case 90: camera->ppaRotation = PPA_SRM_ROTATION_ANGLE_270; break;
+		case 180: camera->ppaRotation = PPA_SRM_ROTATION_ANGLE_180; break;
+		case 270: camera->ppaRotation = PPA_SRM_ROTATION_ANGLE_90; break;
+		default: camera->ppaRotation = PPA_SRM_ROTATION_ANGLE_0; break;
+	}
 	camera->swap16 = (kCommodettoBitmapRGB565BE == imageType);
 	camera->onReadable = builtinGetCallback(the, xsID_onReadable);
 	builtinInitializeTarget(the);
@@ -597,8 +711,11 @@ void xs_camera_get_identification(xsMachine *the)
 
 void xs_camera_get_configuration(xsMachine *the)
 {
-	xsmcGetHostDataValidate(xsThis, (void *)&xsCameraHooks);
+	Camera camera = xsmcGetHostDataValidate(xsThis, (void *)&xsCameraHooks);
+	xsmcVars(1);
 	xsmcSetNewObject(xsResult);
+	xsmcSetInteger(xsVar(0), camera->rotation);
+	xsmcSet(xsResult, xsID_rotation, xsVar(0));
 }
 
 void xs_camera_configure(xsMachine *the)

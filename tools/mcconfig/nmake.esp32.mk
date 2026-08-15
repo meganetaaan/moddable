@@ -177,7 +177,7 @@ PORT_COMMAND = -p $(UPLOAD_PORT)
 
 PROJ_DIR = $(TMP_DIR)\xsProj-$(ESP32_SUBCLASS)
 
-IDF_BUILD_OPTIONS=-D USE_USB=$(USE_USB) -D INSTRUMENT=$(INSTRUMENT) -D ESP32=$(ESP32_TARGET) -D ESP32_SUBCLASS=$(ESP32_SUBCLASS)
+IDF_BUILD_OPTIONS=-D SUBPLATFORM=$(SUBPLATFORM) -D USE_USB=$(USE_USB) -D INSTRUMENT=$(INSTRUMENT) -D ESP32=$(ESP32_TARGET) -D ESP32_SUBCLASS=$(ESP32_SUBCLASS)
 
 !IF "$(DEBUG)"=="1"
 START_XSBUG= tasklist /nh /fi "imagename eq xsbug.exe" | find /i "xsbug.exe" > nul || (start $(BUILD_DIR)\bin\win\release\xsbug.exe)
@@ -228,6 +228,8 @@ DRIVER_DIRS = \
  	-I$(IDF_PATH)\components\esp_hal_i2c\include \
  	-I$(IDF_PATH)\components\esp_driver_i2s\include \
  	-I$(IDF_PATH)\components\esp_hal_i2s\include \
+	-I$(IDF_PATH)\components\esp_driver_isp\include \
+	-I$(IDF_PATH)\components\esp_hal_cam\include \
  	-I$(IDF_PATH)\components\esp_driver_ledc\include \
  	-I$(IDF_PATH)\components\esp_hal_ledc\include \
  	-I$(IDF_PATH)\components\esp_driver_mcpwm\include \
@@ -236,6 +238,8 @@ DRIVER_DIRS = \
  	-I$(IDF_PATH)\components\esp_hal_parlio\include \
  	-I$(IDF_PATH)\components\esp_driver_pcnt\include \
  	-I$(IDF_PATH)\components\esp_hal_pcnt\include \
+	-I$(IDF_PATH)\components\esp_driver_ppa\include \
+	-I$(IDF_PATH)\components\esp_hal_ppa\include \
  	-I$(IDF_PATH)\components\esp_driver_rmt\include \
  	-I$(IDF_PATH)\components\esp_hal_rmt\include \
  	-I$(IDF_PATH)\components\esp_driver_sdmmc\include \
