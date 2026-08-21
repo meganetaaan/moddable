@@ -60,4 +60,5 @@ target_link_libraries(${COMPONENT_LIB} PRIVATE xsesp32)
 
 if (SUBPLATFORM STREQUAL "m5stack_tab5")
 	target_link_options(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=esp_ipa_pipeline_get_config")
+	target_link_options(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=esp_h264_enc_hw_new")
 endif()

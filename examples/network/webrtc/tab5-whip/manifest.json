@@ -1,0 +1,63 @@
+{
+	"include": [
+		"$(MODDABLE)/examples/manifest_base.json",
+		"$(MODDABLE)/modules/io/manifest.json",
+		"$(MODDABLE)/modules/io/wifi/manifest.json",
+		"$(MODDABLE)/examples/manifest_piu.json"
+	],
+	"config": {
+		"ssid": "",
+		"password": "",
+		"whipURL": "",
+		"whipToken": ""
+	},
+	"creation": {
+		"static": 0,
+		"chunk": {
+			"initial": 1048576,
+			"incremental": 0
+		},
+		"heap": {
+			"initial": 8192,
+			"incremental": 0
+		},
+		"stack": 512
+	},
+	"modules": {
+		"*": "./main"
+	},
+	"resources": {
+		"*-alpha": [
+			"$(MODDABLE)/examples/assets/fonts/OpenSans-Regular-18",
+			"$(MODDABLE)/examples/assets/fonts/OpenSans-Semibold-20"
+		]
+	},
+	"platforms": {
+		"esp32/m5stack_tab5": {
+			"modules": {
+				"tab5/whip": "./tab5whip.js",
+				"*": "./tab5whip.c"
+			},
+			"build": {
+				"C_FLAGS": "$(C_COMMON_FLAGS) -Wno-implicit-function-declaration -std=gnu17 $(C_FLAGS_SUBPLATFORM) -I$(ESP_WEBRTC_SOLUTION)/components/esp_webrtc/include -I$(ESP_WEBRTC_SOLUTION)/components/esp_webrtc/impl/whip_signal/include -I$(ESP_WEBRTC_SOLUTION)/components/esp_webrtc/impl/janus_signal/include -I$(ESP_WEBRTC_SOLUTION)/components/esp_peer/include -I$(ESP_WEBRTC_SOLUTION)/components/media_lib_utils/include -I$(ESP_WEBRTC_SOLUTION)/components/webrtc_utils -I$(ESP_WEBRTC_SOLUTION)/components/av_render/include"
+			},
+			"dependency": [
+				{ "idf": "esp_webrtc" },
+				{ "idf": "esp_peer" },
+				{ "idf": "webrtc_utils" },
+				{ "idf": "av_render" },
+				{ "name": "esp_capture", "version": "~1.0", "includes": ["include", "interface"] },
+				{ "name": "esp_h264", "version": "==1.3.0", "includes": ["interface/include", "hw/include"] },
+				{ "name": "esp_video", "version": "==2.3.0", "includes": ["include"] },
+				{ "name": "esp_ipa", "version": "==2.2.0~1", "includes": ["include"] },
+				{ "name": "esp_cam_sensor", "version": "==2.3.0", "includes": ["include"] },
+				{ "name": "esp_video_codec", "version": "==0.5.5", "includes": ["include", "include/encoder/impl"] },
+				{ "name": "media_lib_sal", "version": "~0.9", "includes": ["include", "include/port"] },
+				{ "name": "cjson", "version": "^1.7.19", "includes": ["cJSON"] }
+			]
+		},
+		"...": {
+			"error": "M5Stack Tab5 required"
+		}
+	}
+}
