@@ -1,0 +1,36 @@
+{
+	"include": [
+		"$(MODDABLE)/examples/manifest_base.json",
+		"$(MODDABLE)/modules/io/manifest.json",
+		"$(MODDABLE)/modules/io/wifi/manifest.json",
+		"$(MODDABLE)/examples/manifest_piu.json",
+		"$(MODDABLE)/modules/network/services/realtimeConversation/manifest.json",
+		"$(MODDABLE)/examples/io/udp/ntp/manifest_ntp.json",
+		"$(MODDABLE)/modules/io/storage/manifest.json",
+		"./manifest.local.json"
+	],
+	"creation": {
+		"static": 0,
+		"chunk": {
+			"initial": 2097152,
+			"incremental": 0
+		},
+		"heap": {
+			"initial": 16384,
+			"incremental": 0
+		},
+		"stack": 1024
+	},
+	"modules": {
+		"*": "./main"
+	},
+	"resources": {
+		"*-alpha": [
+			"$(MODDABLE)/examples/assets/fonts/OpenSans-Regular-24",
+			"$(MODDABLE)/examples/assets/fonts/OpenSans-Semibold-28"
+		],
+		"*-mask": [
+			"./fonts/NotoSansJP-Regular-28"
+		]
+	}
+}

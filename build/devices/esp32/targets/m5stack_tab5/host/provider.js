@@ -97,15 +97,9 @@ class Tab5Touch {
 		return this.#touch.configuration;
 	}
 	sample() {
-		const sample = this.#touch.sample();
-		if (!sample)
-			return;
-		for (const point of sample) {
-			const x = point.x;
-			point.x = point.y;
-			point.y = 1280 - x;
-		}
-		return sample;
+		// Sensors report native panel coordinates (720 x 1280).
+		// Piu applies the display rotation when dispatching touch events.
+		return this.#touch.sample();
 	}
 
 	static {

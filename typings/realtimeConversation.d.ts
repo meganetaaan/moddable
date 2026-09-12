@@ -1,0 +1,63 @@
+/*
+* Copyright (c) 2019-2020 Bradley Farias
+* Copyright (c) 2025 Moddable Tech, Inc.
+*
+*   This file is part of the Moddable SDK Tools.
+*
+*   The Moddable SDK Tools is free software: you can redistribute it and/or modify
+*   it under the terms of the GNU General Public License as published by
+*   the Free Software Foundation, either version 3 of the License, or
+*   (at your option) any later version.
+*
+*   The Moddable SDK Tools is distributed in the hope that it will be useful,
+*   but WITHOUT ANY WARRANTY; without even the implied warranty of
+*   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+*   GNU General Public License for more details.
+*
+*   You should have received a copy of the GNU General Public License
+*   along with the Moddable SDK Tools.  If not, see <http://www.gnu.org/licenses/>.
+*
+*/
+
+declare module "realtimeConversation" {
+	export type ConversationState = "idle" | "connecting" | "connected" | "closing" | "closed" | "error";
+	export interface Usage { seconds: number; [key: string]: unknown; }
+	export interface CloseResult { finalized: boolean; reason: string; usage?: Usage; }
+	export interface Transcript { role: "user" | "assistant"; delta: string; start_ms: number; end_ms: number; }
+	export interface ConversationError extends Error { code: string; stage: string; status?: number; }
+	export interface ConversationOptions {
+		apiKey: string;
+		model?: string;
+		voice?: string;
+		instructions?: string;
+		delegation?: Record<string, unknown>;
+		onStateChanged?(state: ConversationState): void;
+		onTranscript?(fragment: Transcript): void;
+		onEvent?(event: {type: string; [key: string]: unknown}): void;
+		onError?(error: ConversationError): void;
+	}
+	export interface ConversationStats {
+		capturedSamples: number;
+		renderedSamples: number;
+		underruns: number;
+		overruns: number;
+		micLevel: number;
+		cleanLevel: number;
+		referenceLevel: number;
+		freeHeap: number;
+		freeInternalHeap: number;
+	}
+	export default class RealtimeConversation {
+		constructor(options: ConversationOptions);
+		readonly state: ConversationState;
+		readonly sessionId: string | undefined;
+		readonly muted: boolean;
+		readonly volume: number;
+		readonly usage: Usage | undefined;
+		readonly stats: ConversationStats | undefined;
+		connect(): Promise<{id: string}>;
+		close(): Promise<CloseResult>;
+		setMuted(value: boolean): Promise<void>;
+		setVolume(value: number): void;
+	}
+}
