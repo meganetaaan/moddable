@@ -18,6 +18,8 @@
  *
  */
 
+import ToolRunner from "./tools.js";
+
 const ENDPOINT = "https://api.openai.com/v1/live/sessions";
 const DEFAULT_DELEGATION = {
 	type: "responses",
@@ -68,11 +70,12 @@ export default class Conversation {
 	#usage;
 	#result;
 	#stats;
+	#tools;
 
 	constructor(options, platform) {
 		if (!options || typeof options.apiKey !== "string" || !options.apiKey.trim())
 			throw new TypeError("apiKey is required");
-		for (const name of ["onStateChanged", "onTranscript", "onEvent", "onError"])
+		for (const name of ["onStateChanged", "onTranscript", "onEvent", "onError", "onToolResult"])
 			if (options[name] !== undefined && typeof options[name] !== "function")
 				throw new TypeError(`${name} must be a function`);
 		this.#key = options.apiKey;
@@ -84,11 +87,27 @@ export default class Conversation {
 			onStateChanged: options.onStateChanged,
 			onTranscript: options.onTranscript,
 			onEvent: options.onEvent,
-			onError: options.onError
+			onError: options.onError,
+			onToolResult: options.onToolResult
 		};
 		for (const name of ["model", "instructions", "voice"])
 			if (typeof this.#options[name] !== "string") throw new TypeError(`invalid ${name}`);
 		this.#platform = platform;
+		if (options.tools !== undefined && !Array.isArray(options.tools)) throw new TypeError("Invalid tools");
+		if (options.tools?.length) {
+			if (this.#options.delegation.type !== "responses") throw new TypeError("Tools require Responses delegation");
+			this.#tools = new ToolRunner(options.tools, {platform, timeout: options.toolTimeout,
+				send: event => this.#send(event), onError: error => this.#fail(error),
+				onResult: result => this.#notify("onToolResult", result)});
+			const backend = this.#options.delegation.responses;
+			const definitions = backend.tools ?? [];
+			const names = new Set(definitions.filter(tool => tool.type === "function").map(tool => tool.name));
+			for (const tool of this.#tools.definitions) {
+				if (names.has(tool.name)) throw new TypeError("Duplicate tool definition");
+				definitions.push(tool);
+			}
+			backend.tools = definitions;
+		}
 	}
 
 	get state() { return this.#state; }
@@ -123,6 +142,7 @@ export default class Conversation {
 			return this.#closing.promise;
 		}
 		this.#cancelTimer(this.#connectTimer);
+		this.#tools?.close();
 		this.#connection?.reject(new ConversationError("Connection cancelled", "cancelled", "connect"));
 		this.#setState("closing");
 		if (!this.#signaled) {
@@ -217,6 +237,7 @@ export default class Conversation {
 			try { message = JSON.parse(event.data); }
 			catch { throw new ConversationError("Invalid event JSON", "invalid_json", "events"); }
 			if (!message || typeof message.type !== "string") throw new ConversationError("Invalid event", "invalid_event", "events");
+			this.#tools?.receive(message);
 			switch (message.type) {
 				case "session.started":
 					if (message.session?.id !== this.#sessionId) throw new ConversationError("Session ID mismatch", "session_mismatch", "events");
@@ -299,6 +320,7 @@ export default class Conversation {
 	async #finish(result, failed = false) {
 		if (this.#finishing || this.#result) return;
 		this.#finishing = true;
+		this.#tools?.close();
 		for (const timer of this.#timers) this.#platform.clearTimeout(timer);
 		this.#timers.clear();
 		this.#rejectMute(new ConversationError("Session ended", "closed", "mute"));

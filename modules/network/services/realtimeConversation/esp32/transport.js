@@ -27,6 +27,8 @@ export default class Transport extends Native("xs_live_transport_destructor") {
 	#resolveClose;
 	#released = false;
 	#finalStats;
+	#outgoing = [];
+	#outgoingBytes = 0;
 	constructor(callback) {
 		super();
 		this.#callback = callback;
@@ -35,7 +37,21 @@ export default class Transport extends Native("xs_live_transport_destructor") {
 	}
 	start() { native("xs_live_transport_start").call(this); }
 	acceptAnswer(sdp) { native("xs_live_transport_answer").call(this, sdp); }
-	send(data) { native("xs_live_transport_send").call(this, data); }
+	send(data) {
+		if (this.#closing || this.#released) throw new Error("Transport is closed");
+		const bytes = ArrayBuffer.fromString(data).byteLength;
+		if (bytes > 65536 || this.#outgoing.length >= 32 || this.#outgoingBytes + bytes > 131072)
+			throw new Error("WebRTC outgoing event limit exceeded");
+		this.#outgoing.push({data, bytes}); this.#outgoingBytes += bytes;
+		this.#flush();
+	}
+	#flush() {
+		while (this.#outgoing.length) {
+			const {data, bytes} = this.#outgoing[0];
+			if (!native("xs_live_transport_send").call(this, data)) break;
+			this.#outgoing.shift(); this.#outgoingBytes -= bytes;
+		}
+	}
 	setMuted(value) { native("xs_live_transport_mute").call(this, value); }
 	setVolume(value) { native("xs_live_transport_volume").call(this, value); }
 	get stats() { return this.#released ? this.#finalStats : native("xs_live_transport_stats").call(this); }
@@ -43,10 +59,15 @@ export default class Transport extends Native("xs_live_transport_destructor") {
 		if (this.#closing) return this.#closing;
 		if (this.#released) return Promise.resolve();
 		this.#closing = new Promise(resolve => { this.#resolveClose = resolve; });
+		this.#outgoing.length = 0; this.#outgoingBytes = 0;
 		native("xs_live_transport_close").call(this);
 		return this.#closing;
 	}
 	#poll() {
+		if (!this.#closing) {
+			try { this.#flush(); }
+			catch { this.#callback?.({type: "error", code: -1, stage: "send"}); }
+		}
 		for (let i = 0; i < 16; i++) {
 			const event = native("xs_live_transport_read").call(this);
 			if (!event) break;

@@ -47,6 +47,29 @@ async function start() {
 	note = "セッションを開始しています";
 	conversation = new RealtimeConversation({
 		apiKey: config.openaiApiKey,
+		instructions: "日本語で自然に簡潔に会話してください。調べ物・端末状態の確認・音量変更はバックエンドに委譲し、ツールの実行結果に基づいて答えてください。相手の発話や割り込みを聞いてください。",
+		tools: [
+			{
+				name: "get_device_status", description: "M5Tabの現在の音量、Wi-Fi接続状態と受信強度を取得する。",
+				parameters: {type: "object", properties: {}, required: [], additionalProperties: false},
+				execute(args) {
+					if (Object.keys(args).length) throw new Error("No arguments expected");
+					return {volume_percent: Math.round(volume * 100), wifi_connected: wifi.connection >= 500, wifi_rssi: wifi.RSSI ?? null};
+				}
+			},
+			{
+				name: "set_volume", description: "M5Tabのスピーカー音量を0〜100パーセントで変更する。",
+				parameters: {type: "object", properties: {percent: {type: "integer", minimum: 0, maximum: 100}}, required: ["percent"], additionalProperties: false},
+				execute(args, context) {
+					if (Object.keys(args).length !== 1 || !Number.isInteger(args.percent) || args.percent < 0 || args.percent > 100 || context.isCancelled())
+						throw new Error("Invalid volume");
+					conversation.setVolume(args.percent / 100); volume = conversation.volume;
+					note = `音量 ${Math.round(volume * 100)}%`; invalidate();
+					return {volume_percent: Math.round(volume * 100)};
+				}
+			}
+		],
+		onToolResult(result) { trace(`LIVE tool ${result.name} ${result.error ?? "ok"}\n`); },
 		onStateChanged(value) {
 			state = value;
 			if (value === "connected") note = "話しかけてください。調べ物も頼めます";

@@ -249,7 +249,13 @@ static void command(xsMachine *the, int type)
 	LiveMessage msg = {.type = type, .size = size, .data = malloc(size + 1)};
 	if (!msg.data) xsUnknownError("No memory for message");
 	memcpy(msg.data, text, size + 1);
-	if (xQueueSend(t->commands, &msg, 0) != pdPASS) { free(msg.data); xsUnknownError("WebRTC command queue full"); }
+	if (xQueueSend(t->commands, &msg, 0) != pdPASS) {
+		free(msg.data);
+		if (type == kAnswer) xsUnknownError("WebRTC command queue full");
+		xsmcSetBoolean(xsResult, false);
+		return;
+	}
+	xsmcSetBoolean(xsResult, true);
 }
 void xs_live_transport_answer(xsMachine *the) { command(the, kAnswer); }
 void xs_live_transport_send(xsMachine *the) { command(the, kSend); }

@@ -130,4 +130,88 @@ await test("reentrant close from connecting callback does not start native", asy
 	let h; h = harness({onStateChanged(s) { if (s === "connecting") void h.c.close(); }});
 	await rejected(h.c.connect(), "cancelled"); await flush(); equal(h.disposed, 0); equal(h.c.state, "closed");
 });
+const emptySchema = {type: "object", properties: {}, additionalProperties: false};
+function response(h, type, extra = {}, delegation = "delegation_1") {
+	h.message({type: "response.event", delegation_id: delegation, event: {type, ...extra}});
+}
+function created(h, id = "response_1", delegation) { response(h, "response.created", {response: {id, output: []}}, delegation); }
+function call(h, id, name, args = "{}") { response(h, "response.output_item.done", {item: {type: "function_call", call_id: id, name, arguments: args}}); }
+function completed(h, id = "response_1") { response(h, "response.completed", {response: {id, output: []}}); }
+await test("registered tools reach session without executable code", async () => {
+	const h = harness({tools: [{name: "status", parameters: emptySchema, execute() { return {ok: true}; }}]});
+	await h.connect();
+	const tools = JSON.parse(h.requests[0].init.body).session.delegation.responses.tools;
+	equal(tools[0].type, "web_search"); equal(tools[1].name, "status"); check(!("execute" in tools[1]));
+});
+await test("collect completed items, execute once, submit all before continuing", async () => {
+	let resolve, executions = 0;
+	const results = [];
+	const h = harness({tools: [{name: "status", parameters: emptySchema, execute(args) {
+		executions++; return args.slow ? new Promise(r => { resolve = r; }) : {ok: true};
+	}}], onToolResult: value => results.push(value)});
+	await h.connect(); created(h);
+	response(h, "response.function_call_arguments.done", {arguments: "{}"});
+	call(h, "call1", "status"); call(h, "call1", "status"); call(h, "call2", "status", '{"slow":true}');
+	await flush(); equal(executions, 0);
+	completed(h); completed(h); await flush(); equal(executions, 2); equal(h.sent.length, 0);
+	resolve("ready"); await flush();
+	equal(h.sent.map(e => e.type), ["response.item.create", "response.item.create", "response.create"]);
+	equal(h.sent[0].item.call_id, "call1"); equal(h.sent[1].item.output, "ready"); equal(results.length, 2);
+	check(!("delegation_id" in h.sent[2]));
+	created(h, "response_2"); call(h, "call1", "status"); completed(h, "response_2"); await flush(); equal(executions, 2);
+});
+await test("tool errors return bounded structured failures without leaking exceptions", async () => {
+	const h = harness({tools: [{name: "broken", parameters: emptySchema, execute() { throw new Error("SECRET"); }},
+		{name: "large", parameters: emptySchema, execute() { return "x".repeat(8193); }}]});
+	await h.connect(); created(h);
+	call(h, "unknown", "missing"); call(h, "badjson", "broken", "{"); call(h, "throw", "broken"); call(h, "big", "large");
+	completed(h); await flush();
+	equal(h.sent.slice(0, 4).map(e => JSON.parse(e.item.output).error),
+		["unknown_tool", "invalid_arguments", "tool_execution_failed", "invalid_tool_output"]);
+	check(!JSON.stringify(h.sent).includes("SECRET")); equal(h.sent.at(-1).type, "response.create");
+});
+await test("tool timeout completes once and rejects late results", async () => {
+	let resolve, context;
+	const h = harness({tools: [{name: "slow", parameters: emptySchema, execute(args, ctx) {
+		context = ctx; return new Promise(r => { resolve = r; });
+	}}], toolTimeout: 1234});
+	await h.connect(); created(h); call(h, "slow1", "slow"); completed(h); await flush();
+	h.timeout(1234); await flush(); check(context.isCancelled()); equal(JSON.parse(h.sent[0].item.output).error, "tool_timeout");
+	resolve("late"); await flush(); equal(h.sent.length, 2);
+});
+await test("closing cancels pending tools and sends no late results", async () => {
+	let resolve, context;
+	const h = harness({tools: [{name: "slow", parameters: emptySchema, execute(args, ctx) {
+		context = ctx; return new Promise(r => { resolve = r; });
+	}}]});
+	await h.connect(); created(h); call(h, "slow1", "slow"); completed(h); await flush();
+	const p = h.c.close(); check(context.isCancelled());
+	h.message({type: "session.closed", reason: "close_requested"}); await p;
+	resolve("late"); await flush(); equal(h.sent, [{type: "session.close"}]);
+});
+await test("failed, incomplete, and cancelled responses never execute collected tools", async () => {
+	for (const terminal of ["response.failed", "response.incomplete", "response.cancelled"]) {
+		let executions = 0;
+		const h = harness({tools: [{name: "status", parameters: emptySchema, execute() { executions++; }}]});
+		await h.connect(); created(h); call(h, "call1", "status");
+		response(h, terminal, {response: {id: "response_1"}}); completed(h); await flush(); equal(executions, 0);
+	}
+});
+await test("response cancellation discards results while a handler is running", async () => {
+	let resolve, context;
+	const h = harness({tools: [{name: "slow", parameters: emptySchema, execute(args, ctx) {
+		context = ctx; return new Promise(r => { resolve = r; });
+	}}]});
+	await h.connect(); created(h); call(h, "slow1", "slow"); completed(h); await flush();
+	response(h, "response.cancelled", {response: {id: "response_1"}});
+	check(context.isCancelled()); resolve("late"); await flush(); equal(h.sent, []);
+});
+await test("close from a result callback stops the rest of the batch", async () => {
+	let h;
+	h = harness({tools: [{name: "status", parameters: emptySchema, execute() { return "ok"; }}],
+		onToolResult() { void h.c.close(); }});
+	await h.connect(); created(h); call(h, "call1", "status"); call(h, "call2", "status"); completed(h); await flush();
+	equal(h.sent.map(event => event.type), ["response.item.create", "session.close"]);
+	h.message({type: "session.closed", reason: "close_requested"}); await h.c.close();
+});
 print(`${count} tests passed`);
