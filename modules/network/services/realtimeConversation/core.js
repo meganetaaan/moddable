@@ -19,6 +19,7 @@
  */
 
 import ToolRunner from "./tools.js";
+import Broker from "./broker.js";
 
 const ENDPOINT = "https://api.openai.com/v1/live/sessions";
 const DEFAULT_DELEGATION = {
@@ -71,10 +72,13 @@ export default class Conversation {
 	#result;
 	#stats;
 	#tools;
+	#broker;
 
 	constructor(options, platform) {
-		if (!options || typeof options.apiKey !== "string" || !options.apiKey.trim())
-			throw new TypeError("apiKey is required");
+		if (!options || (!options.broker && (typeof options.apiKey !== "string" || !options.apiKey.trim())))
+			throw new TypeError("apiKey or broker is required");
+		if (options.broker && options.apiKey !== undefined) throw new TypeError("Choose apiKey or broker");
+		if (options.broker) this.#broker = new Broker(options.broker, platform);
 		for (const name of ["onStateChanged", "onTranscript", "onEvent", "onError", "onToolResult"])
 			if (options[name] !== undefined && typeof options[name] !== "function")
 				throw new TypeError(`${name} must be a function`);
@@ -184,21 +188,30 @@ export default class Conversation {
 	}
 
 	async #signal(sdp) {
-		if (this.#signaled || this.#state !== "connecting") return;
+		if (this.#signaled || this.#signalPending || this.#state !== "connecting") return;
 		if (typeof sdp !== "string" || !sdp.startsWith("v=0") || sdp.length > 65536)
 			return this.#fail(new ConversationError("Invalid local SDP", "invalid_sdp", "signaling"));
-		this.#signaled = this.#signalPending = true;
+		this.#signalPending = true;
 		const key = this.#key;
 		try {
 			const options = this.#options;
-			const response = await this.#platform.fetch(ENDPOINT, {
-				method: "POST",
-				headers: {Authorization: `Bearer ${key}`, "Content-Type": "application/json"},
-				body: JSON.stringify({
-					session: {model: options.model, instructions: options.instructions, audio: {output: {voice: options.voice}}, delegation: options.delegation, store: false},
-					transport: {type: "webrtc", sdp}
-				})
-			});
+			let response;
+			if (this.#broker) {
+				response = await this.#broker.create(sdp, () => this.#state === "connecting" && !this.#finishing && !this.#result,
+					() => { this.#signaled = true; });
+				if (!response) return;
+			}
+			else {
+				this.#signaled = true;
+				response = await this.#platform.fetch(ENDPOINT, {
+					method: "POST",
+					headers: {Authorization: `Bearer ${key}`, "Content-Type": "application/json"},
+					body: JSON.stringify({
+						session: {model: options.model, instructions: options.instructions, audio: {output: {voice: options.voice}}, delegation: options.delegation, store: false},
+						transport: {type: "webrtc", sdp}
+					})
+				});
+			}
 			const text = await response.text();
 			if (response.status !== 201)
 				throw new ConversationError(`Live session creation failed (HTTP ${response.status})`, "http_error", "signaling", response.status);
@@ -210,6 +223,7 @@ export default class Conversation {
 			if (typeof result.session?.id !== "string" || !result.session.id)
 				throw new ConversationError("Missing session ID", "invalid_session", "signaling");
 			this.#sessionId = result.session.id;
+			this.#broker?.accept(result);
 			if (this.#finishing || this.#result) {
 				await this.#hangup(result.session.id, key);
 				return;
@@ -311,6 +325,7 @@ export default class Conversation {
 	}
 	async #hangup(id, key) {
 		try {
+			if (this.#broker) { await this.#broker.hangup(id); return; }
 			const response = await this.#platform.fetch(`${ENDPOINT}/${encodeURIComponent(id)}/hangup`, {method: "POST", headers: {Authorization: `Bearer ${key}`}, body: ""});
 			await response.text();
 			if (!response.ok) this.#notify("onError", new ConversationError("Session hangup was not confirmed", "hangup_failed", "close", response.status));
@@ -327,7 +342,7 @@ export default class Conversation {
 		this.#connection?.reject(new ConversationError("Session ended before startup", "closed", "connect"));
 		const transport = this.#transport;
 		this.#transport = undefined;
-		if (!result.finalized && this.#sessionId) void this.#hangup(this.#sessionId, this.#key);
+		if ((!result.finalized || this.#broker) && this.#sessionId) void this.#hangup(this.#sessionId, this.#key);
 		try { await transport?.close(); this.#stats = transport?.stats; }
 		catch (error) {
 			failed = true;

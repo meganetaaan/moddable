@@ -6,6 +6,7 @@
 		"realtimeConversation": "./realtimeConversation",
 		"realtimeConversation/core": "./core",
 		"realtimeConversation/tools": "./tools",
+		"realtimeConversation/broker": "./broker",
 		"realtimeConversation/http": "./http",
 		"realtimeConversation/httpCore": "./httpCore"
 	},

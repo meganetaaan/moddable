@@ -1,6 +1,6 @@
 # RealtimeConversation for M5Tab
 
-M5Stack Tab5からGPT-Live-1へ直接接続する音声会話モジュールです。Opus音声はWebRTCで送受信し、セッション制御と字幕は`oai-events`データチャネルで扱います。PC上のシグナリングサーバーは不要です。
+M5Stack Tab5からGPT-Live-1へ接続する音声会話モジュールです。Opus音声はWebRTCで送受信し、セッション制御と字幕は`oai-events`データチャネルで扱います。通常キーによる直接接続と、付属サーバーの短期トークンを使う接続に対応します。
 
 `gpt-live-1`と音声`marin`を既定値とし、調べ物はOpenAIが管理するResponsesバックエンド（`gpt-5.6-terra`、`web_search`）へ委譲します。ChatAudioIOとは独立したモジュールです。
 
@@ -42,6 +42,28 @@ const result = await conversation.close();
 オプションは`apiKey`のほか、`model`、`voice`、`instructions`、`delegation`と上記コールバックを受け付けます。`onEvent`にはResponses委譲に関する`response.event`も届きます。
 
 字幕は入力・出力ごとの時刻付き断片です。ターン完了通知として扱わず、履歴には上限を設けてください。ミュート応答が失われた場合、マイクはローカルでミュートした状態を保ちます。
+
+## 短期トークンで接続する
+
+`apiKey`の代わりに`broker`を指定すると、通常のOpenAI APIキーを端末に渡さずに接続できます。付属サーバーが発行する60秒有効・1回限りのトークンを使用します。OpenAI公式のRealtime用Ephemeralトークンとは異なります。
+
+```js
+const conversation = new RealtimeConversation({
+	broker: {
+		url: "https://broker.example:8443",
+		deviceToken,
+		// 独自CAを使う場合のみ、DER形式の公開CA証明書をcertificateに渡す。
+	},
+	tools,
+	onTranscript(fragment) {},
+	onError(error) {}
+});
+await conversation.connect();
+```
+
+接続ごとに端末認証・トークン発行・SDP交換を行います。トークン取得が失敗しても通常キーによる接続へ切り替えません。HTTPSを必須とし、リダイレクトには追従しません。終了用トークンはセッションに限定され、通常終了・通信エラー・遅れて届いた開始応答の後片付けに使います。
+
+このモードのモデル・指示・音声・ツール定義はサーバー側の設定が適用されます。端末の`tools`には実行関数を登録します。詳細は[付属サーバーの手順](../../../../examples/network/webrtc/tab5-gpt-live/broker/README.md)を参照してください。
 
 ## 独自ツールを実行する
 

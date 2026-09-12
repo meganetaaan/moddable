@@ -1,2 +1,5 @@
 manifest.local.json
 fonts/
+broker-ca.der
+broker/.local/
+__pycache__/

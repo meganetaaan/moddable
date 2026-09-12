@@ -21,10 +21,10 @@
 /* One HTTPS connection per request. The SDK's compact fetch keeps global
  * clients and does not reject its body promise on every socket failure.
  * Signaling instead needs a bounded body, a deadline, and deterministic close.
- * This deliberately implements only the two Live POST endpoints. */
+ * Only HTTPS POST is supported; redirects are never followed. */
 export default function liveFetch(url, options, platform) {
-	const origin = "https://api.openai.com";
-	if (!url.startsWith(`${origin}/v1/live/sessions`) || options.method !== "POST")
+	const endpoint = /^https:\/\/([a-zA-Z0-9.-]+)(?::([0-9]{1,5}))?(\/[^\s#]*)$/.exec(url);
+	if (!endpoint || options.method !== "POST" || (endpoint[2] && (+endpoint[2] < 1 || +endpoint[2] > 65535)))
 		return Promise.reject(new URIError("Invalid Live endpoint"));
 	return new Promise((resolve, reject) => {
 		let client, timer, finished = false, body, buffer, offset = 0, status;
@@ -48,10 +48,10 @@ export default function liveFetch(url, options, platform) {
 			headers.set("content-length", String(body.byteLength));
 			headers.set("connection", "close");
 			timer = platform.setTimeout(() => finish(new Error("Live HTTPS request timed out")), 45000);
-			client = platform.createClient({host: "api.openai.com", port: 443,
+			client = platform.createClient({host: endpoint[1], port: +(endpoint[2] ?? 443), certificate: options.certificate,
 				onError() { finish(new Error("Live HTTPS connection failed")); }});
 			client.request({
-				method: "POST", path: url.slice(origin.length), headers,
+				method: "POST", path: endpoint[3], headers,
 				onHeaders(code, responseHeaders) {
 					status = code;
 					if (Number(responseHeaders.get("content-length")) > 131072)

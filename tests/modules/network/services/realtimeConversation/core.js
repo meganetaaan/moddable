@@ -214,4 +214,42 @@ await test("close from a result callback stops the rest of the batch", async () 
 	equal(h.sent.map(event => event.type), ["response.item.create", "session.close"]);
 	h.message({type: "session.closed", reason: "close_requested"}); await h.c.close();
 });
+const brokerOptions = {apiKey: undefined, broker: {url: "https://broker.example:8443", deviceToken: "device_" + "a".repeat(36)}};
+const tokenValue = "t".repeat(43), controlValue = "c".repeat(43);
+const tokenReply = () => ({status: 200, ok: true, text: async () => JSON.stringify({value: tokenValue, expires_at: Date.now() / 1000 + 60})});
+const brokerReply = () => ({status: 201, ok: true, text: async () => JSON.stringify({session: {id: "live_opaque"}, transport: {type: "webrtc", sdp: "v=0\r\nanswer"}, broker: {control_token: controlValue}})});
+await test("broker obtains a one-use token and sends only SDP to the trusted server", async () => {
+	const h = harness(brokerOptions);
+	h.reply(async url => url.endsWith("/token") ? tokenReply() : url.endsWith("/hangup") ? {ok: true, text: async () => ""} : brokerReply());
+	await h.connect();
+	equal(h.requests.length, 2); equal(h.requests[0].url, "https://broker.example:8443/token");
+	equal(h.requests[0].init.headers.Authorization, `Bearer ${brokerOptions.broker.deviceToken}`);
+	equal(h.requests[1].init.headers.Authorization, `Bearer ${tokenValue}`);
+	equal(JSON.parse(h.requests[1].init.body), {transport: {type: "webrtc", sdp: "v=0\r\noffer"}});
+	const p = h.c.close(); h.message({type: "session.closed", reason: "close_requested"}); await p; await flush();
+	equal(h.requests[2].url, "https://broker.example:8443/sessions/live_opaque/hangup");
+	equal(h.requests[2].init.headers.Authorization, `Bearer ${controlValue}`);
+	check(h.requests.every(r => !r.url.includes("api.openai.com")));
+});
+await test("expired broker credentials fail without direct-key fallback", async () => {
+	const h = harness(brokerOptions);
+	h.reply(async () => ({status: 200, text: async () => JSON.stringify({value: tokenValue, expires_at: 1})}));
+	const p = rejected(h.c.connect(), "operation_failed"); await h.signal(); await p; await flush();
+	equal(h.requests.length, 1); equal(h.disposed, 1);
+});
+await test("close while minting a token never starts a paid session", async () => {
+	const h = harness(brokerOptions); let resolve;
+	h.reply(() => new Promise(r => { resolve = r; }));
+	const p = rejected(h.c.connect(), "cancelled"); await h.signal(); const result = await h.c.close(); await p;
+	equal(result.reason, "not_started"); resolve(tokenReply()); await flush(); equal(h.requests.length, 1);
+});
+await test("late broker session creation is cleaned up with its scoped control token", async () => {
+	const h = harness(brokerOptions); let resolve;
+	h.reply(async url => url.endsWith("/token") ? tokenReply() : new Promise(r => { resolve = r; }));
+	const p = rejected(h.c.connect(), "cancelled"); await h.signal(); const closing = h.c.close(); await p;
+	h.timeout(15000); check(!(await closing).finalized);
+	h.reply(async () => ({ok: true, text: async () => ""})); resolve(brokerReply()); await flush();
+	equal(h.requests[2].init.headers.Authorization, `Bearer ${controlValue}`);
+	equal(h.requests[2].url, "https://broker.example:8443/sessions/live_opaque/hangup");
+});
 print(`${count} tests passed`);

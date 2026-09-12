@@ -41,7 +41,8 @@ declare module "realtimeConversation" {
 		output?: string; error?: string;
 	}
 	export interface ConversationOptions {
-		apiKey: string;
+		apiKey?: string;
+		broker?: {url: string; deviceToken: string; certificate?: ArrayBuffer};
 		model?: string;
 		voice?: string;
 		instructions?: string;

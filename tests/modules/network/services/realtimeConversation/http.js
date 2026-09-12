@@ -6,7 +6,7 @@ flags: [module]
 ---*/
 import request from "../../../../../modules/network/services/realtimeConversation/httpCore.js";
 function check(v) { if (!v) throw new Error("assertion failed"); }
-function setup() {
+function setup(url = "https://api.openai.com/v1/live/sessions", options = {}) {
 	let callbacks, clientCallbacks, timeout, closes = 0, clears = 0;
 	const client = {request(options) { callbacks = options; }, close() { closes++; }};
 	const platform = {
@@ -16,8 +16,8 @@ function setup() {
 		encode(text) { return Uint8Array.from(Array.from(text, c => c.charCodeAt(0))).buffer; },
 		decode(buffer) { return String.fromCharCode(...new Uint8Array(buffer)); }
 	};
-	const promise = request("https://api.openai.com/v1/live/sessions", {method: "POST", headers: {Authorization: "Bearer test"}, body: "{}"}, platform);
-	return {promise, get cb() { return callbacks; }, get closes() { return closes; }, get clears() { return clears; },
+	const promise = request(url, {method: "POST", headers: {Authorization: "Bearer test"}, body: "{}", ...options}, platform);
+	return {promise, get connection() { return clientCallbacks; }, get cb() { return callbacks; }, get closes() { return closes; }, get clears() { return clears; },
 		timeout() { timeout(); }, error() { clientCallbacks.onError(); }};
 }
 async function fails(h) {
@@ -51,4 +51,17 @@ async function fails(h) {
 {
 	const h = setup(); h.cb.onDone(new Error("socket")); await fails(h);
 }
-print("6 HTTP cleanup tests passed");
+{
+	const certificate = new ArrayBuffer(8);
+	const h = setup("https://broker.example:8443/token", {certificate});
+	check(h.connection.host === "broker.example" && h.connection.port === 8443);
+	check(h.connection.certificate === certificate && h.cb.path === "/token");
+	h.cb.onHeaders(302, new Map([["location", "https://attacker.example/"]])); h.cb.onDone();
+	check((await h.promise).status === 302 && h.closes === 1);
+}
+for (const url of ["http://broker.example/token", "https://user:password@broker.example/token", "https://broker.example:0/token", "https://broker.example:65536/token", "https://broker.example/token#fragment"]) {
+	let rejected = false;
+	try { await request(url, {method: "POST"}, {}); } catch (error) { rejected = error instanceof URIError; }
+	check(rejected);
+}
+print("8 HTTP cleanup/routing tests passed");

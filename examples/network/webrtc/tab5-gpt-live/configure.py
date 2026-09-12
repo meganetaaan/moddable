@@ -20,12 +20,17 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import shutil
+from urllib.parse import urlsplit
 import unicodedata
 import uuid
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--env-file', type=Path, default=Path('.env'))
 parser.add_argument('--ssid', default=os.environ.get('LIVE_WIFI_SSID'))
+parser.add_argument('--broker-url')
+parser.add_argument('--broker-ca', type=Path)
+parser.add_argument('--broker-device-token-file', type=Path)
 parser.add_argument('--auto-start', action='store_true')
 parser.add_argument('--test-seconds', type=int, default=0)
 parser.add_argument('--test-repeat-seconds', type=int)
@@ -34,11 +39,19 @@ parser.add_argument('--test-cycles', type=int, default=1, choices=range(1, 6))
 args = parser.parse_args()
 if args.test_seconds < 0 or (args.test_repeat_seconds is not None and args.test_repeat_seconds < 0):
 	parser.error('Test durations must be nonnegative')
-text = args.env_file.read_text()
-match = re.search(r'^\s*(?:export\s+)?OPENAI_API_KEY\s*=\s*(.+?)\s*$', text, re.M)
-if not match:
-	parser.error('OPENAI_API_KEY is missing from the env file')
-key = match.group(1).strip().strip('"\'')
+if args.broker_url:
+	url = urlsplit(args.broker_url)
+	if url.scheme != 'https' or not url.hostname or url.path not in ('', '/') or url.query or url.fragment or url.username:
+		parser.error('Broker URL must be an HTTPS origin')
+	device_token = (args.broker_device_token_file.read_text().strip() if args.broker_device_token_file else
+		os.environ.get('LIVE_BROKER_DEVICE_TOKEN') or getpass.getpass('Broker device token: '))
+	if not re.fullmatch(r'[A-Za-z0-9_-]{32,256}', device_token): parser.error('Invalid broker device token')
+else:
+	if args.broker_ca or args.broker_device_token_file: parser.error('Broker options require --broker-url')
+	text = args.env_file.read_text()
+	match = re.search(r'^\s*(?:export\s+)?OPENAI_API_KEY\s*=\s*(.+?)\s*$', text, re.M)
+	if not match: parser.error('OPENAI_API_KEY is missing from the env file')
+	key = match.group(1).strip().strip("\"'")
 ssid = args.ssid or input('Wi-Fi SSID: ')
 password = os.environ.get('LIVE_WIFI_PASSWORD') or getpass.getpass('Wi-Fi password: ')
 # Japanese subtitles are open-ended. Include CP932 characters, not only the
@@ -58,10 +71,20 @@ if generate:
 		'--texture-size', '4096x4096', '--max-texture-count', '1', '--texture-name-suffix', 'none',
 		'--texture-crop-width', '--texture-crop-height', '--data-format', 'bin', '--chars-file', str(chars)], check=True)
 
-manifest = {'config': {'ssid': ssid, 'password': password, 'openaiApiKey': key,
+manifest = {'config': {'ssid': ssid, 'password': password,
 	'autoStart': args.auto_start, 'testSeconds': args.test_seconds,
 	'testCycles': args.test_cycles, 'testRunId': uuid.uuid4().hex}}
+if args.broker_url:
+	manifest['config']['brokerUrl'] = args.broker_url.rstrip('/')
+	manifest['config']['brokerDeviceToken'] = device_token
+	if args.broker_ca:
+		shutil.copyfile(args.broker_ca, folder / 'broker-ca.der')
+		manifest['resources'] = {'*': ['./broker-ca.der']}
+		manifest['config']['brokerCertificate'] = 'broker-ca.der'
+else:
+	manifest['config']['openaiApiKey'] = key
 if args.test_repeat_seconds is not None:
+
 	manifest['config']['testRepeatSeconds'] = args.test_repeat_seconds
 manifest['config']['testMute'] = args.test_mute
 path = Path(__file__).with_name('manifest.local.json')

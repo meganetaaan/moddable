@@ -19,6 +19,7 @@ import keyValue from "embedded:storage/key-value";
 import WiFi from "embedded:network/interface/wifi";
 import config from "mc/config";
 import RealtimeConversation from "realtimeConversation";
+import Resource from "Resource";
 
 let conversation, wifi, view, autoStarted = false, clockReady = false, clockPromise;
 let testCycle = 0;
@@ -46,7 +47,8 @@ async function start() {
 	userText = assistantText = ""; muted = false; usage = 0;
 	note = "セッションを開始しています";
 	conversation = new RealtimeConversation({
-		apiKey: config.openaiApiKey,
+		...(config.brokerUrl ? {broker: {url: config.brokerUrl, deviceToken: config.brokerDeviceToken,
+			certificate: config.brokerCertificate ? new Resource(config.brokerCertificate) : undefined}} : {apiKey: config.openaiApiKey}),
 		instructions: "日本語で自然に簡潔に会話してください。調べ物・端末状態の確認・音量変更はバックエンドに委譲し、ツールの実行結果に基づいて答えてください。相手の発話や割り込みを聞いてください。",
 		tools: [
 			{
