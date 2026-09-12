@@ -55,7 +55,8 @@ struct LiveAudio {
 #endif
 	esp_ae_rate_cvt_handle_t resampler;
 	atomic_bool stopping, done, reading, muted;
-	atomic_uint volume, captured, rendered, underruns, overruns;
+	atomic_uint volume, captured, rendered, underruns, overruns, sourceSamples;
+	atomic_uint requestedRate, requestedChannels, sourceFrameBytes;
 	atomic_uint micLevel, cleanLevel, referenceLevel;
 	atomic_uint outputIdleMs, silenceMs, maxSilenceMs;
 	atomic_int error;
@@ -75,6 +76,8 @@ static esp_capture_err_t sourceCodecs(esp_capture_audio_src_if_t *s, const esp_c
 }
 static esp_capture_err_t sourceNegotiate(esp_capture_audio_src_if_t *s, esp_capture_audio_info_t *in, esp_capture_audio_info_t *out)
 {
+	LiveAudio *a = (LiveAudio *)s;
+	atomic_store(&a->requestedRate, in->sample_rate); atomic_store(&a->requestedChannels, in->channel);
 	if (in->format_id != ESP_CAPTURE_FMT_ID_PCM) return ESP_CAPTURE_ERR_NOT_SUPPORTED;
 	*out = (esp_capture_audio_info_t){.format_id = ESP_CAPTURE_FMT_ID_PCM, .sample_rate = 16000, .channel = 1, .bits_per_sample = 16};
 	return ESP_CAPTURE_ERR_OK;
@@ -86,13 +89,24 @@ static esp_capture_err_t sourceStart(esp_capture_audio_src_if_t *s)
 	atomic_store(&a->reading, true);
 	return ESP_CAPTURE_ERR_OK;
 }
+/* Optional application DSP/test source. Runs on the native capture task, never
+ * the JS event loop. Implementations must be bounded and non-blocking. */
+__attribute__((weak)) void liveAudioTransformCapture(int16_t *samples, size_t count) {}
 static esp_capture_err_t sourceRead(esp_capture_audio_src_if_t *s, esp_capture_stream_frame_t *frame)
 {
 	LiveAudio *a = (LiveAudio *)s;
 	int offset = 0;
+	atomic_store(&a->sourceFrameBytes, frame->size);
 	while (offset < frame->size && atomic_load(&a->reading) && !atomic_load(&a->stopping))
 		offset += xStreamBufferReceive(a->input, frame->data + offset, frame->size - offset, pdMS_TO_TICKS(50));
 	if (offset != frame->size) return ESP_CAPTURE_ERR_NOT_SUPPORTED;
+	if (atomic_load(&a->muted)
+#ifdef CONFIG_IDF_TARGET_ESP32S3
+		|| atomic_load(&a->outputIdleMs) < 500
+#endif
+	) memset(frame->data, 0, frame->size);
+	else liveAudioTransformCapture((int16_t *)frame->data, frame->size / 2);
+	atomic_fetch_add(&a->sourceSamples, frame->size / 2);
 	frame->pts = a->pts / 16;
 	a->pts += frame->size / 2;
 	return ESP_CAPTURE_ERR_OK;
@@ -333,5 +347,5 @@ void liveAudioStats(LiveAudio *a, LiveAudioStats *s)
 {
 	if (!a) return;
 	*s = (LiveAudioStats){atomic_load(&a->captured), atomic_load(&a->rendered), atomic_load(&a->underruns),
-		atomic_load(&a->overruns), atomic_load(&a->micLevel), atomic_load(&a->cleanLevel), atomic_load(&a->referenceLevel), atomic_load(&a->outputIdleMs), atomic_load(&a->silenceMs), atomic_load(&a->maxSilenceMs)};
+		atomic_load(&a->overruns), atomic_load(&a->micLevel), atomic_load(&a->cleanLevel), atomic_load(&a->referenceLevel), atomic_load(&a->outputIdleMs), atomic_load(&a->silenceMs), atomic_load(&a->maxSilenceMs), atomic_load(&a->sourceSamples), atomic_load(&a->requestedRate), atomic_load(&a->requestedChannels), atomic_load(&a->sourceFrameBytes)};
 }

@@ -83,6 +83,13 @@
 					"includes": [
 						"cJSON"
 					]
+				},
+				{
+					"name": "esp_muxer",
+					"version": "~1.2",
+					"includes": [
+						"include"
+					]
 				}
 			]
 		},
@@ -152,6 +159,13 @@
 					"version": "^1.7.19",
 					"includes": [
 						"cJSON"
+					]
+				},
+				{
+					"name": "esp_muxer",
+					"version": "~1.2",
+					"includes": [
+						"include"
 					]
 				}
 			]

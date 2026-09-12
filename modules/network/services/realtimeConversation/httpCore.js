@@ -47,7 +47,7 @@ export default function liveFetch(url, options, platform) {
 			const headers = new Map(Object.entries(options.headers).map(([name, value]) => [name.toLowerCase(), value]));
 			headers.set("content-length", String(body.byteLength));
 			headers.set("connection", "close");
-			timer = platform.setTimeout(() => finish(new Error("Live HTTPS request timed out")), 45000);
+			timer = platform.setTimeout(() => finish(new Error("Live HTTPS request timed out")), Math.max(1000, Math.min(45000, options.timeoutMs ?? 45000)));
 			client = platform.createClient({host: endpoint[1], port: +(endpoint[2] ?? 443), certificate: options.certificate,
 				onError() { finish(new Error("Live HTTPS connection failed")); }});
 			client.request({

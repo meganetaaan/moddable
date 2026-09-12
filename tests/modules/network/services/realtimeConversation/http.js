@@ -11,7 +11,7 @@ function setup(url = "https://api.openai.com/v1/live/sessions", options = {}) {
 	const client = {request(options) { callbacks = options; }, close() { closes++; }};
 	const platform = {
 		createClient(options) { clientCallbacks = options; return client; },
-		setTimeout(cb, delay) { check(delay === 45000); timeout = cb; return 1; },
+		setTimeout(cb, delay) { check(delay === (options.timeoutMs ?? 45000)); timeout = cb; return 1; },
 		clearTimeout() { clears++; },
 		encode(text) { return Uint8Array.from(Array.from(text, c => c.charCodeAt(0))).buffer; },
 		decode(buffer) { return String.fromCharCode(...new Uint8Array(buffer)); }
@@ -64,4 +64,8 @@ for (const url of ["http://broker.example/token", "https://user:password@broker.
 	try { await request(url, {method: "POST"}, {}); } catch (error) { rejected = error instanceof URIError; }
 	check(rejected);
 }
-print("8 HTTP cleanup/routing tests passed");
+{
+	const h = setup("https://broker.example/history", {timeoutMs: 5000});
+	h.timeout(); await fails(h);
+}
+print("9 HTTP cleanup/routing tests passed");

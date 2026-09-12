@@ -86,7 +86,8 @@ class Resolver {
 			this.#socket ??= new (this.#UDP.io)({
 				target: this,
 				onReadable: function(count) {
-					while (count--)
+					// Resolving the first datagram can close this socket reentrantly.
+					while (count-- && this.target.#socket === this)
 						this.target.#receive(this.read());
 				}
 			});

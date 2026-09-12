@@ -21,6 +21,7 @@
 #include "xsmc.h"
 #include "xsHost.h"
 #include "esp_webrtc.h"
+#include "esp_capture_sink.h"
 #include "esp_webrtc_defaults.h"
 #include "esp_peer_default.h"
 #include "esp_audio_enc_default.h"
@@ -37,7 +38,7 @@
 #include <string.h>
 
 #define EVENT_BYTES 131072
-#define EVENT_COUNT 32
+#define EVENT_COUNT 128
 #define COMMAND_COUNT 8
 
 enum { kOffer = 1, kMessage, kError, kDisconnected, kAnswer, kSend };
@@ -46,8 +47,9 @@ typedef struct {
 	QueueHandle_t events, commands;
 	atomic_bool stopping, done, muted;
 	atomic_int failure;
-	atomic_uint queuedBytes, volume;
-	bool started, errorRead;
+	atomic_uint queuedBytes, volume, lastPollTick;
+	bool started, errorRead, captureOnly;
+	atomic_uint encodedFrames, encodedPts;
 	const char *failureStage;
 	esp_webrtc_handle_t rtc;
 	esp_peer_signaling_cfg_t signal;
@@ -134,6 +136,11 @@ static void scheduler(const char *name, media_lib_thread_cfg_t *cfg)
 static void captureScheduler(const char *name, esp_capture_thread_schedule_cfg_t *cfg)
 {
 	cfg->stack_in_ext = true;
+#ifdef CONFIG_IDF_TARGET_ESP32S3
+	/* esp_capture defaults AUD_SRC to priority 5, which competes with XS/TLS
+	 * while the decoder is active. Match Espressif's capture sample priority. */
+	if (!strcmp(name, "AUD_SRC")) { cfg->priority = 15; cfg->core_id = 0; }
+#endif
 	if (!strcmp(name, "aenc_0")) {
 		/* Opus/SILK exceeds esp_capture's 4 KB default on ESP32-P4.
 		 * Match the Opus scheduler in esp_capture's audio example. */
@@ -142,13 +149,27 @@ static void captureScheduler(const char *name, esp_capture_thread_schedule_cfg_t
 		cfg->core_id = 1;
 	}
 }
+/* Optional offline probe recorder; never called by a provider session. */
+__attribute__((weak)) void liveCaptureProbePacket(const uint8_t *data, size_t size, uint32_t pts) {}
 static void worker(void *ctx)
 {
 	LiveTransport *t = ctx;
 	LiveAudio *audio = NULL;
 	esp_webrtc_media_provider_t provider = {0};
+	esp_capture_sink_handle_t probeSink = NULL;
 	int err = liveAudioOpen(&audio, &provider);
 	if (err) { t->failureStage = liveAudioStage(audio); goto done; }
+	if (t->captureOnly) {
+		/* Match the RTP drain priority when comparing capture throughput. */
+		vTaskPrioritySet(NULL, 15);
+		esp_capture_sink_cfg_t sink = {.audio_info = {.format_id = ESP_CAPTURE_FMT_ID_OPUS,
+			.sample_rate = 16000, .channel = 1, .bits_per_sample = 16}};
+		t->failureStage = "capture_probe_setup";
+		if ((err = esp_capture_sink_setup(provider.capture, 0, &sink, &probeSink))) goto done;
+		if ((err = esp_capture_sink_enable(probeSink, ESP_CAPTURE_RUN_MODE_ALWAYS))) goto done;
+		if ((err = esp_capture_start(provider.capture))) goto done;
+		goto running;
+	}
 	esp_peer_default_cfg_t peer = {.agent_recv_timeout = 500, .ice_use_lite_mode = false,
 		.rtp_cfg = {.audio_recv_jitter = {.cache_size = 32768}, .send_pool_size = 32768, .send_queue_num = 64}};
 	esp_webrtc_cfg_t cfg = {
@@ -163,7 +184,27 @@ static void worker(void *ctx)
 	if ((err = esp_webrtc_set_media_provider(t->rtc, &provider))) goto done;
 	if ((err = esp_webrtc_set_event_handler(t->rtc, onEvent, t))) goto done;
 	if ((err = esp_webrtc_start(t->rtc))) goto done;
+	running:
+	atomic_store(&t->lastPollTick, xTaskGetTickCount());
 	while (!atomic_load(&t->stopping) && !atomic_load(&t->failure)) {
+		if (probeSink) {
+			esp_capture_stream_frame_t frame = {.stream_type = ESP_CAPTURE_STREAM_TYPE_AUDIO};
+			while (esp_capture_sink_acquire_frame(probeSink, &frame, true) == ESP_CAPTURE_ERR_OK) {
+				atomic_fetch_add(&t->encodedFrames, 1); atomic_store(&t->encodedPts, frame.pts);
+				liveCaptureProbePacket(frame.data, frame.size, frame.pts);
+				esp_capture_sink_release_frame(probeSink, &frame);
+			}
+		}
+		/* This watchdog runs even when the JS VM aborts or blocks in IPC. */
+		if ((TickType_t)(xTaskGetTickCount() - atomic_load(&t->lastPollTick)) > pdMS_TO_TICKS(10000)) {
+			t->failureStage = "event_loop_watchdog";
+			if (t->rtc) {
+				static const char close[] = "{\"type\":\"session.close\"}";
+				esp_webrtc_send_custom_data(t->rtc, ESP_WEBRTC_CUSTOM_DATA_VIA_DATA_CHANNEL, (uint8_t *)close, sizeof(close)-1);
+				vTaskDelay(pdMS_TO_TICKS(200));
+			}
+			err = ESP_ERR_TIMEOUT; break;
+		}
 		LiveMessage msg;
 		if (xQueueReceive(t->commands, &msg, pdMS_TO_TICKS(20)) == pdPASS) {
 			if (msg.type == kAnswer) {
@@ -187,6 +228,7 @@ done:
 	if (err) fail(t, err);
 	atomic_store(&t->stopping, true);
 	liveAudioStop(audio);
+	if (probeSink) esp_capture_stop(provider.capture);
 	if (t->rtc) { esp_webrtc_close(t->rtc); t->rtc = NULL; }
 	liveAudioClose(audio);
 	atomic_store(&t->done, true);
@@ -233,6 +275,7 @@ void xs_live_transport_start(xsMachine *the)
 		esp_audio_dec_register_default();
 		gAdapters = true;
 	}
+	t->captureOnly = xsmcArgc && xsmcToBoolean(xsArg(0));
 	t->started = true;
 	if (xTaskCreatePinnedToCore(worker, "live_peer", 12288, t, 10, NULL, 1) != pdPASS) {
 		t->started = false;
@@ -284,6 +327,7 @@ void xs_live_transport_read(xsMachine *the)
 {
 	LiveTransport *t = xsmcGetHostData(xsThis);
 	if (!t) return;
+	atomic_store(&t->lastPollTick, xTaskGetTickCount());
 	LiveMessage msg = {0};
 	if (xQueueReceive(t->events, &msg, 0) == pdPASS) atomic_fetch_sub(&t->queuedBytes, msg.size);
 	else if (!t->errorRead && atomic_load(&t->failure)) { msg.type = kError; msg.code = atomic_load(&t->failure); t->errorRead = true; }
@@ -327,6 +371,12 @@ void xs_live_transport_stats(xsMachine *the)
 	xsmcSetNewObject(xsResult);
 #define STAT(name, value) xsmcSetNumber(xsVar(0), value); xsmcSet(xsResult, xsID(name), xsVar(0))
 	STAT("capturedSamples", stats.captured);
+	STAT("sourceSamples", stats.sourceSamples);
+	STAT("requestedRate", stats.requestedRate);
+	STAT("requestedChannels", stats.requestedChannels);
+	STAT("sourceFrameBytes", stats.sourceFrameBytes);
+	STAT("encodedFrames", atomic_load(&t->encodedFrames));
+	STAT("encodedPts", atomic_load(&t->encodedPts));
 	STAT("renderedSamples", stats.rendered);
 	STAT("underruns", stats.underruns);
 	STAT("overruns", stats.overruns);

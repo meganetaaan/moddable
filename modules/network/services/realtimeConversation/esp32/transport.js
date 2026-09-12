@@ -35,7 +35,7 @@ export default class Transport extends Native("xs_live_transport_destructor") {
 		native("xs_live_transport_constructor").call(this);
 		this.#timer = Timer.repeat(() => this.#poll(), 20);
 	}
-	start() { native("xs_live_transport_start").call(this); }
+	start(options) { native("xs_live_transport_start").call(this, options?.captureOnly === true); }
 	acceptAnswer(sdp) { native("xs_live_transport_answer").call(this, sdp); }
 	send(data) {
 		if (this.#closing || this.#released) throw new Error("Transport is closed");
