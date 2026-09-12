@@ -129,7 +129,15 @@ static void scheduler(const char *name, media_lib_thread_cfg_t *cfg)
 {
 	if (!strcmp(name, "pc_task")) { cfg->stack_size = 25 * 1024; cfg->priority = 18; cfg->core_id = 1; }
 	else if (!strcmp(name, "Adec")) { cfg->stack_size = 40 * 1024; cfg->priority = 15; cfg->core_id = 0; }
-	else if (!strcmp(name, "pc_send")) { cfg->priority = 15; cfg->core_id = 1; }
+	else if (!strcmp(name, "pc_send")) {
+#ifdef CONFIG_IDF_TARGET_ESP32S3
+		/* Keep capture/RTP ahead of peer receive work on the S3. */
+		cfg->priority = 19;
+#else
+		cfg->priority = 15;
+#endif
+		cfg->core_id = 1;
+	}
 	else if (!strcmp(name, "ARender")) cfg->priority = 20;
 	else if (!strcmp(name, "start")) cfg->stack_size = 6 * 1024;
 }
@@ -145,7 +153,11 @@ static void captureScheduler(const char *name, esp_capture_thread_schedule_cfg_t
 		/* Opus/SILK exceeds esp_capture's 4 KB default on ESP32-P4.
 		 * Match the Opus scheduler in esp_capture's audio example. */
 		cfg->stack_size = 40 * 1024;
+#ifdef CONFIG_IDF_TARGET_ESP32S3
+		cfg->priority = 19;
+#else
 		cfg->priority = 10;
+#endif
 		cfg->core_id = 1;
 	}
 }

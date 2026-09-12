@@ -137,3 +137,5 @@ CoreS3は初期版では半二重です。受信PCMに発話レベルの出力�
 ネイティブ側はJavaScriptからのイベント読み取りを監視する。10秒途絶えた場合は`session.close`を送信して通信・音声資源を解放し、`event_loop_watchdog`を報告する。JavaScriptの停止やWorker通知の詰まりでも有料接続を放置しないための監視であり、`session.closed`を受信したことにはしない。デバッガで10秒以上停止した場合にも作動する。
 
 無料の切り分けには低水準の`Transport.start({captureOnly:true})`を使える。実際の入力・Opus符号化を動かし、パケットを読み捨てて`encodedFrames`と`encodedPts`を記録する。SDP仲介やOpenAI接続は行わない。通常の会話APIでは使わない。
+
+CoreS3ではOpusの符号化とRTP送信を優先度19、受信を18とし、録音入力が受信処理に押し出されることを防ぐ。ホストは命令キャッシュ32 KiBを使用し、会話中はWi-Fiの省電力を解除する。Wi-Fiの所有・復元と履歴HTTPS送信の時期はアプリ側の方針として扱う。
