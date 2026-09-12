@@ -743,6 +743,7 @@ $(LIB_DIR):
 	
 $(BIN_DIR)/xs_$(ESP32_SUBCLASS).a: $(TMP_DIR)/buildinfo.c.o $(SDK_OBJ) $(XS_OBJ) $(TMP_DIR)/xsPlatform.c.o $(TMP_DIR)/xsHost.c.o $(TMP_DIR)/xsHosts.c.o $(TMP_DIR)/mc.xs.c.o $(TMP_DIR)/mc.resources.c.o $(OBJECTS)
 	@echo "# ar xs_$(ESP32_SUBCLASS).a"
+	$(RM) $(BIN_DIR)/xs_$(ESP32_SUBCLASS).a
 	$(AR) $(AR_FLAGS) $(BIN_DIR)/xs_$(ESP32_SUBCLASS).a $^
 
 bootloaderCheck:

@@ -22,7 +22,9 @@
 #include "liveAudio.h"
 #include "driver/i2s_std.h"
 #include "esp_heap_caps.h"
+#ifndef CONFIG_IDF_TARGET_ESP32S3
 #include "esp_aec.h"
+#endif
 #include "esp_ae_rate_cvt.h"
 #include "audio_render.h"
 #include "freertos/FreeRTOS.h"
@@ -47,11 +49,15 @@ struct LiveAudio {
 	audio_render_handle_t render;
 	i2s_chan_handle_t tx, rx;
 	StreamBufferHandle_t input, output;
+
+#ifndef CONFIG_IDF_TARGET_ESP32S3
 	aec_handle_t *aec;
+#endif
 	esp_ae_rate_cvt_handle_t resampler;
 	atomic_bool stopping, done, reading, muted;
 	atomic_uint volume, captured, rendered, underruns, overruns;
 	atomic_uint micLevel, cleanLevel, referenceLevel;
+	atomic_uint outputIdleMs, silenceMs, maxSilenceMs;
 	atomic_int error;
 	bool taskStarted, txEnabled, rxEnabled;
 	uint32_t pts;
@@ -132,11 +138,25 @@ static void audioTask(void *ctx)
 	int16_t *mic = reference + BLOCK * DMA_BLOCKS;
 	int16_t *ref = mic + a->chunk, *clean = ref + a->chunk;
 	int accumulated = 0, delay = 0;
+	unsigned idle = 1000, gap = 0;
+	bool gapActive = false;
 	while (!atomic_load(&a->stopping)) {
 		/* Non-blocking dequeue: the clock must keep running between utterances. */
 		size_t got = xStreamBufferReceive(a->output, tx, BLOCK * 2, 0);
-		if (got && got < BLOCK * 2) atomic_fetch_add(&a->underruns, 1);
+		if (got < BLOCK * 2 && idle < 500) {
+			if (!gapActive) atomic_fetch_add(&a->underruns, 1);
+			gapActive = true; gap += 10;
+			atomic_fetch_add(&a->silenceMs, 10);
+			if (gap > atomic_load(&a->maxSilenceMs)) atomic_store(&a->maxSilenceMs, gap);
+		} else { gapActive = false; gap = 0; }
 		memset((uint8_t *)tx + got, 0, BLOCK * 2 - got);
+		bool audible = false;
+		for (size_t i = 0; i < got / 2; i++) if (abs(tx[i]) > 32) { audible = true; break; }
+		/* Missing packets are not evidence of silence. Only received PCM
+		 * can reopen the S3 microphone after playback. */
+		if (audible) idle = 0;
+		else if (got == BLOCK * 2 && idle < 10000) idle += 10;
+		atomic_store(&a->outputIdleMs, idle);
 		unsigned volume = atomic_load(&a->volume);
 		for (int i = BLOCK - 1; i >= 0; i--) {
 			int16_t sample = (int32_t)tx[i] * volume / 1024;
@@ -164,7 +184,13 @@ static void audioTask(void *ctx)
 			mic[accumulated] = converted[i * 2];
 			ref[accumulated++] = converted[i * 2 + 1];
 			if (accumulated != a->chunk) continue;
+#ifdef CONFIG_IDF_TARGET_ESP32S3
+			memcpy(clean, mic, a->chunk * 2);
+			// Gate capture locally before any JavaScript or server mute ACK can run.
+			if (idle < 500) memset(clean, 0, a->chunk * 2);
+#else
 			aec_process(a->aec, mic, ref, clean);
+#endif
 			unsigned m = 0, r = 0, c = 0;
 			for (int j = 0; j < a->chunk; j++) { m += abs(mic[j]); r += abs(ref[j]); c += abs(clean[j]); }
 			atomic_store(&a->micLevel, m / a->chunk);
@@ -197,9 +223,15 @@ int liveAudioOpen(LiveAudio **out, esp_webrtc_media_provider_t *provider)
 	a->input = xStreamBufferCreate(CAPTURE_BYTES, 1);
 	a->output = xStreamBufferCreate(PLAYBACK_BYTES, 1);
 	a->stage = "aec_create";
+#ifdef CONFIG_IDF_TARGET_ESP32S3
+	if (!a->input || !a->output) return ESP_ERR_NO_MEM;
+	a->chunk = 160;
+#else
 	a->aec = aec_create(16000, 4, 1, AEC_MODE_FD_LOW_COST);
 	if (!a->input || !a->output || !a->aec) return ESP_ERR_NO_MEM;
 	a->chunk = aec_get_chunksize(a->aec);
+#endif
+	atomic_store(&a->outputIdleMs, 1000);
 	a->buffers = heap_caps_aligned_calloc(16, BLOCK * (8 + DMA_BLOCKS) + a->chunk * 3, sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 	if (!a->buffers) return ESP_ERR_NO_MEM;
 	esp_ae_rate_cvt_cfg_t rate = {.src_rate = 48000, .dest_rate = 16000, .channel = 2,
@@ -207,7 +239,13 @@ int liveAudioOpen(LiveAudio **out, esp_webrtc_media_provider_t *provider)
 	a->stage = "resampler_open";
 	int err = esp_ae_rate_cvt_open(&rate, &a->resampler);
 	if (err) return err;
-	i2s_chan_config_t channel = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
+	i2s_chan_config_t channel = I2S_CHANNEL_DEFAULT_CONFIG(
+#ifdef CONFIG_IDF_TARGET_ESP32S3
+		I2S_NUM_1,
+#else
+		I2S_NUM_0,
+#endif
+		I2S_ROLE_MASTER);
 	channel.dma_desc_num = DMA_BLOCKS;
 	channel.dma_frame_num = BLOCK;
 	channel.auto_clear = true;
@@ -217,7 +255,11 @@ int liveAudioOpen(LiveAudio **out, esp_webrtc_media_provider_t *provider)
 	i2s_std_config_t config = {
 		.clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(48000),
 		.slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO),
+		#ifdef CONFIG_IDF_TARGET_ESP32S3
+		.gpio_cfg = {.mclk = 0, .bclk = 34, .ws = 33, .dout = 13, .din = 14}
+#else
 		.gpio_cfg = {.mclk = 30, .bclk = 27, .ws = 29, .dout = 26, .din = 28}
+#endif
 	};
 	a->stage = "i2s_init_tx";
 	if ((err = i2s_channel_init_std_mode(a->tx, &config))) return err;
@@ -274,7 +316,9 @@ void liveAudioClose(LiveAudio *a)
 	if (a->txEnabled) i2s_channel_disable(a->tx);
 	if (a->rx) i2s_del_channel(a->rx);
 	if (a->tx) i2s_del_channel(a->tx);
+#ifndef CONFIG_IDF_TARGET_ESP32S3
 	if (a->aec) aec_destroy(a->aec);
+#endif
 	if (a->resampler) esp_ae_rate_cvt_close(a->resampler);
 	if (a->input) vStreamBufferDelete(a->input);
 	if (a->output) vStreamBufferDelete(a->output);
@@ -289,5 +333,5 @@ void liveAudioStats(LiveAudio *a, LiveAudioStats *s)
 {
 	if (!a) return;
 	*s = (LiveAudioStats){atomic_load(&a->captured), atomic_load(&a->rendered), atomic_load(&a->underruns),
-		atomic_load(&a->overruns), atomic_load(&a->micLevel), atomic_load(&a->cleanLevel), atomic_load(&a->referenceLevel)};
+		atomic_load(&a->overruns), atomic_load(&a->micLevel), atomic_load(&a->cleanLevel), atomic_load(&a->referenceLevel), atomic_load(&a->outputIdleMs), atomic_load(&a->silenceMs), atomic_load(&a->maxSilenceMs)};
 }

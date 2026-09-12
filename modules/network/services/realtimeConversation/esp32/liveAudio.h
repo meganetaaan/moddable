@@ -28,6 +28,7 @@ typedef struct LiveAudio LiveAudio;
 typedef struct {
 	unsigned captured, rendered, underruns, overruns;
 	unsigned micLevel, cleanLevel, referenceLevel;
+	unsigned outputIdleMs, silenceMs, maxSilenceMs;
 } LiveAudioStats;
 
 int liveAudioOpen(LiveAudio **audio, esp_webrtc_media_provider_t *provider);

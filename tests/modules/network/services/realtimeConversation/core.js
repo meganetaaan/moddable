@@ -252,4 +252,32 @@ await test("late broker session creation is cleaned up with its scoped control t
 	equal(h.requests[2].init.headers.Authorization, `Bearer ${controlValue}`);
 	equal(h.requests[2].url, "https://broker.example:8443/sessions/live_opaque/hangup");
 });
+await test("injected signaling can install tools before issuing a session", async () => {
+	let h, started = 0, accepted = 0, ended = 0;
+	h = harness({apiKey: undefined, signaling: {
+		async createSession({sdp, canStart, starting}) {
+			equal(sdp, "v=0\r\noffer"); check(canStart());
+			h.c.setTools([{name: "status", parameters: {type: "object"}, execute() { return {ok: true}; }}]);
+			starting(); started++; return brokerReply();
+		},
+		acceptSession(result) { equal(result.session.id, "live_opaque"); accepted++; },
+		async hangup({sessionId}) { equal(sessionId, "live_opaque"); ended++; }
+	}});
+	await h.connect(); equal(started, 1); equal(accepted, 1); equal(h.requests.length, 0);
+	let refused = false; try { h.c.setTools([]); } catch { refused = true; } check(refused);
+	const closing = h.c.close(); h.message({type: "session.closed", usage: {seconds: 1}});
+	await closing; equal(ended, 1);
+});
+await test("injected signaling honors cancellation before starting paid creation", async () => {
+	let resume, started = 0;
+	const h = harness({apiKey: undefined, signaling: {
+		async createSession({canStart, starting}) {
+			await new Promise(resolve => { resume = resolve; });
+			if (!canStart()) return;
+			starting(); started++; return brokerReply();
+		}, async hangup() {}
+	}});
+	const connection = rejected(h.c.connect(), "cancelled"); await h.signal();
+	await h.c.close(); await connection; resume(); await flush(); equal(started, 0);
+});
 print(`${count} tests passed`);

@@ -1,4 +1,4 @@
-# RealtimeConversation for M5Tab
+# RealtimeConversation for M5Tab / CoreS3
 
 M5Stack Tab5からGPT-Live-1へ接続する音声会話モジュールです。Opus音声はWebRTCで送受信し、セッション制御と字幕は`oai-events`データチャネルで扱います。通常キーによる直接接続と、付属サーバーの短期トークンを使う接続に対応します。
 
@@ -117,3 +117,17 @@ Opusのエンコーダーとデコーダーには、それぞれ40 KiBのタス�
 - [Responsesへの委譲](https://developers.openai.com/api/docs/guides/live-delegation)
 
 本モジュールは`POST /v1/live/sessions`を使用します。WebRTCでは`session.start`や音声のBase64イベントを送信しません。
+
+## 独自の認証・設定サービスを接続する
+
+`apiKey`、`broker`、`signaling`は一つだけ指定します。`signaling.createSession({sdp, canStart, starting})`は認証と設定取得を行い、作成要求直前に`canStart()`を確認して`starting()`を呼びます。返り値は作成APIのResponseです。取得した関数定義は、作成前に`conversation.setTools(tools)`で登録できます。`acceptSession(result)`は終了用資格情報を保存し、`hangup({sessionId})`は対象セッションを終了します。通常終了時にもhangupを呼び、アプリ側の予約を解放します。
+
+このアダプターにTenant、端末認証、スキルの取得を置きます。音声PCMやOpusをアダプターへ渡す必要はありません。作成の結果が不明な通信失敗を、新規の有料セッションとして自動再試行しないでください。
+
+## CoreS3の音声経路
+
+`esp32/m5stackchan_cores3`ではES8388をホスト側で48 kHzへ設定し、Wi-FiのIP取得と時刻設定を終えてから開始します。I2S、Opus、RTP、再生補充はネイティブタスクで処理します。会話制御を専用Workerへ置く場合、メインへ送るのは字幕や間引いたレベル通知だけです。
+
+CoreS3は初期版では半二重です。受信PCMに発話レベルの出力がある間はマイクをローカルで閉じ、受信した静音PCMが500 ms続くと解除します。アプリ側からAPIのmuteも併用できます。RTP未着・アンダーランは静音と判定しません。Tab5のAEC経路は維持します。
+
+`stats.underruns`は出力発話中の連続した不足を一回として数え、`silenceMs`と`maxSilenceMs`は不足による無音時間を表します。正常なセッション終了と、音質・実際に聞き取れたかの評価は別に行います。

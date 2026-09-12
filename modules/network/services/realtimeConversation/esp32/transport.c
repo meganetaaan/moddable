@@ -333,6 +333,9 @@ void xs_live_transport_stats(xsMachine *the)
 	STAT("micLevel", stats.micLevel);
 	STAT("cleanLevel", stats.cleanLevel);
 	STAT("referenceLevel", stats.referenceLevel);
+	STAT("outputIdleMs", stats.outputIdleMs);
+	STAT("silenceMs", stats.silenceMs);
+	STAT("maxSilenceMs", stats.maxSilenceMs);
 	STAT("freeHeap", heap_caps_get_free_size(MALLOC_CAP_8BIT));
 	STAT("freeInternalHeap", heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
 #undef STAT

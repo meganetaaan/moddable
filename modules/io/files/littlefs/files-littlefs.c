@@ -36,6 +36,11 @@
 #elif PICO_BUILD
 #endif
 
+// Allow ECMA-419 Files and legacy File to use distinct mounted partitions.
+#ifdef MODDEF_FILES_PARTITION
+#undef MODDEF_FILE_PARTITION
+#define MODDEF_FILE_PARTITION MODDEF_FILES_PARTITION
+#endif
 #ifndef MODDEF_FILE_PARTITION 
     #define MODDEF_FILE_PARTITION "storage"
 #endif
@@ -634,7 +639,7 @@ struct lfsError {
 	char		*msg;
 };
 
-const struct lfsError gLFSErrors[] ICACHE_RODATA_ATTR = {
+static const struct lfsError gLFSErrors[] ICACHE_RODATA_ATTR = {
 	{LFS_ERR_IO, "Error during device operation"},
 	{LFS_ERR_CORRUPT, "Corrupted"},
 	{LFS_ERR_NOENT, "No directory entry"},

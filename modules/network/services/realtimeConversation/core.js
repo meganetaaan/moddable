@@ -73,11 +73,21 @@ export default class Conversation {
 	#stats;
 	#tools;
 	#broker;
+	#toolTimeout;
 
 	constructor(options, platform) {
-		if (!options || (!options.broker && (typeof options.apiKey !== "string" || !options.apiKey.trim())))
+		if (!options || (!options.broker && !options.signaling && (typeof options.apiKey !== "string" || !options.apiKey.trim())))
 			throw new TypeError("apiKey or broker is required");
-		if (options.broker && options.apiKey !== undefined) throw new TypeError("Choose apiKey or broker");
+		if ([options.broker, options.signaling, options.apiKey].filter(v => v !== undefined).length !== 1) throw new TypeError("Choose apiKey, broker, or signaling");
+		if (options.signaling) {
+			const adapter = options.signaling;
+			if (typeof adapter.createSession !== "function" || typeof adapter.hangup !== "function") throw new TypeError("Invalid signaling adapter");
+			this.#broker = {
+				create: (sdp, canStart, starting) => adapter.createSession({sdp, canStart, starting}),
+				accept: result => adapter.acceptSession?.(result),
+				hangup: sessionId => adapter.hangup({sessionId})
+			};
+		}
 		if (options.broker) this.#broker = new Broker(options.broker, platform);
 		for (const name of ["onStateChanged", "onTranscript", "onEvent", "onError", "onToolResult"])
 			if (options[name] !== undefined && typeof options[name] !== "function")
@@ -97,6 +107,7 @@ export default class Conversation {
 		for (const name of ["model", "instructions", "voice"])
 			if (typeof this.#options[name] !== "string") throw new TypeError(`invalid ${name}`);
 		this.#platform = platform;
+		this.#toolTimeout = options.toolTimeout;
 		if (options.tools !== undefined && !Array.isArray(options.tools)) throw new TypeError("Invalid tools");
 		if (options.tools?.length) {
 			if (this.#options.delegation.type !== "responses") throw new TypeError("Tools require Responses delegation");
@@ -112,6 +123,16 @@ export default class Conversation {
 			}
 			backend.tools = definitions;
 		}
+	}
+
+	// Broker configuration may arrive while the local SDP is being prepared.
+	setTools(tools) {
+		if (!this.#broker || this.#signaled || !["idle", "connecting"].includes(this.#state))
+			throw new Error("Configure broker tools before session creation");
+		const runner = new ToolRunner(tools, {platform: this.#platform, timeout: this.#toolTimeout,
+			send: event => this.#send(event), onError: error => this.#fail(error),
+			onResult: result => this.#notify("onToolResult", result)});
+		this.#tools?.close(); this.#tools = runner;
 	}
 
 	get state() { return this.#state; }

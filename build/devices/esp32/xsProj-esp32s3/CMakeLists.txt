@@ -22,5 +22,15 @@ if (WIN32)
 	set(CMAKE_OBJECT_PATH_MAX 260)
 endif ()
 
+# Component discovery also runs before SUBPLATFORM is passed by mcconfig.
+if (DEFINED ENV{ESP_WEBRTC_SOLUTION})
+	list(APPEND EXTRA_COMPONENT_DIRS
+		"$ENV{ESP_WEBRTC_SOLUTION}/components/esp_webrtc"
+		"$ENV{ESP_WEBRTC_SOLUTION}/components/esp_peer"
+		"$ENV{ESP_WEBRTC_SOLUTION}/components/media_lib_utils"
+		"$ENV{ESP_WEBRTC_SOLUTION}/components/webrtc_utils"
+		"$ENV{ESP_WEBRTC_SOLUTION}/components/av_render")
+endif ()
+
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(xs_esp32)

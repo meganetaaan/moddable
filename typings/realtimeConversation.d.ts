@@ -43,6 +43,11 @@ declare module "realtimeConversation" {
 	export interface ConversationOptions {
 		apiKey?: string;
 		broker?: {url: string; deviceToken: string; certificate?: ArrayBuffer};
+		signaling?: {
+			createSession(input: {sdp: string; canStart(): boolean; starting(): void}): Promise<{status: number; text(): Promise<string>} | undefined>;
+			acceptSession?(result: {session: {id: string}; [key: string]: unknown}): void;
+			hangup(input: {sessionId: string}): Promise<void>;
+		};
 		model?: string;
 		voice?: string;
 		instructions?: string;
@@ -63,6 +68,9 @@ declare module "realtimeConversation" {
 		micLevel: number;
 		cleanLevel: number;
 		referenceLevel: number;
+		outputIdleMs: number;
+		silenceMs: number;
+		maxSilenceMs: number;
 		freeHeap: number;
 		freeInternalHeap: number;
 	}
@@ -78,5 +86,6 @@ declare module "realtimeConversation" {
 		close(): Promise<CloseResult>;
 		setMuted(value: boolean): Promise<void>;
 		setVolume(value: number): void;
+		setTools(tools: ConversationTool[]): void;
 	}
 }
