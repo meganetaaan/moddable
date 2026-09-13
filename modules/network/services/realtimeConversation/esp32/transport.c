@@ -50,6 +50,7 @@ typedef struct {
 	atomic_uint queuedBytes, volume, lastPollTick;
 	bool started, errorRead, captureOnly;
 	atomic_uint encodedFrames, encodedPts;
+	atomic_uint peerEvents, lastPeerEvent, dataMessages;
 	const char *failureStage;
 	esp_webrtc_handle_t rtc;
 	esp_peer_signaling_cfg_t signal;
@@ -106,12 +107,16 @@ static int signalStop(esp_peer_signaling_handle_t handle) { return 0; }
 static const esp_peer_signaling_impl_t signaling = {.start = signalStart, .send_msg = signalSend, .stop = signalStop};
 static int onData(esp_webrtc_custom_data_via_t via, uint8_t *data, int size, void *ctx)
 {
+	if (via == ESP_WEBRTC_CUSTOM_DATA_VIA_DATA_CHANNEL)
+		atomic_fetch_add(&((LiveTransport *)ctx)->dataMessages, 1);
 	return via == ESP_WEBRTC_CUSTOM_DATA_VIA_DATA_CHANNEL ? enqueue(ctx, kMessage, data, size) : 0;
 }
 static int onEvent(esp_webrtc_event_t *event, void *ctx)
 {
 	LiveTransport *t = ctx;
 	if (atomic_load(&t->stopping)) return 0;
+	atomic_store(&t->lastPeerEvent, event->type);
+	if (event->type < 32) atomic_fetch_or(&t->peerEvents, 1U << event->type);
 	if (event->type == ESP_WEBRTC_EVENT_DATA_CHANNEL_CONNECTED) {
 		esp_peer_data_channel_cfg_t cfg = {.type = ESP_PEER_DATA_CHANNEL_RELIABLE, .ordered = true, .label = "oai-events"};
 		esp_peer_handle_t peer = NULL;
@@ -389,6 +394,9 @@ void xs_live_transport_stats(xsMachine *the)
 	STAT("sourceFrameBytes", stats.sourceFrameBytes);
 	STAT("encodedFrames", atomic_load(&t->encodedFrames));
 	STAT("encodedPts", atomic_load(&t->encodedPts));
+	STAT("peerEvents", atomic_load(&t->peerEvents));
+	STAT("lastPeerEvent", atomic_load(&t->lastPeerEvent));
+	STAT("dataMessages", atomic_load(&t->dataMessages));
 	STAT("renderedSamples", stats.rendered);
 	STAT("underruns", stats.underruns);
 	STAT("overruns", stats.overruns);
