@@ -59,6 +59,7 @@ struct LiveAudio {
 	atomic_uint requestedRate, requestedChannels, sourceFrameBytes;
 	atomic_uint micLevel, cleanLevel, referenceLevel;
 	atomic_uint outputIdleMs, silenceMs, maxSilenceMs;
+	atomic_uint audibleMs;
 	atomic_int error;
 	bool taskStarted, txEnabled, rxEnabled;
 	uint32_t pts;
@@ -168,7 +169,7 @@ static void audioTask(void *ctx)
 		for (size_t i = 0; i < got / 2; i++) if (abs(tx[i]) > 32) { audible = true; break; }
 		/* Missing packets are not evidence of silence. Only received PCM
 		 * can reopen the S3 microphone after playback. */
-		if (audible) idle = 0;
+		if (audible) { idle = 0; atomic_fetch_add(&a->audibleMs, 10); }
 		else if (got == BLOCK * 2 && idle < 10000) idle += 10;
 		atomic_store(&a->outputIdleMs, idle);
 		unsigned volume = atomic_load(&a->volume);
@@ -348,4 +349,5 @@ void liveAudioStats(LiveAudio *a, LiveAudioStats *s)
 	if (!a) return;
 	*s = (LiveAudioStats){atomic_load(&a->captured), atomic_load(&a->rendered), atomic_load(&a->underruns),
 		atomic_load(&a->overruns), atomic_load(&a->micLevel), atomic_load(&a->cleanLevel), atomic_load(&a->referenceLevel), atomic_load(&a->outputIdleMs), atomic_load(&a->silenceMs), atomic_load(&a->maxSilenceMs), atomic_load(&a->sourceSamples), atomic_load(&a->requestedRate), atomic_load(&a->requestedChannels), atomic_load(&a->sourceFrameBytes)};
+	s->audibleMs = atomic_load(&a->audibleMs);
 }

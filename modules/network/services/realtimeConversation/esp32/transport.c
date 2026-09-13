@@ -160,6 +160,10 @@ static void captureScheduler(const char *name, esp_capture_thread_schedule_cfg_t
 		cfg->stack_size = 40 * 1024;
 #ifdef CONFIG_IDF_TARGET_ESP32S3
 		cfg->priority = 19;
+		/* Keep Opus's hot stack in SRAM instead of competing with the
+		 * decoder/UI for the S3's external-memory cache. */
+		cfg->stack_size = 28 * 1024;
+		cfg->stack_in_ext = false;
 #else
 		cfg->priority = 10;
 #endif
@@ -398,6 +402,7 @@ void xs_live_transport_stats(xsMachine *the)
 	STAT("lastPeerEvent", atomic_load(&t->lastPeerEvent));
 	STAT("dataMessages", atomic_load(&t->dataMessages));
 	STAT("renderedSamples", stats.rendered);
+	STAT("audibleMs", stats.audibleMs);
 	STAT("underruns", stats.underruns);
 	STAT("overruns", stats.overruns);
 	STAT("micLevel", stats.micLevel);
@@ -409,4 +414,27 @@ void xs_live_transport_stats(xsMachine *the)
 	STAT("freeHeap", heap_caps_get_free_size(MALLOC_CAP_8BIT));
 	STAT("freeInternalHeap", heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
 #undef STAT
+}
+
+void xs_live_transport_diagnostics(xsMachine *the)
+{
+#if CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS
+	/* Optional, infrequent probe. Never sample tasks in the audio callbacks. */
+	TaskStatus_t tasks[48];
+	configRUN_TIME_COUNTER_TYPE total;
+	UBaseType_t count = uxTaskGetSystemState(tasks, 48, &total);
+	xsmcVars(3);
+	xsmcSetNewObject(xsResult);
+	xsmcSetNumber(xsVar(0), total); xsmcSet(xsResult, xsID("totalUs"), xsVar(0));
+	xsmcSetNewArray(xsVar(1), 0);
+	for (UBaseType_t i = 0; i < count; i++) {
+		xsmcSetNewObject(xsVar(2));
+		xsmcSetString(xsVar(0), (xsStringValue)tasks[i].pcTaskName); xsmcSet(xsVar(2), xsID("name"), xsVar(0));
+		xsmcSetNumber(xsVar(0), tasks[i].ulRunTimeCounter); xsmcSet(xsVar(2), xsID("runUs"), xsVar(0));
+		xsmcSetInteger(xsVar(0), tasks[i].uxCurrentPriority); xsmcSet(xsVar(2), xsID("priority"), xsVar(0));
+		xsmcSetInteger(xsVar(0), tasks[i].usStackHighWaterMark); xsmcSet(xsVar(2), xsID("stackFree"), xsVar(0));
+		xsmcSetIndex(xsVar(1), i, xsVar(2));
+	}
+	xsmcSet(xsResult, xsID("tasks"), xsVar(1));
+#endif
 }

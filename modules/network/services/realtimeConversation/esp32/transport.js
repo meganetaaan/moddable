@@ -55,6 +55,7 @@ export default class Transport extends Native("xs_live_transport_destructor") {
 	setMuted(value) { native("xs_live_transport_mute").call(this, value); }
 	setVolume(value) { native("xs_live_transport_volume").call(this, value); }
 	get stats() { return this.#released ? this.#finalStats : native("xs_live_transport_stats").call(this); }
+	get diagnostics() { return native("xs_live_transport_diagnostics").call(this); }
 	close() {
 		if (this.#closing) return this.#closing;
 		if (this.#released) return Promise.resolve();
