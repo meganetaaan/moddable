@@ -126,6 +126,7 @@ class Diagnostics {
 	}
 
 	cleanup() {
+		this.sdRunToken = undefined;
 		this.onLeave?.();
 		this.onLeave = undefined;
 		for (const timer of this.timers)
@@ -139,6 +140,8 @@ class Diagnostics {
 			}
 		}
 		this.resources.length = 0;
+		this.audioOutput = undefined;
+		this.portBRunning = false;
 		this.touches.clear();
 		if (this.PREVIEW) {
 			this.PREVIEW.buffer = undefined;
@@ -148,6 +151,8 @@ class Diagnostics {
 
 	shutdown() {
 		this.cleanup();
+		this.imu?.close();
+		this.imu = undefined;
 		this.power?.close();
 		this.power = undefined;
 	}
@@ -493,6 +498,7 @@ class Diagnostics {
 		output.volume = 0.2;
 		output.start();
 		this.after(() => {
+			this.resources.splice(this.resources.indexOf(output), 1);
 			output.close();
 			this.audioOutput = undefined;
 		}, 1000);
@@ -639,6 +645,7 @@ class Diagnostics {
 	}
 
 	async sdRun() {
+		const token = this.sdRunToken = Symbol();
 		this.set(RUNNING, "Writing and verifying a unique 4 KiB temporary file…");
 		const path = `tab5-diagnostics-${Date.now()}.bin`;
 		let files, deleted = false;
@@ -646,7 +653,10 @@ class Diagnostics {
 		for (let index = 0; index < expected.length; index++)
 			expected[index] = (index * 73 + 19) & 0xFF;
 		try {
-			files = (await import("embedded:storage/files")).default;
+			const storage = await import("embedded:storage/files");
+			if (token !== this.sdRunToken)
+				return;
+			files = storage.default;
 			{
 				using file = files.openFile({path, mode:"w+"});
 				file.write(expected, 0);
@@ -660,10 +670,12 @@ class Diagnostics {
 			if (!files.delete(path))
 				throw new Error("temporary file delete failed");
 			deleted = true;
-			this.set(PASS, "4 KiB write/read/compare passed.", `Deleted ${path}`);
+			if (token === this.sdRunToken)
+				this.set(PASS, "4 KiB write/read/compare passed.", `Deleted ${path}`);
 		}
 		catch (error) {
-			this.fail(error);
+			if (token === this.sdRunToken)
+				this.fail(error);
 		}
 		finally {
 			try { if (!deleted) files?.delete(path); }
@@ -770,6 +782,8 @@ class Diagnostics {
 	portBRun() {
 		if (this.portBRunning)
 			return;
+		// Release the previous loopback before opening the same pins again.
+		this.cleanup();
 		this.portBRunning = true;
 		const output = this.own(new device.io.Digital({pin:device.pin.portBOut, mode:device.io.Digital.Output, initialValue:0}));
 		const input = this.own(new device.Analog.default.io(device.Analog.default));
@@ -782,6 +796,7 @@ class Diagnostics {
 				const maximum = (2 ** input.resolution) - 1;
 				this.set((low < (maximum * 0.25)) && (high > (maximum * 0.75)) ? PASS : FAIL,
 					`ADC low ${low}; high ${high}; ${input.resolution}-bit maximum ${maximum}`);
+				this.portBRunning = false;
 			}, 50);
 		}, 50);
 	}
