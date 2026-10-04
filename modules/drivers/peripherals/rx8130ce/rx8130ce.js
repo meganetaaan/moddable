@@ -26,6 +26,7 @@
 const Register = Object.freeze({
 	TIME: 0x10,
 	ALARM: 0x17,
+	TIMER: 0x1A,
 	EXTENSION: 0x1C,
 	FLAG: 0x1D,
 	CONTROL: 0x1E,
@@ -34,15 +35,21 @@ const Register = Object.freeze({
 
 const Bit = Object.freeze({
 	WADA: 0x08,
+	TSEL: 0x07,
+	TSEL_1HZ: 0x02,
+	TE: 0x10,
 	AF: 0x08,
+	TF: 0x10,
 	VLF: 0x02,
 	STOP: 0x40,
 	AIE: 0x08,
+	TIE: 0x10,
 	CHGEN: 0x20,
 	INIEN: 0x10
 });
 
 const AlarmRange = 31 * 24 * 60 * 60 * 1000;
+const TimerRange = 0xFFFF * 1000;
 
 function decToBcd(value) {
 	return (Math.idiv(value, 10) << 4) | Math.imod(value, 10);
@@ -114,8 +121,18 @@ class RX8130CE {
 		this.#io = undefined;
 	}
 	configure(options) {
-		if (!("alarm" in options))
+		const hasTimer = "timer" in options;
+		let timer;
+		if (hasTimer) {
+			timer = Number(options.timer);
+			if (!Number.isFinite(timer) || (timer < 0) || (timer > TimerRange) || (timer && ((timer < 1000) || (timer % 1000))))
+				throw new RangeError("invalid timer");
+		}
+		if (!("alarm" in options)) {
+			if (hasTimer)
+				this.#configureTimer(timer);
 			return;
+		}
 
 		const io = this.#io;
 		const alarm = Number(options.alarm);
@@ -123,6 +140,8 @@ class RX8130CE {
 			throw new RangeError("invalid alarm");
 		if (0 === alarm) {
 			io.writeUint8(Register.CONTROL, io.readUint8(Register.CONTROL) & ~Bit.AIE);
+			if (hasTimer)
+				this.#configureTimer(timer);
 			return;
 		}
 
@@ -141,21 +160,48 @@ class RX8130CE {
 			decToBcd(future.getUTCDate())
 		));
 		io.writeUint8(Register.CONTROL, control | Bit.AIE);
+		if (hasTimer)
+			this.#configureTimer(timer);
+	}
+	#configureTimer(timer) {
+		const io = this.#io;
+		const control = io.readUint8(Register.CONTROL) & ~Bit.TIE;
+		const extension = io.readUint8(Register.EXTENSION) & ~Bit.TE;
+		io.writeUint8(Register.CONTROL, control);
+		io.writeUint8(Register.EXTENSION, extension);
+		io.writeUint8(Register.FLAG, io.readUint8(Register.FLAG) & ~Bit.TF);
+		if (!timer)
+			return;
+
+		const seconds = timer / 1000;
+		const buffer = this.#buffer;
+		buffer[0] = seconds;
+		buffer[1] = seconds >> 8;
+		io.writeBuffer(Register.TIMER, buffer.subarray(0, 2));
+		io.writeUint8(Register.EXTENSION, (extension & ~Bit.TSEL) | Bit.TSEL_1HZ | Bit.TE);
+		io.writeUint8(Register.CONTROL, control | Bit.TIE);
 	}
 	get configuration() {
 		const io = this.#io;
-		if (!(io.readUint8(Register.CONTROL) & Bit.AIE))
-			return {alarm: 0};
+		const control = io.readUint8(Register.CONTROL);
+		let timer = 0;
+		if ((control & Bit.TIE) && (io.readUint8(Register.EXTENSION) & Bit.TE)) {
+			const buffer = this.#buffer;
+			io.readBuffer(Register.TIMER, buffer.subarray(0, 2));
+			timer = (buffer[0] | (buffer[1] << 8)) * 1000;
+		}
+		if (!(control & Bit.AIE))
+			return {alarm: 0, timer};
 
 		const now = this.time;
 		if (undefined === now)
-			return {alarm: undefined};
+			return {alarm: undefined, timer};
 		const alarm = this.#buffer;
 		io.readBuffer(Register.ALARM, alarm.subarray(0, 3));
 		return {alarm: nextAlarm(now,
 			bcdToDec(alarm[2] & 0x3F),
 			bcdToDec(alarm[1] & 0x3F),
-			bcdToDec(alarm[0] & 0x7F))};
+			bcdToDec(alarm[0] & 0x7F)), timer};
 	}
 	get time() {
 		const io = this.#io;

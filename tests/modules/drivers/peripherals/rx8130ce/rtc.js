@@ -1,5 +1,5 @@
 /*---
-description: RX8130CE reads and writes time, alarm, and backup-power settings
+description: RX8130CE reads and writes time, alarm, timer, and backup-power settings
 flags: [module]
 ---*/
 
@@ -72,6 +72,33 @@ assert.sameValue(MockSMBus.registers[0x1E], control);
 assert.throws(RangeError, () => rtc.configure({alarm: initial + (32 * 24 * 60 * 60 * 1000)}));
 rtc.configure({alarm: 0});
 assert.sameValue(rtc.configuration.alarm, 0);
+
+MockSMBus.registers[0x1C] = 0xC9;
+MockSMBus.registers[0x1D] = 0xB0;
+MockSMBus.registers[0x1E] = 0x89;
+rtc.configure({timer: 30_000});
+assert.compareArray(MockSMBus.registers.slice(0x1A, 0x1C), [30, 0]);
+assert.sameValue(MockSMBus.registers[0x1C], 0xDA);
+assert.sameValue(MockSMBus.registers[0x1D], 0xA0);
+assert.sameValue(MockSMBus.registers[0x1E], 0x99);
+assert.sameValue(rtc.configuration.timer, 30_000);
+
+const timerRegisters = MockSMBus.registers.slice(0x17, 0x20);
+for (const timer of [NaN, -1, 999, 1500, 65_536_000]) {
+	assert.throws(RangeError, () => rtc.configure({alarm, timer}));
+	assert.compareArray(MockSMBus.registers.slice(0x17, 0x20), timerRegisters);
+}
+assert.throws(RangeError, () => rtc.configure({alarm: NaN, timer: 1000}));
+assert.compareArray(MockSMBus.registers.slice(0x17, 0x20), timerRegisters);
+
+rtc.configure({timer: 65_535_000});
+assert.compareArray(MockSMBus.registers.slice(0x1A, 0x1C), [0xFF, 0xFF]);
+assert.sameValue(rtc.configuration.timer, 65_535_000);
+rtc.configure({timer: 0});
+assert.sameValue(MockSMBus.registers[0x1C] & 0x10, 0);
+assert.sameValue(MockSMBus.registers[0x1D] & 0x10, 0);
+assert.sameValue(MockSMBus.registers[0x1E] & 0x10, 0);
+assert.sameValue(rtc.configuration.timer, 0);
 
 rtc.close();
 rtc.close();
