@@ -51,7 +51,7 @@
 		#define MODDEF_AUDIOOUT_I2S_NUM (1)
 	#endif
 	#ifndef MODDEF_AUDIOOUT_I2S_MCK_PIN
-		#define MODDEF_AUDIOOUT_I2S_MCK_PIN I2S_PIN_NO_CHANGE
+		#define MODDEF_AUDIOOUT_I2S_MCK_PIN I2S_GPIO_UNUSED
 	#endif
 	#ifndef MODDEF_AUDIOOUT_I2S_BCK_PIN
 		#define MODDEF_AUDIOOUT_I2S_BCK_PIN (26)
@@ -1508,7 +1508,7 @@ void audioOutLoop(void *pvParameter)
 
 	i2s_std_config_t i2s_config = {
 		.gpio_cfg = {
-			.mclk = I2S_GPIO_UNUSED,
+			.mclk = MODDEF_AUDIOOUT_I2S_MCK_PIN,
 			.bclk = MODDEF_AUDIOOUT_I2S_BCK_PIN,
 			.ws = MODDEF_AUDIOOUT_I2S_LR_PIN,
 			.dout = MODDEF_AUDIOOUT_I2S_DATAOUT_PIN,
@@ -1556,7 +1556,11 @@ void audioOutLoop(void *pvParameter)
 	i2s_config.slot_cfg.slot_mask = MODDEF_AUDIOOUT_I2S_SLOT;;
 #endif
 	i2s_config.slot_cfg.ws_pol = false;
+	#if MODDEF_AUDIOOUT_I2S_FORMAT_I2S
+	i2s_config.slot_cfg.bit_shift = true;
+	#else
 	i2s_config.slot_cfg.bit_shift = false;
+	#endif
 
 	i2s_channel_init_std_mode(out->tx_handle, &i2s_config);
 	i2s_channel_reconfig_std_slot(out->tx_handle, &i2s_config.slot_cfg);

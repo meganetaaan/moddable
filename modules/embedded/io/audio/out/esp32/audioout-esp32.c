@@ -26,6 +26,9 @@
 
 #include "driver/i2s_pdm.h"
 #include "driver/i2s_std.h"
+#if MODDEF_AUDIO_DUPLEX
+#include "../../../../common/audioDuplex.h"
+#endif
 #include "freertos/task.h"
 
 #ifdef MODDEF_AUDIOOUT_AMPLIFIER_POWER
@@ -117,6 +120,11 @@ static const xsHostHooks ICACHE_RODATA_ATTR xsAudioOutHooks = {
 
 static void audioOutRelease(AudioOut audioOut)
 {
+#if MODDEF_AUDIO_DUPLEX
+    /* Stop DMA callbacks before the worker can clear its task handle. */
+    audioOut->started = false;
+    if (audioOut->tx_handle) modAudioDuplexDisable(false);
+#endif
 	if (audioOut->task) {
 		xTaskNotify(audioOut->task, 2, eSetValueWithOverwrite);	// end task
 		while (audioOut->task)
@@ -124,8 +132,12 @@ static void audioOutRelease(AudioOut audioOut)
 	}
 
 	if (audioOut->tx_handle) {
-		i2s_channel_disable(audioOut->tx_handle);
-		i2s_del_channel(audioOut->tx_handle);
+		#if MODDEF_AUDIO_DUPLEX
+        modAudioDuplexRelease(false);
+#else
+        i2s_channel_disable(audioOut->tx_handle);
+        i2s_del_channel(audioOut->tx_handle);
+#endif
 		audioOut->tx_handle = NULL;
 	}
 #ifdef MODDEF_AUDIOOUT_I2S_PDM_PIN
@@ -204,7 +216,11 @@ void xs_audioout_constructor_(xsMachine *the)
 	if (kIOFormatBuffer != builtinInitializeFormat(the, kIOFormatBuffer))
 		xsRangeError("invalid format");
 
-	audioOut = c_calloc(1, sizeof(AudioOutRecord));
+	#if MODDEF_AUDIO_DUPLEX
+    if (bitsPerSample != 16 || numChannels != 1 || sampleRate != MODDEF_AUDIOIN_SAMPLERATE)
+        xsRangeError("duplex requires target sample rate, mono, 16 bits");
+#endif
+    audioOut = c_calloc(1, sizeof(AudioOutRecord));
 	if (!audioOut)
 		xsRangeError("no memory");
 
@@ -320,7 +336,16 @@ void xs_audioout_constructor_(xsMachine *the)
 	#error unknown audio configuration
 #endif
 
-	err = i2s_new_channel(&tx_chan_cfg, &audioOut->tx_handle, C_NULL);
+	#if MODDEF_AUDIO_DUPLEX
+    err = modAudioDuplexAcquire(false, audioOut->sampleRate, &audioOut->tx_handle);
+    if (err != ESP_OK) {
+        xsForget(audioOut->obj);
+        xsmcSetHostData(xsThis, C_NULL);
+        c_free(audioOut);
+        xsUnknownError("duplex output allocation failed %d", (int)err);
+    }
+#else
+    err = i2s_new_channel(&tx_chan_cfg, &audioOut->tx_handle, C_NULL);
 	if (ESP_OK != err)
 		xsUnknownError("new channel failed %d", (int)err);
 #if MODDEF_AUDIOOUT_I2S_PDM_PIN
@@ -338,6 +363,7 @@ void xs_audioout_constructor_(xsMachine *the)
 #else
 #endif
 
+#endif
 	i2s_event_callbacks_t cbs = {
 		.on_recv = C_NULL,
 		.on_recv_q_ovf = C_NULL,
@@ -399,7 +425,11 @@ void xs_audioout_start_(xsMachine *the)
 	size_t ignore = 0;
 	i2s_channel_preload_data(audioOut->tx_handle, &ignore, 0, &ignore);
 
-	err = i2s_channel_enable(audioOut->tx_handle);
+	#if MODDEF_AUDIO_DUPLEX
+    err = modAudioDuplexEnable(false);
+#else
+    err = i2s_channel_enable(audioOut->tx_handle);
+#endif
 	if (ESP_OK != err)
 		xsUnknownError("can't enable %d", (int)err);
 
@@ -420,8 +450,12 @@ void xs_audioout_stop_(xsMachine *the)
 	if (!audioOut->started)
 		return;
 
-	i2s_channel_disable(audioOut->tx_handle);
-	audioOut->started = false;
+#if MODDEF_AUDIO_DUPLEX
+    modAudioDuplexDisable(false);
+#else
+    i2s_channel_disable(audioOut->tx_handle);
+#endif
+    audioOut->started = false;
 	audioOut->bytesWritable = audioOut->total_dma_buf_size;
 	audioOut->stagingOffset = 0;
 }
@@ -556,6 +590,9 @@ static bool playedBuffer(i2s_chan_handle_t handle, i2s_event_data_t *event, void
 {
 	AudioOut audioOut = user_ctx;
 	BaseType_t higherPriorityTaskWoken = pdFALSE;
+#if MODDEF_AUDIO_DUPLEX
+    if (!audioOut->started) return false;
+#endif
 
 //@@ entire operation on audioOut->bytesWritable should be atomic
 	uint32_t bytesWritable = __atomic_add_fetch(&audioOut->bytesWritable, event->size, __ATOMIC_SEQ_CST);
@@ -600,7 +637,10 @@ static void audiooutDeliver(void *theIn, void *refcon, uint8_t *message, uint16_
 		goto done;
 
 	audioOut->callbackPending = false;
-	xsBeginHost(the);
+#if MODDEF_AUDIO_DUPLEX
+    if (!audioOut->started) goto done;
+#endif
+    xsBeginHost(the);
 
 	if (audioOut->bytesWritable) {
 		AudioOutElement element;

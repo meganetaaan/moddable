@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'">
+<title>StopWatch BLE</title><link rel="stylesheet" href="style.css">
+<main><h1>StopWatch BLE</h1><p>画面の色を変えて、A・B ボタンの通知を確認します。</p>
+<p id="support">Android Chrome の HTTPS または localhost で開いてください。</p>
+<div class="actions"><button id="connect">接続する</button><button id="disconnect" disabled>切断する</button></div>
+<p id="status" role="status">未接続</p><p id="error" role="alert"></p>
+<fieldset id="controls" disabled><legend>画面の色</legend><div class="actions">
+<button data-rgb="255,0,0">赤</button><button data-rgb="0,180,0">緑</button><button data-rgb="0,80,255">青</button><button data-rgb="255,180,0">黄</button><button data-rgb="0,0,0">消灯色</button>
+</div><button id="read">状態を読む</button></fieldset>
+<section aria-label="受信した状態"><div id="swatch"></div><p id="rgb">RGB: —</p>
+<p>A ボタン: <strong id="a">—</strong>　B ボタン: <strong id="b">—</strong></p><p id="sequence">更新番号: —</p></section>
+<p class="note">数値は機器側の 8 bit カウンターです。255 の次は 0 に戻ります。切断中の表示は最後に受信した値です。通知は自動再接続しません。</p>
+</main><script type="module" src="app.mjs"></script></html>

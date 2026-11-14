@@ -125,8 +125,12 @@ void app_main() {
 
 	esp_err_t err = nvs_flash_init();
 	if ((ESP_ERR_NOT_FOUND != err) && err) {
+#if MODDEF_NVS_PRESERVE
+		ESP_ERROR_CHECK(err);
+#else
 		ESP_ERROR_CHECK(nvs_flash_erase());
 		ESP_ERROR_CHECK(nvs_flash_init());
+#endif
 	}
 #if CONFIG_BT_ENABLED && !defined(CONFIG_BT_CONTROLLER_DISABLED)
 	ESP_ERROR_CHECK(esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT));
