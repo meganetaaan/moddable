@@ -279,6 +279,8 @@ export default class BMI270 {
 		this.#writeUint8_sync(Register.PWR_CTRL_ADDR, this.#enabled);
 	}
 
+	close() { this.#io?.close(); this.#io = undefined; }
+
 	#uploadConfig() {
 		const io = this.#io;
 		this.#writeUint8_sync(Register.INIT_CTRL_ADDR, 0x00);

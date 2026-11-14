@@ -1,0 +1,20 @@
+{
+  "include": [
+    "$(MODDABLE)/examples/manifest_base.json",
+    "$(MODDABLE)/examples/manifest_commodetto.json",
+    "$(MODDABLE)/modules/embedded/io/bluetoothle/peripheral"
+  ],
+  "modules": {
+    "*": [
+      "./main",
+      "./state"
+    ]
+  },
+  "creation": {
+    "stack": 2048
+  },
+  "esp32Config": {
+    "CONFIG_BT_NIMBLE_MAX_CONNECTIONS": "1",
+    "CONFIG_BT_NIMBLE_NVS_PERSIST": "n"
+  }
+}

@@ -26,6 +26,9 @@
 #include "freertos/task.h"
 
 #include "driver/i2s_std.h"
+#if MODDEF_AUDIO_DUPLEX
+#include "../../../../common/audioDuplex.h"
+#endif
 #include "driver/i2s_pdm.h"
 #include "esp_adc/adc_continuous.h"
 #include "soc/soc_caps.h"
@@ -125,6 +128,10 @@ struct AudioInputRecord {
 	SemaphoreHandle_t	mutex;
 	TaskHandle_t		task;
 	uint8_t		state;
+#if MODDEF_AUDIO_DUPLEX
+    uint32_t stopRequest;
+    uint32_t stopAcknowledged;
+#endif
 
 	uint8_t		*recPos;
 	uint8_t		*playPos;
@@ -229,7 +236,11 @@ void xs_audioin_constructor(xsMachine *the)
 		xsUnknownError("pdm already in use by audioout");
 #endif
 
-	bytesPerFrame = (bitsPerSample * numChannels) >> 3;
+	#if MODDEF_AUDIO_DUPLEX
+    if (bitsPerSample != 16 || numChannels != 1 || sampleRate != MODDEF_AUDIOIN_SAMPLERATE)
+        xsRangeError("duplex requires target sample rate, mono, 16 bits");
+#endif
+    bytesPerFrame = (bitsPerSample * numChannels) >> 3;
 //	bufferSize = (bytesPerFrame * sampleRate) >> 5; //??
 	bufferSize = AUDIO_IN_BUFFERSIZE;
 
@@ -260,17 +271,58 @@ void xs_audioin_constructor(xsMachine *the)
 #endif
 
 	input->mutex = xSemaphoreCreateMutex();
-	xTaskCreate(audioInLoop, "audioInput", 4096 + 1024, input, 10, &input->task);
+#if MODDEF_AUDIO_DUPLEX
+    if (!input->mutex) {
+        xsForget(input->object);
+        xsmcSetHostData(xsThis, C_NULL);
+        c_free(input);
+        xsUnknownError("cannot create input mutex");
+    }
+    esp_err_t duplexError = modAudioDuplexAcquire(true, sampleRate, &input->handle);
+    if (duplexError != ESP_OK) {
+        vSemaphoreDelete(input->mutex);
+        xsForget(input->object);
+        xsmcSetHostData(xsThis, C_NULL);
+        c_free(input);
+        xsUnknownError("duplex input allocation failed %d", (int)duplexError);
+    }
+#endif
+	#if MODDEF_AUDIO_DUPLEX
+    if (xTaskCreate(audioInLoop, "audioInput", 4096 + 1024, input, 10, &input->task) != pdPASS) {
+        modAudioDuplexRelease(true);
+        vSemaphoreDelete(input->mutex);
+        xsForget(input->object);
+        xsmcSetHostData(xsThis, C_NULL);
+        c_free(input);
+        xsUnknownError("cannot create input task");
+    }
+#else
+    xTaskCreate(audioInLoop, "audioInput", 4096 + 1024, input, 10, &input->task);
+#endif
 }
 
 void xs_audioin_destructor(void *it)
 {
 	if (it) {
 		AudioInput input = it;
-		input->state = kStateClosing;
-		if (input->task) {
-			xTaskNotify(input->task, kStateClosing, eSetValueWithOverwrite);
-			while (kStateClosing == input->state)
+		#if MODDEF_AUDIO_DUPLEX
+        if (input->mutex) {
+            xSemaphoreTake(input->mutex, portMAX_DELAY);
+            input->state = kStateClosing;
+            if (input->task) xTaskNotify(input->task, kStateClosing, eSetValueWithOverwrite);
+            xSemaphoreGive(input->mutex);
+#else
+        input->state = kStateClosing;
+        if (input->task) {
+            xTaskNotify(input->task, kStateClosing, eSetValueWithOverwrite);
+#endif
+			while (kStateClosing ==
+#if MODDEF_AUDIO_DUPLEX
+                __atomic_load_n(&input->state, __ATOMIC_ACQUIRE)
+#else
+                input->state
+#endif
+            )
 				modDelayMilliseconds(1);
 
 			vSemaphoreDelete(input->mutex);
@@ -474,14 +526,23 @@ void deliverCallbacks(void *the, void *refcon, uint8_t *message, uint16_t messag
 	if ((input->numChannels == 1) && !(AUDIOIN_MONO16_PACKED && (16 == input->bitsPerSample)))		// only lower 16 bits
 		bytes_read /= 2;
 
-	if (0 != bytes_read) {
+	if (0 != bytes_read
+#if MODDEF_AUDIO_DUPLEX
+        && input->state == kStateRecording
+#endif
+    ) {
 		xsResult = xsAccess(input->object);
 		xsCallFunction1(xsReference(input->onReadable), xsResult, xsInteger(bytes_read));
 	}
 
 	input->pendingCallback = 0;
 
-	xsEndHost(input->the);
+    xsEndHost(input->the);
+#if MODDEF_AUDIO_DUPLEX
+    /* close() from onReadable defers freeing this record until delivery ends. */
+    if (kStateTerminated == __atomic_load_n(&input->state, __ATOMIC_ACQUIRE))
+        c_free(input);
+#endif
 }
 
 void audioInLoop(void *pvParameter)
@@ -490,7 +551,9 @@ void audioInLoop(void *pvParameter)
 	uint8_t stopped = true, enabled = false;
 
 // ### HW CONFIGURATION
-#if MODDEF_AUDIOIN_I2S_ADC
+#if MODDEF_AUDIO_DUPLEX
+    esp_err_t err;
+#elif MODDEF_AUDIOIN_I2S_ADC
 #error untested
 	adc_continuous_handle_t adcHandle;
 	adc_continuous_handle_cfg_t adc_config = {
@@ -616,7 +679,13 @@ void audioInLoop(void *pvParameter)
 				adc_continuous_stop(input->handle);
 #else
 				if (enabled)
-					i2s_channel_disable(input->handle);
+					{
+#if MODDEF_AUDIO_DUPLEX
+                        /* XS start/stop own the logical direction state. */
+#else
+                        i2s_channel_disable(input->handle);
+#endif
+                    }
 				enabled = false;
 #endif
 				stopped = true;
@@ -624,7 +693,10 @@ void audioInLoop(void *pvParameter)
 				input->playPos = input->recPos = input->buffer;
 			}
 
-			if ((kStateClosing == input->state) || (kStateTerminated == input->state))
+			#if MODDEF_AUDIO_DUPLEX
+            __atomic_store_n(&input->stopAcknowledged, __atomic_load_n(&input->stopRequest, __ATOMIC_ACQUIRE), __ATOMIC_RELEASE);
+#endif
+            if ((kStateClosing == input->state) || (kStateTerminated == input->state))
 				break;
 
 			xTaskNotifyWait(0, 0, &newState, portMAX_DELAY);
@@ -635,8 +707,13 @@ void audioInLoop(void *pvParameter)
 #if MODDEF_AUDIOIN_I2S_ADC
 			adc_continuous_enable(input->handle);
 #else
-			if (!enabled)
-				i2s_channel_enable(input->handle);
+			if (!enabled) {
+#if MODDEF_AUDIO_DUPLEX
+                /* Enabled synchronously by xs_audioin_start. */
+#else
+                i2s_channel_enable(input->handle);
+#endif
+            }
 			enabled = true;
 #endif
 
@@ -728,18 +805,35 @@ void audioInLoop(void *pvParameter)
 		adc_continuous_deinit(input->handle);
 #else
 		if (enabled)
-			i2s_channel_disable(input->handle);
-		i2s_del_channel(input->handle);
+			{
+#if MODDEF_AUDIO_DUPLEX
+                        /* XS start/stop own the logical direction state. */
+#else
+                        i2s_channel_disable(input->handle);
 #endif
-	}
+                    }
+		#if MODDEF_AUDIO_DUPLEX
+        modAudioDuplexRelease(true);
+#else
+        i2s_del_channel(input->handle);
+#endif
+#endif
+    }
 
 done:
 #if MODDEF_AUDIOIN_I2S_PDM
 	gPDMAudioInBusy = 0;
 #endif
 
-	input->state = kStateTerminated;
-	input->task = C_NULL;
+	#if MODDEF_AUDIO_DUPLEX
+    xSemaphoreTake(input->mutex, portMAX_DELAY);
+    input->task = C_NULL;
+    xSemaphoreGive(input->mutex);
+    __atomic_store_n(&input->state, kStateTerminated, __ATOMIC_RELEASE);
+#else
+    input->state = kStateTerminated;
+    input->task = C_NULL;
+#endif
 
 	vTaskDelete(C_NULL);
 }
@@ -747,15 +841,29 @@ done:
 void xs_audioin_start(xsMachine *the)
 {
 	AudioInput input = xsmcGetHostDataValidate(xsThis, (void *)&xsAudioInHooks);
-	input->state = kStateRecording;
-	xTaskNotify(input->task, kStateRecording, eSetValueWithOverwrite);
+	#if MODDEF_AUDIO_DUPLEX
+    esp_err_t err = modAudioDuplexEnable(true);
+    if (err != ESP_OK) xsUnknownError("cannot enable duplex input %d", (int)err);
+#endif
+    input->state = kStateRecording;
+    xTaskNotify(input->task, kStateRecording, eSetValueWithOverwrite);
 }
 
 void xs_audioin_stop(xsMachine *the)
 {
-	AudioInput input = xsmcGetHostDataValidate(xsThis, (void *)&xsAudioInHooks);
-	input->state = kStateIdle;
-	xTaskNotify(input->task, kStateIdle, eSetValueWithOverwrite);
+    AudioInput input = xsmcGetHostDataValidate(xsThis, (void *)&xsAudioInHooks);
+#if MODDEF_AUDIO_DUPLEX
+    uint32_t request = __atomic_add_fetch(&input->stopRequest, 1, __ATOMIC_ACQ_REL);
+#endif
+    input->state = kStateIdle;
+    xTaskNotify(input->task, kStateIdle, eSetValueWithOverwrite);
+#if MODDEF_AUDIO_DUPLEX
+    esp_err_t err = modAudioDuplexDisable(true);
+    /* Wait until an in-flight read can no longer repopulate the stopped buffer. */
+    while (__atomic_load_n(&input->stopAcknowledged, __ATOMIC_ACQUIRE) != request)
+        modDelayMilliseconds(1);
+    if (err != ESP_OK) xsUnknownError("cannot disable duplex input %d", (int)err);
+#endif
 }
 
 void xs_audioin_get_format(xsMachine *the)
